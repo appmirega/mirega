@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Config Check</title>
+</head>
+<body>
+    <h1>Environment Check</h1>
+    <p>This page will help diagnose if Vercel is loading environment variables correctly.</p>
+    <div id="info"></div>
+    <script type="module">
+        const info = document.getElementById('info');
+        const url = import.meta.env.VITE_BOLT_DATABASE_URL;
+        const key = import.meta.env.VITE_BOLT_DATABASE_ANON_KEY;
+
+        info.innerHTML = `
+            <p><strong>URL Present:</strong> ${url ? 'YES' : 'NO'}</p>
+            <p><strong>URL Value:</strong> ${url || 'MISSING'}</p>
+            <p><strong>Key Present:</strong> ${key ? 'YES' : 'NO'}</p>
+            <p><strong>Key Length:</strong> ${key ? key.length : 0} characters</p>
+        `;
+    </script>
+</body>
+</html>

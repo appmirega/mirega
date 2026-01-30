@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Environment Variables</title>
+</head>
+<body>
+    <h1>Environment Variables Debug</h1>
+    <pre id="output"></pre>
+    
+    <script type="module">
+        const output = document.getElementById('output');
+        const env = {
+            VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
+            VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            MODE: import.meta.env.MODE,
+            DEV: import.meta.env.DEV,
+            PROD: import.meta.env.PROD
+        };
+        
+        output.textContent = JSON.stringify(env, null, 2);
+        
+        // Test connection to Supabase
+        if (env.VITE_SUPABASE_URL) {
+            fetch(`${env.VITE_SUPABASE_URL}/rest/v1/`, {
+                headers: {
+                    'apikey': env.VITE_SUPABASE_ANON_KEY || '',
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(r => {
+                output.textContent += '\n\n✅ Connection to Supabase: SUCCESS (Status: ' + r.status + ')';
+            })
+            .catch(e => {
+                output.textContent += '\n\n❌ Connection to Supabase FAILED: ' + e.message;
+            });
+        }
+    </script>
+</body>
+</html>

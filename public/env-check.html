@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificación de Variables de Entorno</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .env-var {
+            margin: 15px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+        }
+        .env-var.missing {
+            border-left-color: #dc3545;
+            background: #fff5f5;
+        }
+        .env-var strong {
+            display: block;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .env-var code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            word-break: break-all;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .status.ok {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #28a745;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Verificación de Variables de Entorno</h1>
+        <p>Esta página muestra las variables de entorno configuradas en la aplicación.</p>
+
+        <div id="env-check"></div>
+
+        <div id="instructions"></div>
+    </div>
+
+    <script type="module">
+        const requiredVars = {
+            'VITE_BOLT_DATABASE_URL': 'https://goklcjujdiorinqrwcor.supabase.co',
+            'VITE_BOLT_DATABASE_ANON_KEY': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdva2xjanVqZGlvcmlucXJ3Y29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExMTg2MzcsImV4cCI6MjA3NjY5NDYzN30.A6ehbI2FYyEYXizZYcyXOLr6ekCbXJ6pBGXKT_DGCjA'
+        };
+
+        const container = document.getElementById('env-check');
+        const instructions = document.getElementById('instructions');
+        let allCorrect = true;
+
+        for (const [key, expectedValue] of Object.entries(requiredVars)) {
+            const actualValue = import.meta.env[key];
+            const isCorrect = actualValue === expectedValue;
+
+            if (!isCorrect) allCorrect = false;
+
+            const div = document.createElement('div');
+            div.className = `env-var ${isCorrect ? '' : 'missing'}`;
+
+            const status = isCorrect ?
+                '<span class="status ok">✓ CORRECTO</span>' :
+                '<span class="status error">✗ INCORRECTO</span>';
+
+            div.innerHTML = `
+                <strong>${key} ${status}</strong>
+                ${actualValue ?
+                    `<code>${actualValue.substring(0, 50)}${actualValue.length > 50 ? '...' : ''}</code>` :
+                    '<code style="color: #dc3545;">NO CONFIGURADO</code>'
+                }
+            `;
+            container.appendChild(div);
+        }
+
+        if (allCorrect) {
+            instructions.innerHTML = `
+                <div class="success">
+                    <strong>✓ Configuración Correcta</strong>
+                    <p>Todas las variables de entorno están configuradas correctamente.</p>
+                    <p><strong>Credenciales de prueba:</strong></p>
+                    <ul>
+                        <li>Email: aurra.jaime@gmail.com</li>
+                        <li>Password: mirega2024</li>
+                    </ul>
+                    <p><a href="/">← Volver a la aplicación</a></p>
+                </div>
+            `;
+        } else {
+            instructions.innerHTML = `
+                <div class="warning">
+                    <strong>⚠ Acción Requerida</strong>
+                    <p>Las variables de entorno no están configuradas correctamente en Vercel.</p>
+                    <p><strong>Pasos para corregir:</strong></p>
+                    <ol>
+                        <li>Ve a <a href="https://vercel.com/dashboard" target="_blank">Vercel Dashboard</a></li>
+                        <li>Selecciona tu proyecto</li>
+                        <li>Ve a Settings → Environment Variables</li>
+                        <li>Verifica que las variables estén configuradas con los valores correctos</li>
+                        <li>Si las cambiaste, ve a Deployments y haz un Redeploy</li>
+                    </ol>
+                    <p>Ver <a href="/VERCEL_ENV_SETUP.md" target="_blank">VERCEL_ENV_SETUP.md</a> para más detalles.</p>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

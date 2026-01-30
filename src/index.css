@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Traducción de la librería html5-qrcode al español */
+#qr-reader__dashboard_section_csr button:nth-child(1)::before {
+  content: "Solicitar Permisos de Cámara";
+  position: absolute;
+  background: white;
+  width: 100%;
+  text-align: center;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+#qr-reader__dashboard_section_csr button:nth-child(1) {
+  position: relative;
+  color: transparent !important;
+}
+
+#qr-reader__dashboard_section_csr button:nth-child(2)::before {
+  content: "Escanear una Imagen";
+  position: absolute;
+  background: white;
+  width: 100%;
+  text-align: center;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+#qr-reader__dashboard_section_csr button:nth-child(2) {
+  position: relative;
+  color: transparent !important;
+}
+
+/* Ocultar texto original y mostrar traducción */
+#qr-reader__camera_permission_button::after {
+  content: "Solicitar Permisos de Cámara";
+}
+
+#qr-reader__camera_permission_button {
+  font-size: 0 !important;
+}
+
+/* Estilo mejorado para el escáner QR */
+#qr-reader {
+  border: none !important;
+}
+
+#qr-reader__dashboard_section {
+  padding: 0 !important;
+}
+
+#qr-reader video {
+  border-radius: 8px;
+  max-height: 400px;
+  object-fit: cover;
+}
+
+#qr-reader__scan_region {
+  border-radius: 8px !important;
+}
+
+/* Mejorar apariencia de los botones del escáner */
+#qr-reader button {
+  padding: 12px 24px !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  transition: all 0.2s !important;
+}
+
+#qr-reader button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
