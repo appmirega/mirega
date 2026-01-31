@@ -9,13 +9,10 @@ import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard
 import { ClientDashboard } from './components/dashboards/ClientDashboard';
 import { UserProfile } from './components/UserProfile';
 import { ManualsView } from './components/views/ManualsView';
-// ...existing code...
 import { EmergencyV2View } from './components/views/EmergencyV2View';
 import { WorkOrdersView } from './components/views/WorkOrdersView';
 import { RoutesView } from './components/views/RoutesView';
 import { QuotationsManagementView } from './components/views/QuotationsManagementView';
-// ...existing code...
-// ...existing code...
 import { CertificationsDashboard } from './components/views/CertificationsDashboard';
 import { PDFHistoryView } from './components/views/PDFHistoryView';
 import { StatisticsView } from './components/views/StatisticsView';
@@ -27,7 +24,6 @@ import { CarpetaCeroView } from './components/views/CarpetaCeroView';
 import { RescueTrainingView } from './components/views/RescueTrainingView';
 import { MaintenanceCompleteView } from './components/views/MaintenanceCompleteView';
 import { EmergencyHistoryCompleteView } from './components/views/EmergencyHistoryCompleteView';
-// ...existing code...
 import { QRCodesCompleteView } from './components/views/QRCodesCompleteView';
 import { AdminRescueTrainingView } from './components/views/AdminRescueTrainingView';
 import { TechnicianMaintenanceChecklistView } from './components/views/TechnicianMaintenanceChecklistView';
@@ -42,7 +38,7 @@ import { ElevatorsCompleteView } from './components/views/ElevatorsCompleteView'
 import { ClientTechnicalInfoView } from './components/views/ClientTechnicalInfoView';
 import { DeveloperPermissionsPanel } from './components/views/DeveloperPermissionsPanel';
 import { AdminPermissionsPanel } from './components/views/AdminPermissionsPanel';
-// ...existing code...
+import { MaintenanceCalendarView } from './components/calendar/MaintenanceCalendarView';
 
 interface DashboardRouterProps {
   onNavigate?: (path: string) => void;
@@ -71,7 +67,6 @@ function DashboardRouter({ onNavigate }: DashboardRouterProps) {
   }
 }
 
-
 function AppContent() {
   const { user, profile, loading } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
@@ -97,6 +92,8 @@ function AppContent() {
         return <UserProfile />;
       case 'manuals':
         return <ManualsView />;
+      case 'maintenance-calendar':
+        return <MaintenanceCalendarView />;
       case 'maintenance':
         return <div>Mantenimiento: Vista no implementada o importación faltante</div>;
       case 'emergencies':
