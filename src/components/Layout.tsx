@@ -1,4 +1,4 @@
-import { ReactNode, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationCenter } from './NotificationCenter';
 import { supabase } from '../lib/supabase';
