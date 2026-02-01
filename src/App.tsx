@@ -234,6 +234,6 @@ function App() {
       <AppContent />
     </AuthProvider>
   );
-}
 
+}
 export default App;
