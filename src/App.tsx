@@ -39,25 +39,6 @@ function App() {
 }
 
 export default App;
-        return <ElevatorsCompleteView onNavigate={handleNavigate} />;
-      case 'client-technical-info':
-        return <ClientTechnicalInfoView />;
-      case 'developer-permissions':
-        return <DeveloperPermissionsPanel />;
-      case 'admin-permissions':
-        return <AdminPermissionsPanel />;
-      case 'dashboard':
-      default:
-        return <DashboardRouter onNavigate={handleNavigate} />;
-    }
-  };
-
-  return (
-    <Layout onNavigate={handleNavigate}>
-      <div key={viewKey}>
-        {renderContent()}
-      </div>
-    </Layout>
   );
 }
 
