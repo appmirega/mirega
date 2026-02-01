@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { FileText, Clock, CheckCircle, AlertCircle, Filter, Download, X } from 'lucide-react';
-import { WorkOrderClosureForm } from '../forms/WorkOrderClosureForm';
+import { WorkOrderClosureForm } from '../workorders/WorkOrderClosureForm';
 
 interface WorkOrder {
   id: string;
@@ -182,9 +182,8 @@ export function TechnicianWorkOrdersView() {
   if (viewMode === 'close' && selectedWorkOrder) {
     return (
       <WorkOrderClosureForm
-        workOrderId={selectedWorkOrder.id}
-        workOrderFolio={selectedWorkOrder.folio_number}
-        onSuccess={handleClosureComplete}
+        workOrder={selectedWorkOrder}
+        onComplete={handleClosureComplete}
         onCancel={() => {
           setViewMode('list');
           setSelectedWorkOrder(null);

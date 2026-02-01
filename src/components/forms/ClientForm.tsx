@@ -1,4 +1,3 @@
-import QRCode from 'qrcode';
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
@@ -14,18 +13,7 @@ import {
   EyeOff,
   Copy,
 } from 'lucide-react';
-// ...existing code...
-import {
-  validateEmail,
-  // ...existing code...
-  validatePhoneOptional,
-  validateRUT,
-  validateCompanyName,
-  validateAddress,
-  validatePassword,
-  // ...existing code...
-  // ...existing code...
-} from '../../utils/validation';
+import QRCode from 'qrcode';
 
 type ElevatorType = 'hydraulic' | 'electromechanical';
 
@@ -116,35 +104,23 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Generar contraseña automática basada en año actual
-  const generateAutoPassword = () => {
-    const currentYear = new Date().getFullYear();
-    return `Mirega_${currentYear}@`;
-  };
-
   const [clientData, setClientData] = useState({
     company_name: client?.company_name || '',
     building_name: client?.building_name || '',
     // Alias interno (Mirega)
     internal_alias: '',
-    // Contacto Principal (se mantiene)
+    // Contacto "legacy" (se mantiene)
     contact_name: client?.contact_name || '',
     contact_email: client?.contact_email || '',
     contact_phone: client?.contact_phone || '',
-    // Contactos Alternos (hasta 3) - NUEVO, ahora con cargo/rol
-    alternate_contacts: [
-      { name: '', email: '', phone: '', role: '', enabled: false },
-      { name: '', email: '', phone: '', role: '', enabled: false },
-      { name: '', email: '', phone: '', role: '', enabled: false },
-    ],
-    // Campos legacy (se mantienen para compatibilidad)
+    // Bloque Administrador (obligatorio)
     admin_name: '',
     admin_email: '',
     admin_phone: '',
     rut: '',
     address: client?.address || '',
-    password: isEditMode ? '' : generateAutoPassword(),
-    confirmPassword: isEditMode ? '' : generateAutoPassword(),
+    password: '',
+    confirmPassword: '',
   });
 
   const [generatedClientCode, setGeneratedClientCode] =
@@ -320,10 +296,11 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
           !clientData.company_name ||
           !clientData.contact_name ||
           !clientData.contact_email ||
+          !clientData.contact_phone ||
           !clientData.address
         ) {
           return fail(
-            'Completa los campos obligatorios (Empresa, Contacto, Email, Dirección)'
+            'Todos los campos del cliente son obligatorios'
           );
         }
 
@@ -361,9 +338,13 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       !clientData.internal_alias ||
       !clientData.contact_name ||
       !clientData.contact_email ||
+      !clientData.contact_phone ||
+      !clientData.admin_name ||
+      !clientData.admin_email ||
+      !clientData.admin_phone ||
       !clientData.address
     ) {
-      return fail('Completa los campos obligatorios (Nombre de empresa, Edificio, Alias, Contacto, Email, Dirección)');
+      return fail('Todos los campos del cliente son obligatorios');
     }
 
     if (!identicalElevators && elevators.length !== totalEquipments) {
@@ -378,61 +359,17 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       );
     }
 
-    // Validaciones mejoradas
-    const emailValidation = validateEmail(clientData.contact_email);
-    if (!emailValidation.isValid) {
-      return fail(emailValidation.error!);
-    }
-
-    const phoneValidation = validatePhoneOptional(clientData.contact_phone);
-    if (!phoneValidation.isValid) {
-      return fail(phoneValidation.error!);
-    }
-
-    const companyValidation = validateCompanyName(clientData.company_name);
-    if (!companyValidation.isValid) {
-      return fail(companyValidation.error!);
-    }
-
-    const addressValidation = validateAddress(clientData.address);
-    if (!addressValidation.isValid) {
-      return fail(addressValidation.error!);
-    }
-
-    if (clientData.rut) {
-      const rutValidation = validateRUT(clientData.rut);
-      if (!rutValidation.isValid) {
-        return fail(rutValidation.error!);
-      }
-    }
-
     if (!validateElevators()) return;
 
     if (clientData.password !== clientData.confirmPassword) {
       return fail('Las contraseñas no coinciden');
     }
 
-    const passwordValidation = validatePassword(clientData.password);
-    if (!passwordValidation.isValid) {
-      return fail(passwordValidation.error!);
+    if (clientData.password.length < 8) {
+      return fail('La contraseña debe tener al menos 8 caracteres');
     }
 
     try {
-      // Verificar si el email ya existe ANTES de intentar crear el usuario
-      const { data: existingProfiles, error: checkError } = await supabase
-        .from('profiles')
-        .select('email')
-        .eq('email', clientData.contact_email.toLowerCase().trim())
-        .limit(1);
-
-      if (checkError) {
-        console.error('Error al verificar email existente:', checkError);
-      }
-
-      if (existingProfiles && existingProfiles.length > 0) {
-        return fail('Ya existe un usuario registrado con este correo electrónico. Por favor, usa otro email.');
-      }
-
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -492,20 +429,10 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
           response.status,
           raw
         );
-        
-        // Traducir mensajes de error comunes del backend
-        let errorMessage = result?.error || `Error al crear el usuario del cliente (status ${response.status}).`;
-        
-        // Traducciones de errores comunes
-        if (errorMessage.includes('already been registered') || errorMessage.includes('already exists')) {
-          errorMessage = 'Ya existe un usuario registrado con este correo electrónico. Por favor, usa otro email.';
-        } else if (errorMessage.includes('invalid email')) {
-          errorMessage = 'El correo electrónico no es válido.';
-        } else if (errorMessage.includes('weak password')) {
-          errorMessage = 'La contraseña es demasiado débil. Debe tener al menos 6 caracteres.';
-        }
-        
-        throw new Error(errorMessage);
+        throw new Error(
+          result?.error ||
+            `Error al crear el usuario del cliente (status ${response.status}).`
+        );
       }
 
       const profile = result.user;
@@ -528,8 +455,6 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
           admin_name: clientData.admin_name,
           admin_email: clientData.admin_email,
           admin_phone: clientData.admin_phone,
-          // Contactos alternos como JSON (incluye cargo/rol)
-          alternate_contacts: (clientData.alternate_contacts?.filter(c => c.enabled && (c.name || c.email || c.phone || c.role)) ?? null),
           rut: clientData.rut || null,
           address: clientData.address,
           is_active: true,
@@ -756,10 +681,11 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             <div>
               <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-1">
                 <Phone className="w-4 h-4" />
-                Teléfono
+                Teléfono *
               </label>
               <input
                 type="tel"
+                required
                 value={clientData.contact_phone}
                 onChange={(e) =>
                   setClientData((p) => ({
@@ -767,7 +693,6 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                     contact_phone: e.target.value,
                   }))
                 }
-                placeholder="Opcional - se puede agregar después"
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -789,137 +714,54 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               />
             </div>
 
-            {/* Bloque Contacto Alterno (Opcional) - Múltiples */}
-            <div className="md:col-span-2 border rounded-lg p-4 bg-blue-50 border-blue-200">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-semibold text-slate-800">
-                  Contactos Alternos (Opcionales)
-                </p>
-                <p className="text-xs text-blue-600">
-                  Agrega hasta 3 contactos alternos. Activa/desactiva cada uno según sea necesario.
-                </p>
-              </div>
-              
-              <div className="space-y-4">
-                {clientData.alternate_contacts.map((contact, index) => (
-                  <div 
-                    key={index}
-                    className={`border rounded-lg p-3 transition ${
-                      contact.enabled 
-                        ? 'bg-white border-blue-300' 
-                        : 'bg-gray-100 border-gray-300 opacity-60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 mb-3">
-                      <input
-                        type="checkbox"
-                        id={`contact-${index}`}
-                        checked={contact.enabled}
-                        onChange={(e) => {
-                          setClientData((p) => {
-                            const updated = [...p.alternate_contacts];
-                            updated[index].enabled = e.target.checked;
-                            return { ...p, alternate_contacts: updated };
-                          });
-                        }}
-                        className="w-4 h-4 rounded border-gray-300 cursor-pointer"
-                      />
-                      <label 
-                        htmlFor={`contact-${index}`}
-                        className="text-sm font-medium text-slate-700 cursor-pointer flex-1"
-                      >
-                        Contacto Alterno {index + 1}
-                      </label>
-                      {contact.enabled && (
-                        <span className="inline-block px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded">
-                          Activo
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                      <div>
-                        <label className="text-xs text-slate-600 mb-1 block font-medium">
-                          Nombre
-                        </label>
-                        <input
-                          type="text"
-                          disabled={!contact.enabled}
-                          value={contact.name}
-                          onChange={(e) => {
-                            setClientData((p) => {
-                              const updated = [...p.alternate_contacts];
-                              updated[index].name = e.target.value;
-                              return { ...p, alternate_contacts: updated };
-                            });
-                          }}
-                          placeholder="Ej: Presidente de condominio"
-                          className="w-full px-3 py-2 border border-slate-300 rounded text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs text-slate-600 mb-1 block font-medium">
-                          Email
-                        </label>
-                        <input
-                          type="email"
-                          disabled={!contact.enabled}
-                          value={contact.email}
-                          onChange={(e) => {
-                            setClientData((p) => {
-                              const updated = [...p.alternate_contacts];
-                              updated[index].email = e.target.value;
-                              return { ...p, alternate_contacts: updated };
-                            });
-                          }}
-                          placeholder="contacto@empresa.cl"
-                          className="w-full px-3 py-2 border border-slate-300 rounded text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs text-slate-600 mb-1 block font-medium">
-                          Teléfono
-                        </label>
-                        <input
-                          type="tel"
-                          disabled={!contact.enabled}
-                          value={contact.phone}
-                          onChange={(e) => {
-                            setClientData((p) => {
-                              const updated = [...p.alternate_contacts];
-                              updated[index].phone = e.target.value;
-                              return { ...p, alternate_contacts: updated };
-                            });
-                          }}
-                          placeholder="+56 9 XXXX XXXX"
-                          className="w-full px-3 py-2 border border-slate-300 rounded text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs text-slate-600 mb-1 block font-medium">
-                          Cargo / Rol
-                        </label>
-                        <input
-                          type="text"
-                          disabled={!contact.enabled}
-                          value={contact.role}
-                          onChange={(e) => {
-                            setClientData((p) => {
-                              const updated = [...p.alternate_contacts];
-                              updated[index].role = e.target.value;
-                              return { ...p, alternate_contacts: updated };
-                            });
-                          }}
-                          placeholder="Ej: Presidente, Tesorero, etc."
-                          className="w-full px-3 py-2 border border-slate-300 rounded text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
+            {/* Bloque Administrador */}
+            <div className="md:col-span-2 border rounded-lg p-4 bg-slate-50">
+              <p className="text-sm font-semibold text-slate-800 mb-3">
+                Contacto Administrador (obligatorio)
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-sm text-slate-700 mb-1 block">
+                    Nombre *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={clientData.admin_name}
+                    onChange={(e) =>
+                      setClientData((p) => ({ ...p, admin_name: e.target.value }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-slate-700 mb-1 block">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={clientData.admin_email}
+                    onChange={(e) =>
+                      setClientData((p) => ({ ...p, admin_email: e.target.value }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-slate-700 mb-1 block">
+                    Teléfono *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={clientData.admin_phone}
+                    onChange={(e) =>
+                      setClientData((p) => ({ ...p, admin_phone: e.target.value }))
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -931,43 +773,25 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             <h3 className="text-lg font-semibold text-slate-900 mb-4">
               Credenciales de Acceso
             </h3>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-              <p className="text-sm text-green-800 mb-2">
-                <strong>✅ Contraseña autogenerada:</strong> La contraseña se genera automáticamente para facilitar el ingreso rápido.
-              </p>
-              <p className="text-sm text-green-700">
-                El cliente puede cambiarla una vez que inicie sesión.
-              </p>
-              <div className="mt-3 p-3 bg-white border border-green-300 rounded flex items-center justify-between">
-                <code className="text-lg font-bold text-green-700">{clientData.password}</code>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(clientData.password);
-                    alert('Contraseña copiada al portapapeles');
-                  }}
-                  className="flex items-center gap-2 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                >
-                  <Copy className="w-4 h-4" />
-                  Copiar
-                </button>
-              </div>
-              <p className="text-xs text-green-600 mt-2">
-                Patrón: Mirega_YYYY@ (donde YYYY es el año actual)
-              </p>
-            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-1">
                   <Key className="w-4 h-4" />
-                  Contraseña (autogenerada)
+                  Contraseña (mínimo 8 caracteres) *
                 </label>
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    disabled
+                    required
+                    minLength={8}
                     value={clientData.password}
-                    className="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg bg-slate-100 text-slate-600 cursor-not-allowed"
+                    onChange={(e) =>
+                      setClientData((p) => ({
+                        ...p,
+                        password: e.target.value,
+                      }))
+                    }
+                    className="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   <button
                     type="button"
@@ -986,7 +810,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700 mb-1">
-                  Confirmar contraseña
+                  Confirmar contraseña *
                 </label>
                 <div className="relative">
                   <input
@@ -995,9 +819,17 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                         ? 'text'
                         : 'password'
                     }
-                    disabled
+                    required
+                    minLength={8}
                     value={clientData.confirmPassword}
-                    className="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg bg-slate-100 text-slate-600 cursor-not-allowed"
+                    onChange={(e) =>
+                      setClientData((p) => ({
+                        ...p,
+                        confirmPassword:
+                          e.target.value,
+                      }))
+                    }
+                    className="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   <button
                     type="button"

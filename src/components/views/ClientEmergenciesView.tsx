@@ -55,55 +55,28 @@ export function ClientEmergenciesView() {
 
   const loadEmergencies = async () => {
     try {
-      console.log('🔍 [Emergencies] Profile ID:', profile?.id);
-      console.log('📧 [Emergencies] Profile Email:', profile?.email);
-      
-      // Intentar por profile_id primero
-      let { data: client, error: clientError } = await supabase
+      const { data: client } = await supabase
         .from('clients')
-        .select('id, company_name, building_name, internal_alias')
+        .select('id')
         .eq('profile_id', profile?.id)
         .maybeSingle();
 
-      console.log('🏢 [Emergencies] Client Data (by profile_id):', client);
-      console.log('⚠️ [Emergencies] Client Error:', clientError);
-
-      // Fallback a email matching
-      if (!client && profile?.email) {
-        console.log('🔄 [Emergencies] Trying fallback: matching by email...');
-        const { data: clientByEmail } = await supabase
-          .from('clients')
-          .select('id, company_name, building_name, internal_alias')
-          .eq('contact_email', profile.email)
-          .maybeSingle();
-        
-        client = clientByEmail;
-        console.log('📧 [Emergencies] Client Data (by email):', client);
-      }
-
       if (!client) {
-        console.error('❌ [Emergencies] No client found for this profile (tried profile_id and email)');
         setLoading(false);
         return;
       }
 
-      const { data: elevatorsData, error: elevatorsError } = await supabase
+      const { data: elevatorsData } = await supabase
         .from('elevators')
-        .select('id, elevator_number, location_name')
+        .select('id')
         .eq('client_id', client.id);
-
-      console.log('🏗️ [Emergencies] Elevators Data:', elevatorsData);
-      console.log('⚠️ [Emergencies] Elevators Error:', elevatorsError);
 
       const elevatorIds = elevatorsData?.map(e => e.id) || [];
 
       if (elevatorIds.length === 0) {
-        console.warn('⚠️ [Emergencies] No elevators found for this client');
         setLoading(false);
         return;
       }
-
-      console.log('📋 [Emergencies] Elevator IDs:', elevatorIds);
 
       const { data, error } = await supabase
         .from('emergency_visits_v2')
@@ -125,9 +98,6 @@ export function ClientEmergenciesView() {
         .in('elevator_id', elevatorIds)
         .order('visit_date', { ascending: false })
         .order('visit_time', { ascending: false });
-
-      console.log('🚨 [Emergencies] Emergency Data:', data);
-      console.log('⚠️ [Emergencies] Emergency Error:', error);
 
       if (error) throw error;
 

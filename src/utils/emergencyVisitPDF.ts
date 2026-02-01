@@ -346,7 +346,7 @@ function drawFailureDescription(doc: jsPDF, data: EmergencyVisitPDFData, startY:
   doc.setTextColor(0, 0, 0);
   
   const maxWidth = PAGE_WIDTH - 2 * MARGIN;
-  // Eliminada variable no usada maxHeight
+  const maxHeight = 35; // Máximo espacio para descripción (7 líneas aprox)
   const lines = doc.splitTextToSize(data.failureDescription || 'Sin descripción', maxWidth);
   
   let lineCount = 0;

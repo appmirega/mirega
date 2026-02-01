@@ -10,11 +10,7 @@ import {
   FileText,
   TrendingUp,
   Building2,
-  Plus,
-  Zap,
-  Tag,
 } from 'lucide-react';
-import { ClientServiceRequestForm } from '../forms/ClientServiceRequestForm';
 
 interface ClientDashboardProps {
   onNavigate?: (path: string) => void;
@@ -24,16 +20,14 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
   const { profile } = useAuth();
   const [clientData, setClientData] = useState<any>(null);
   const [elevators, setElevators] = useState<any[]>([]);
-  const [serviceRequests, setServiceRequests] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalElevators: 0,
     activeElevators: 0,
     maintenanceThisMonth: 0,
     pendingIssues: 0,
-    totalRequests: 0,
   });
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'dashboard' | 'new-request'>('dashboard');
 
   useEffect(() => {
     if (profile?.id) {
@@ -79,24 +73,11 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
           .eq('client_id', client.id)
           .in('status', ['reported', 'assigned', 'in_progress']);
 
-        // Cargar solicitudes del cliente
-        const { data: requests, error: requestsError } = await supabase
-          .from('service_requests')
-          .select('*')
-          .eq('client_id', profile?.id)
-          .eq('created_by_client', true)
-          .order('created_at', { ascending: false });
-
-        if (!requestsError) {
-          setServiceRequests(requests || []);
-        }
-
         setStats({
           totalElevators: elevatorsData?.length || 0,
           activeElevators: activeCount,
           maintenanceThisMonth: maintenanceCount || 0,
           pendingIssues: issuesCount || 0,
-          totalRequests: requests?.length || 0,
         });
       }
     } catch (error) {
@@ -140,18 +121,6 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
     );
   }
 
-  if (viewMode === 'new-request') {
-    return (
-      <ClientServiceRequestForm
-        onSuccess={() => {
-          setViewMode('dashboard');
-          loadClientData();
-        }}
-        onCancel={() => setViewMode('dashboard')}
-      />
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -192,12 +161,12 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
-            <div className="bg-orange-500 p-3 rounded-lg">
-              <Zap className="w-6 h-6 text-white" />
+            <div className="bg-red-500 p-3 rounded-lg">
+              <AlertTriangle className="w-6 h-6 text-white" />
             </div>
           </div>
-          <h3 className="text-2xl font-bold text-slate-900 mb-1">{stats.totalRequests}</h3>
-          <p className="text-sm text-slate-600">Solicitudes Realizadas</p>
+          <h3 className="text-2xl font-bold text-slate-900 mb-1">{stats.pendingIssues}</h3>
+          <p className="text-sm text-slate-600">Incidencias Pendientes</p>
         </div>
       </div>
 
@@ -342,75 +311,8 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <Zap className="w-6 h-6 text-slate-900" />
-            <h2 className="text-xl font-bold text-slate-900">Mis Solicitudes de Servicio</h2>
-          </div>
-          <button
-            onClick={() => setViewMode('new-request')}
-            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Nueva Solicitud
-          </button>
-        </div>
-
-        {serviceRequests.length === 0 ? (
-          <div className="text-center py-12">
-            <Zap className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-600 font-medium">No tiene solicitudes aún</p>
-            <p className="text-sm text-slate-500 mt-1">Cree su primera solicitud de servicio</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {serviceRequests.slice(0, 5).map((request) => {
-              const statusColors: Record<string, string> = {
-                created: 'bg-blue-50 text-blue-700 border-blue-200',
-                analyzed: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-                approved: 'bg-green-50 text-green-700 border-green-200',
-                in_progress: 'bg-purple-50 text-purple-700 border-purple-200',
-                completed: 'bg-green-50 text-green-700 border-green-200',
-                rejected: 'bg-red-50 text-red-700 border-red-200',
-              };
-
-              const requestTypeLabels: Record<string, string> = {
-                emergency: '🚨 Emergencia',
-                technical_visit: '🔧 Visita Técnica',
-                rescue_training: '👥 Inducción Rescate',
-                other: '❓ Otro',
-              };
-
-              return (
-                <div key={request.id} className="border border-slate-200 rounded-lg p-4 hover:border-slate-300 transition">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-semibold text-slate-900">{request.title}</span>
-                        <Tag className="w-4 h-4 text-slate-400" />
-                      </div>
-                      <p className="text-xs text-slate-600">{requestTypeLabels[request.request_type] || request.request_type}</p>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${statusColors[request.status] || 'bg-slate-50'}`}>
-                      {request.status}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-600 mb-2 line-clamp-2">{request.description}</p>
-                  <p className="text-xs text-slate-500">{new Date(request.created_at).toLocaleDateString('es-CL')}</p>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {serviceRequests.length > 5 && (
-          <button className="w-full mt-4 py-2 text-center text-orange-600 hover:bg-orange-50 rounded-lg transition font-medium text-sm">
-            Ver todas las solicitudes ({serviceRequests.length})
-          </button>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <h2 className="text-xl font-bold text-slate-900 mb-6">Accesos Rápidos</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <button
             onClick={() => onNavigate?.('client-emergencies')}
             className="p-6 bg-red-50 border-2 border-red-200 rounded-xl hover:bg-red-100 transition text-left"
@@ -446,6 +348,7 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
             <h3 className="font-bold text-slate-900 mb-1">Capacitaciones</h3>
             <p className="text-sm text-slate-600">Inducción de rescate</p>
           </button>
+        </div>
       </div>
 
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-xl shadow-lg p-8 text-white">

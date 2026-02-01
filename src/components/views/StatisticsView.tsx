@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { BarChart, Bar, PieChart, Pie, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { TrendingUp, Users, Wrench, FileText, Calendar, Award, Download } from 'lucide-react';
+import { TrendingUp, Users, Wrench, FileText, Calendar, Award } from 'lucide-react';
 
 interface Stats {
   totalChecklists: number;
@@ -42,48 +42,6 @@ export function StatisticsView() {
   const [technicianPerformance, setTechnicianPerformance] = useState<TechnicianPerformance[]>([]);
   const [elevatorIssues, setElevatorIssues] = useState<ElevatorIssues[]>([]);
   const [statusDistribution, setStatusDistribution] = useState<any[]>([]);
-
-  const handleExport = (rows: string[][], filename: string) => {
-    const csv = rows.map((row) => row.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-  };
-
-  const exportSummary = () => {
-    const rows = [
-      ['Metrica', 'Valor'],
-      ['Checklists totales', stats.totalChecklists.toString()],
-      ['Checklists mes', stats.completedThisMonth.toString()],
-      ['Clientes', stats.totalClients.toString()],
-      ['Ascensores', stats.totalElevators.toString()],
-      ['Tecnicos', stats.totalTechnicians.toString()],
-      ['Promedio min checklist', stats.avgChecklistTime.toString()],
-    ];
-    handleExport(rows, `estadisticas-resumen-${new Date().toISOString().split('T')[0]}.csv`);
-  };
-
-  const exportSeries = () => {
-    const rows = [
-      ['Mes', 'Completados'],
-      ...monthlyData.map((m) => [m.month, m.completed.toString()]),
-    ];
-    handleExport(rows, `estadisticas-series-${new Date().toISOString().split('T')[0]}.csv`);
-  };
-
-  const exportTopLists = () => {
-    const rows = [
-      ['Tecnico', 'Completados', 'Promedio_min'],
-      ...technicianPerformance.map((t) => [t.name, t.completed.toString(), t.avg_time.toString()]),
-      ['---', '---', '---'],
-      ['Ascensor', 'Problemas'],
-      ...elevatorIssues.map((e) => [e.elevator, e.issues.toString()]),
-    ];
-    handleExport(rows, `estadisticas-top-${new Date().toISOString().split('T')[0]}.csv`);
-  };
 
   useEffect(() => {
     loadStatistics();
@@ -219,31 +177,9 @@ export function StatisticsView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Estadísticas y Reportes</h1>
-          <p className="text-slate-600 mt-1">Panel de métricas y análisis del sistema</p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={exportSummary}
-            className="flex items-center gap-1 px-3 py-2 text-xs bg-slate-900 text-white rounded-lg hover:bg-slate-800"
-          >
-            <Download className="h-4 w-4" /> Resumen CSV
-          </button>
-          <button
-            onClick={exportSeries}
-            className="flex items-center gap-1 px-3 py-2 text-xs bg-slate-900 text-white rounded-lg hover:bg-slate-800"
-          >
-            <Download className="h-4 w-4" /> Series CSV
-          </button>
-          <button
-            onClick={exportTopLists}
-            className="flex items-center gap-1 px-3 py-2 text-xs bg-slate-900 text-white rounded-lg hover:bg-slate-800"
-          >
-            <Download className="h-4 w-4" /> Top CSV
-          </button>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900">Estadísticas y Reportes</h1>
+        <p className="text-slate-600 mt-1">Panel de métricas y análisis del sistema</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -1,32 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationCenter } from './NotificationCenter';
 import { supabase } from '../lib/supabase';
 import {
   LayoutDashboard,
   Users,
+  Wrench,
   FileText,
   AlertTriangle,
   ClipboardList,
+  Package,
+  Bell,
   Settings,
   LogOut,
   Menu,
   X,
+  Calendar,
+  Map,
   BookOpen,
   QrCode,
   BarChart3,
   Building,
   User as UserIcon,
   ShieldCheck,
+  FolderOpen,
   TrendingUp,
   Shield,
+  Activity,
   CalendarRange,
   Award,
   Folder,
+  BadgeCheck,
   FileSearch,
   Building2,
-  ChevronDown,
-  ChevronRight,
+  Presentation,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -41,62 +48,35 @@ interface NavItem {
   roles: string[];
 }
 
-interface NavSection {
-  label: string;
-  items: NavItem[];
-}
-
-const navSections: NavSection[] = [
-  {
-    label: 'Accesos Rápidos',
-    items: [
-      { label: 'Atajos', icon: LayoutDashboard, path: 'dashboard', roles: ['developer', 'admin', 'technician', 'client'] },
-      { label: 'Mi Perfil', icon: UserIcon, path: 'profile', roles: ['developer', 'admin', 'technician', 'client'] },
-    ],
-  },
-  {
-    label: 'Operaciones',
-    items: [
-      { label: 'Calendario Operativo', icon: CalendarRange, path: 'maintenance-calendar', roles: ['developer', 'admin'] },
-      { label: 'Mantenimientos', icon: ClipboardList, path: 'maintenance-checklist', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Solicitudes de Servicio', icon: FileText, path: 'service-requests', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Emergencias', icon: AlertTriangle, path: 'emergencies', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Órdenes de Trabajo', icon: FileText, path: 'work-orders', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Gestión de Ascensores', icon: Building2, path: 'elevators', roles: ['developer', 'admin', 'technician', 'client'] },
-    ],
-  },
-  {
-    label: 'Análisis & Reportes',
-    items: [
-      { label: 'Estadísticas', icon: TrendingUp, path: 'statistics', roles: ['developer', 'admin'] },
-      { label: 'Gestión de Trabajo', icon: ShieldCheck, path: 'risk-backlog', roles: ['developer', 'admin'] },
-      { label: 'Análisis Estratégico', icon: BarChart3, path: 'value-opportunities', roles: ['developer', 'admin'] },
-      { label: 'Prioridades Operativas', icon: TrendingUp, path: 'roi-calculator', roles: ['developer', 'admin'] },
-      { label: 'Registro de Auditoría', icon: FileSearch, path: 'audit-logs', roles: ['developer', 'admin'] },
-    ],
-  },
-  {
-    label: 'Cliente',
-    items: [
-      { label: 'Mis Mantenimientos', icon: ClipboardList, path: 'client-maintenances', roles: ['client'] },
-      { label: 'Mis Solicitudes', icon: FileText, path: 'client-service-requests', roles: ['client'] },
-      { label: 'Mis Emergencias', icon: AlertTriangle, path: 'client-emergencies', roles: ['client'] },
-      { label: 'Inducción de Rescate', icon: Award, path: 'rescue-training', roles: ['client'] },
-      { label: 'Carpeta Cero', icon: Folder, path: 'carpeta-cero', roles: ['client'] },
-    ],
-  },
-  {
-    label: 'Configuración & Admin',
-    items: [
-      { label: 'Usuarios', icon: Users, path: 'users', roles: ['developer', 'admin'] },
-      { label: 'Clientes', icon: Building, path: 'clients', roles: ['developer', 'admin'] },
-      { label: 'Códigos QR', icon: QrCode, path: 'qr-codes-complete', roles: ['developer', 'admin'] },
-      { label: 'Manuales Técnicos', icon: BookOpen, path: 'manuals', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Gestión de Permisos', icon: Shield, path: 'developer-permissions', roles: ['developer'] },
-      { label: 'Permisos', icon: Shield, path: 'admin-permissions', roles: ['admin'] },
-      { label: 'Configuración', icon: Settings, path: 'settings', roles: ['developer', 'admin'] },
-    ],
-  },
+const navigation: NavItem[] = [
+  { label: 'Atajos', icon: LayoutDashboard, path: 'dashboard', roles: ['developer', 'admin', 'technician', 'client'] },
+  { label: 'Mi Perfil', icon: UserIcon, path: 'profile', roles: ['developer', 'admin', 'technician', 'client'] },
+  { label: 'Mantenimientos', icon: ClipboardList, path: 'maintenance-checklist', roles: ['developer', 'admin', 'technician'] },
+  { label: 'Certificaciones', icon: BadgeCheck, path: 'certifications', roles: ['developer', 'admin'] },
+  { label: 'Solicitudes de Servicio', icon: FileText, path: 'service-requests', roles: ['developer', 'admin', 'technician'] },
+  { label: 'Estadísticas', icon: TrendingUp, path: 'statistics', roles: ['developer', 'admin'] },
+  { label: 'Operaciones Masivas', icon: CalendarRange, path: 'bulk-operations', roles: ['developer', 'admin'] },
+  { label: 'Registro de Auditoría', icon: FileSearch, path: 'audit-logs', roles: ['developer', 'admin'] },
+  { label: 'Usuarios', icon: Users, path: 'users', roles: ['developer', 'admin'] },
+  { label: 'Clientes', icon: Building, path: 'clients', roles: ['developer', 'admin'] },
+  { label: 'Gestión de Ascensores', icon: Building2, path: 'elevators', roles: ['developer', 'admin', 'technician', 'client'] },
+  { label: 'Gestión de Mantenimientos', icon: Calendar, path: 'maintenance-complete', roles: ['developer', 'admin'] },
+  { label: 'Historial de Emergencias', icon: AlertTriangle, path: 'emergency-history', roles: ['developer', 'admin'] },
+  { label: 'Emergencias', icon: AlertTriangle, path: 'emergencies', roles: ['technician'] },
+  { label: 'Mis Emergencias', icon: AlertTriangle, path: 'client-emergencies', roles: ['client'] },
+  { label: 'Órdenes de Trabajo', icon: FileText, path: 'work-orders', roles: ['developer', 'admin', 'technician'] },
+  { label: 'Rutas', icon: Map, path: 'routes', roles: ['developer', 'admin', 'technician'] },
+  { label: 'Cotizaciones', icon: BarChart3, path: 'quotations', roles: ['developer', 'admin'] },
+  { label: 'Mis Cotizaciones', icon: BarChart3, path: 'client-quotations', roles: ['client'] },
+  { label: 'Carpeta Cero', icon: Folder, path: 'carpeta-cero', roles: ['developer', 'admin', 'client'] },
+  { label: 'Capacitaciones de Rescate', icon: Presentation, path: 'rescue-training-admin', roles: ['developer', 'admin'] },
+  { label: 'Inducción de Rescate', icon: Award, path: 'rescue-training', roles: ['client'] },
+  { label: 'Manuales Técnicos', icon: BookOpen, path: 'manuals', roles: ['developer', 'admin', 'technician'] },
+  { label: 'Códigos QR', icon: QrCode, path: 'qr-codes-complete', roles: ['developer', 'admin'] },
+  { label: 'Gestión de Permisos', icon: Shield, path: 'developer-permissions', roles: ['developer'] },
+  { label: 'Permisos', icon: Shield, path: 'admin-permissions', roles: ['admin'] },
+  { label: 'Notificaciones', icon: Bell, path: 'notifications', roles: ['developer', 'admin', 'technician', 'client'] },
+  { label: 'Configuración', icon: Settings, path: 'settings', roles: ['developer', 'admin'] },
 ];
 
 export function Layout({ children, onNavigate }: LayoutProps) {
@@ -104,31 +84,10 @@ export function Layout({ children, onNavigate }: LayoutProps) {
   const [currentView, setCurrentView] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    'Accesos Rápidos': true,
-    'Operaciones': false,
-    'Análisis & Reportes': false,
-    'Cliente': false,
-    'Configuración & Admin': false,
-  });
 
-  // Acordeón: al abrir una sección, cierra las otras
-  const toggleSection = (label: string) => {
-    setExpandedSections((prev) => ({
-      'Accesos Rápidos': label === 'Accesos Rápidos' ? !prev['Accesos Rápidos'] : false,
-      'Operaciones': label === 'Operaciones' ? !prev['Operaciones'] : false,
-      'Análisis & Reportes': label === 'Análisis & Reportes' ? !prev['Análisis & Reportes'] : false,
-      'Cliente': label === 'Cliente' ? !prev['Cliente'] : false,
-      'Configuración & Admin': label === 'Configuración & Admin' ? !prev['Configuración & Admin'] : false,
-    }));
-  };
-
-  const filteredSections = navSections
-    .map((section) => ({
-      label: section.label,
-      items: section.items.filter((item) => profile && item.roles.includes(profile.role)),
-    }))
-    .filter((section) => section.items.length > 0);
+  const filteredNavigation = navigation.filter(
+    (item) => profile && item.roles.includes(profile.role)
+  );
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -241,14 +200,7 @@ export function Layout({ children, onNavigate }: LayoutProps) {
                   <p className="text-sm text-gray-600">Ascensores</p>
                 </div>
               </div>
-              <div className="relative">
-                <NotificationCenter onNavigate={handleNavigation} />
-                {notificationCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {notificationCount > 9 ? '9+' : notificationCount}
-                  </span>
-                )}
-              </div>
+              <NotificationCenter onNavigate={handleNavigation} />
             </div>
           </div>
 
@@ -272,44 +224,30 @@ export function Layout({ children, onNavigate }: LayoutProps) {
           </div>
 
           {/* Menú principal */}
-          <nav className="flex-1 overflow-y-auto p-4 space-y-2">
-            {filteredSections.map((section) => (
-              <div key={section.label} className="space-y-1">
+          <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+            {filteredNavigation.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentView === item.path;
+              return (
                 <button
-                  onClick={() => toggleSection(section.label)}
-                  className="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition text-left"
+                  key={item.path}
+                  onClick={() => handleNavigation(item.path)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
+                    isActive
+                      ? 'bg-red-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
                 >
-                  <span className="uppercase tracking-wide text-left flex-1">{section.label}</span>
-                  {expandedSections[section.label] ? (
-                    <ChevronDown className="w-4 h-4 flex-shrink-0" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 flex-shrink-0" />
+                  <Icon className="w-5 h-5" />
+                  <span className="font-medium">{item.label}</span>
+                  {item.path === 'notifications' && notificationCount > 0 && (
+                    <span className="ml-auto bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                      {notificationCount}
+                    </span>
                   )}
                 </button>
-                {expandedSections[section.label] && (
-                  <div className="space-y-1 pl-2">
-                    {section.items.map((item) => {
-                      const Icon = item.icon;
-                      const isActive = currentView === item.path;
-                      return (
-                        <button
-                          key={item.path}
-                          onClick={() => handleNavigation(item.path)}
-                          className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition text-sm text-left ${
-                            isActive
-                              ? 'bg-red-600 text-white'
-                              : 'text-gray-700 hover:bg-gray-100'
-                          }`}
-                        >
-                          <Icon className="w-4 h-4 flex-shrink-0" />
-                          <span className="font-medium">{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </nav>
 
           {/* Cerrar sesión */}
@@ -340,5 +278,4 @@ export function Layout({ children, onNavigate }: LayoutProps) {
     </div>
   );
 }
- // (Insertar aquí el contenido del backup para igualar rutas y visibilidad)
 

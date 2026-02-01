@@ -1,39 +1,9 @@
-
-import { useMemo } from 'react';
-
 interface QRCardProps {
-  elevator: {
-    id: string;
-    internal_code: string;
-    brand: string;
-    model: string;
-    serial_number: string;
-    location_building: string;
-    location_floor: string;
-    location_specific?: string | null;
-    elevator_number?: number | string;
-    internal_name?: string;
-    nombre_interno?: string;
-    corto?: string;
-    clients?: {
-      company_name?: string;
-      address?: string;
-    };
-  };
+  qrDataURL: string;
+  buildingName: string;
 }
 
-export function QRCard({ elevator }: QRCardProps) {
-  // Generate QR URL and Data URL
-  const qrUrl = useMemo(() => `${window.location.origin}/elevator/${elevator.id}`, [elevator.id]);
-  const qrImgUrl = useMemo(() =>
-    `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrUrl)}&margin=1`,
-    [qrUrl]
-  );
-
-  // Nombre interno preferente: internal_name, nombre_interno, corto, sino vacío
-  const internalName = elevator.internal_name || elevator.nombre_interno || elevator.corto || '';
-  const elevatorNumber = elevator.elevator_number !== undefined && elevator.elevator_number !== null ? `N° ${elevator.elevator_number}` : '';
-
+export function QRCard({ qrDataURL, buildingName }: QRCardProps) {
   return (
     <div
       className="bg-white border-2 border-black rounded-2xl overflow-hidden"
@@ -53,8 +23,8 @@ export function QRCard({ elevator }: QRCardProps) {
         }}
       >
         <img
-          src={qrImgUrl}
-          alt={`QR ${elevator.location_building}`}
+          src={qrDataURL}
+          alt={`QR ${buildingName}`}
           style={{
             width: '100%',
             height: '100%',
@@ -74,17 +44,11 @@ export function QRCard({ elevator }: QRCardProps) {
           alignItems: 'center'
         }}
       >
-        <div style={{ fontSize: '10pt', color: '#000', fontWeight: 'normal', lineHeight: '1.2' }}>
-          {elevator.clients?.company_name || ''}
+        <div style={{ fontSize: '12pt', color: '#000', fontWeight: 'normal', lineHeight: '1.2' }}>
+          Edificio:
         </div>
-        <div style={{ fontSize: '11pt', color: '#222', fontWeight: 'bold', lineHeight: '1.1', marginTop: '2px' }}>
-          {internalName}
-        </div>
-        <div style={{ fontSize: '10pt', color: '#DC2626', fontWeight: 'bold', lineHeight: '1.1', marginTop: '2px' }}>
-          {elevatorNumber}
-        </div>
-        <div style={{ fontSize: '10pt', color: '#222', fontWeight: 'normal', lineHeight: '1.1', marginTop: '2px' }}>
-          {elevator.internal_code}
+        <div style={{ fontSize: '21pt', color: '#DC2626', fontWeight: 'bold', lineHeight: '1.1', marginTop: '2px' }}>
+          {buildingName}
         </div>
       </div>
     </div>

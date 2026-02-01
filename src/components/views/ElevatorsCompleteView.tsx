@@ -8,7 +8,6 @@ import {
   Package,
   Eye,
   Edit,
-  Download,
 } from 'lucide-react';
 import { ElevatorPartsForm } from '../forms/ElevatorPartsForm';
 import { ElevatorSpecificPartsForm } from '../forms/ElevatorSpecificPartsForm';
@@ -76,29 +75,6 @@ export function ElevatorsCompleteView({ onNavigate }: Props) {
   const [showManualPartsForm, setShowManualPartsForm] = useState(false);
   const [manualPartsElevator, setManualPartsElevator] =
     useState<Elevator | null>(null);
-
-  const handleExport = () => {
-    const rows = [
-      ['Cliente', 'Edificio', 'Torre', 'Direccion', 'Tipo', 'Modelo', 'Serie', 'Estado'],
-      ...filteredElevators.map((e) => [
-        e.clients?.company_name || '',
-        e.clients?.building_name || '',
-        e.tower_name || e.location_name || '',
-        getElevatorAddress(e),
-        getElevatorTypeLabel(e.elevator_type),
-        e.model,
-        e.serial_number,
-        e.status,
-      ]),
-    ];
-    const csv = rows.map((r) => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ascensores-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-  };
 
   useEffect(() => {
     loadElevators();
@@ -246,14 +222,6 @@ export function ElevatorsCompleteView({ onNavigate }: Props) {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExport}
-              className="flex items-center gap-1 px-3 py-2 text-xs bg-slate-900 text-white rounded-lg hover:bg-slate-800"
-            >
-              <Download className="h-4 w-4" /> Exportar CSV
-            </button>
           </div>
         </div>
 

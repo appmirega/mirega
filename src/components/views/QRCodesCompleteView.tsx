@@ -1,6 +1,4 @@
-import QRCode from 'qrcode';
 import { useState, useEffect } from 'react';
-import QRCode from 'qrcode';
 import { supabase } from '../../lib/supabase';
 import { QRCard } from '../qr/QRCard';
 import {
@@ -9,10 +7,12 @@ import {
   Printer,
   Building2,
   Search,
+  Filter,
   CheckSquare,
   Square,
   Download,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 
 interface Elevator {
   id: string;
@@ -23,10 +23,6 @@ interface Elevator {
   location_building: string;
   location_floor: string;
   location_specific: string | null;
-  elevator_number?: number | string;
-  internal_name?: string;
-  nombre_interno?: string;
-  corto?: string;
   clients: {
     id: string;
     company_name: string;
@@ -77,16 +73,10 @@ export function QRCodesCompleteView() {
 
   const loadElevators = async () => {
     try {
-
-      // Incluir campos de número y nombre interno
       const { data, error } = await supabase
         .from('elevators')
         .select(`
           *,
-          elevator_number,
-          internal_name,
-          nombre_interno,
-          corto,
           clients (
             id,
             company_name,
@@ -212,121 +202,62 @@ export function QRCodesCompleteView() {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Códigos QR - Etiquetas para Impresión</title>
+          <title>Códigos QR - Impresión</title>
           <style>
-            @page { size: A4; margin: 0.5cm; }
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; padding: 10px; }
-            
-            /* Etiquetas de 5x5 cm (51x51 mm aprox) - 4 por página A4 */
-            .qr-grid { 
-              display: grid; 
-              grid-template-columns: repeat(2, 1fr); 
-              gap: 15px;
-              padding: 10px;
-            }
-            
+            @page { size: A4; margin: 1cm; }
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+            .qr-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
             .qr-item {
-              width: 200px;
-              height: 200px;
               page-break-inside: avoid;
-              border: 2px solid #273a8f;
-              padding: 10px;
+              border: 2px solid #000;
+              padding: 20px;
               text-align: center;
               background: white;
-              display: flex;
-              flex-direction: column;
-              justify-content: center;
-              align-items: center;
-              border-radius: 4px;
             }
-            
-            .qr-item-header {
-              font-weight: bold;
-              font-size: 11px;
-              color: #273a8f;
-              margin-bottom: 5px;
-              max-width: 180px;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              white-space: nowrap;
-            }
-            
-            .qr-item-code {
-              width: 140px;
-              height: 140px;
-              margin: 5px auto;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            
-            .qr-item-code img {
-              max-width: 100%;
-              max-height: 100%;
-              image-rendering: pixelated;
-            }
-            
-            .qr-item-footer {
-              font-weight: bold;
-              font-size: 10px;
-              color: #000;
-              margin-top: 5px;
-            }
-            
-            .qr-item-footer-small {
-              font-size: 8px;
-              color: #666;
-            }
-            
-            @media print { 
-              .no-print { display: none; }
-              body { margin: 0; padding: 5px; }
-            }
+            .qr-item img { max-width: 200px; margin: 20px auto; display: block; }
+            .qr-item h2 { margin: 10px 0; font-size: 18px; }
+            .qr-item p { margin: 5px 0; font-size: 14px; color: #666; }
+            @media print { .no-print { display: none; } }
           </style>
         </head>
         <body>
-          <div class="no-print" style="margin-bottom: 20px; text-align: center;">
-            <h2>Códigos QR - Etiquetas para Impresión</h2>
-            <p style="font-size: 12px; color: #666; margin-top: 10px;">
-              Tamaño de etiqueta: 5 x 5 cm aprox. • Imprime en papel adhesivo A4
-            </p>
-            <button onclick="window.print()" style="margin-top: 15px; padding: 10px 20px; font-size: 16px; cursor: pointer; background: #273a8f; color: white; border: none; border-radius: 4px;">
-              Imprimir Etiquetas
+          <div class="no-print" style="margin-bottom: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">
+              Imprimir
             </button>
           </div>
           <div class="qr-grid" id="qr-container"></div>
+          <script>
+            window.addEventListener('load', () => {
+              setTimeout(() => {
+                const printBtn = document.querySelector('button');
+                if (printBtn) printBtn.style.display = 'block';
+              }, 1000);
+            });
+          </script>
         </body>
       </html>
     `);
 
     const container = printWindow.document.getElementById('qr-container');
 
-
     for (const elevator of selectedElevatorsList) {
       const qrUrl = `${window.location.origin}/elevator/${elevator.id}`;
       const qrDataUrl = await QRCode.toDataURL(qrUrl, {
         width: 300,
-        margin: 3,
+        margin: 2,
         color: { dark: '#000000', light: '#FFFFFF' },
-        errorCorrectionLevel: 'M',
       });
-
-      // Nombre interno preferente: internal_name, nombre_interno, corto, sino vacío
-      const internalName = elevator.internal_name || elevator.nombre_interno || elevator.corto || '';
-      const elevatorNumber = elevator.elevator_number !== undefined && elevator.elevator_number !== null ? `N° ${elevator.elevator_number}` : '';
 
       const qrItem = printWindow.document.createElement('div');
       qrItem.className = 'qr-item';
       qrItem.innerHTML = `
-        <div class="qr-item-header">${elevator.clients?.company_name || 'Cliente'}</div>
-        <div style="font-size:11px;font-weight:bold;color:#222;">${internalName}</div>
-        <div style="font-size:10px;font-weight:bold;color:#DC2626;">${elevatorNumber}</div>
-        <div class="qr-item-code">
-          <img src="${qrDataUrl}" alt="QR Code" />
-        </div>
-        <div class="qr-item-footer">${elevator.internal_code}</div>
-        <div class="qr-item-footer-small">${elevator.location_building}</div>
+        <h2>${elevator.clients?.company_name || 'Cliente'}</h2>
+        <img src="${qrDataUrl}" alt="QR Code" />
+        <p><strong>${elevator.brand} ${elevator.model}</strong></p>
+        <p>Código: ${elevator.internal_code}</p>
+        <p>${elevator.location_building} - ${elevator.location_floor}</p>
+        <p style="font-size: 12px; margin-top: 10px;">${elevator.serial_number}</p>
       `;
       container?.appendChild(qrItem);
     }
@@ -336,18 +267,16 @@ export function QRCodesCompleteView() {
 
   const downloadSingleQR = async (elevator: Elevator) => {
     const qrUrl = `${window.location.origin}/elevator/${elevator.id}`;
-    // Usar API externa para descargar QR
-    const apiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(qrUrl)}&margin=3`;
-    const response = await fetch(apiUrl);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
+    const qrDataUrl = await QRCode.toDataURL(qrUrl, {
+      width: 600,
+      margin: 2,
+      color: { dark: '#000000', light: '#FFFFFF' },
+    });
+
     const link = document.createElement('a');
-    link.href = url;
+    link.href = qrDataUrl;
     link.download = `QR_${elevator.internal_code}_${elevator.clients?.company_name || 'Cliente'}.png`;
-    document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
   };
 
   if (loading) {
@@ -442,7 +371,7 @@ export function QRCodesCompleteView() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredElevators.map((elevator) => (
-                    <QRCard key={elevator.id} elevator={elevator} />
+                    <QRCard key={elevator.id} elevator={elevator as any} />
                   ))}
                 </div>
               )}
@@ -511,68 +440,54 @@ export function QRCodesCompleteView() {
                   <p className="text-slate-600 font-medium">No hay códigos QR disponibles</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredElevators.map((elevator) => (
                     <div
                       key={elevator.id}
                       onClick={() => toggleElevatorSelection(elevator.id)}
-                      className={`relative rounded-lg overflow-hidden border-2 transition cursor-pointer ${
+                      className={`relative border-2 rounded-xl p-6 cursor-pointer transition ${
                         selectedElevators.has(elevator.id)
-                          ? 'border-blue-600 bg-blue-50 shadow-lg'
-                          : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
+                          ? 'border-blue-600 bg-blue-50'
+                          : 'border-slate-200 hover:border-slate-300'
                       }`}
                     >
-                      {/* Checkbox en esquina superior derecha */}
-                      <div className="absolute top-3 right-3 z-10">
+                      <div className="absolute top-4 right-4">
                         {selectedElevators.has(elevator.id) ? (
-                          <CheckSquare className="w-6 h-6 text-blue-600 drop-shadow" />
+                          <CheckSquare className="w-6 h-6 text-blue-600" />
                         ) : (
                           <Square className="w-6 h-6 text-slate-400" />
                         )}
                       </div>
 
-                      <div className="p-4 flex flex-col items-center justify-center text-center h-full bg-white">
-                        {/* Nombre interno (arriba del QR) */}
-                        <h3 className="font-bold text-slate-900 text-sm mb-3 line-clamp-2">
+                      <div className="text-center">
+                        <h3 className="font-bold text-slate-900 mb-2">
                           {elevator.clients?.company_name}
                         </h3>
-
-                        {/* QR Code - Mejorado con mejor generación */}
-                        <div className="w-40 h-40 bg-white border border-slate-200 rounded p-2 mb-3 flex items-center justify-center">
+                        <div className="bg-white p-4 rounded-lg mb-4">
                           <img
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
                               `${window.location.origin}/elevator/${elevator.id}`
-                            )}&margin=1`}
+                            )}`}
                             alt="QR Code"
-                            className="w-full h-full object-contain image-rendering: pixelated"
-                            onError={() => {
-                              // Fallback si falla la generación
-                              console.error('QR generation failed for elevator:', elevator.id);
-                            }}
+                            className="w-full max-w-[200px] mx-auto"
                           />
                         </div>
-
-                        {/* Código interno (debajo del QR) */}
-                        <p className="font-bold text-slate-900 text-sm mb-1">
-                          {elevator.internal_code}
+                        <p className="font-semibold text-slate-900 mb-1">
+                          {elevator.brand} {elevator.model}
                         </p>
-
-                        {/* Número de ascensor / ubicación */}
-                        <p className="text-xs text-slate-600 mb-3">
-                          {elevator.location_building}
-                          {elevator.location_floor && ` - Piso ${elevator.location_floor}`}
+                        <p className="text-sm text-slate-600 mb-1">Código: {elevator.internal_code}</p>
+                        <p className="text-sm text-slate-600">
+                          {elevator.location_building} - {elevator.location_floor}
                         </p>
-
-                        {/* Botón descargar */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             downloadSingleQR(elevator);
                           }}
-                          className="w-full px-3 py-2 bg-green-600 text-white text-sm rounded font-medium hover:bg-green-700 transition flex items-center justify-center gap-2"
+                          className="mt-4 flex items-center justify-center gap-2 w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm"
                         >
                           <Download className="w-4 h-4" />
-                          PNG
+                          Descargar PNG
                         </button>
                       </div>
                     </div>

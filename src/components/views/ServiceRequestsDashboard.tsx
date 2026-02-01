@@ -36,7 +36,7 @@ interface ServiceRequestWithDetails extends ServiceRequest {
   };
 }
 
-export function ServiceRequestsDashboard({ onNavigate }: { onNavigate?: (path: string, clientId?: string) => void }) {
+export function ServiceRequestsDashboard() {
   const { profile } = useAuth();
   const [requests, setRequests] = useState<ServiceRequestWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -886,20 +886,7 @@ export function ServiceRequestsDashboard({ onNavigate }: { onNavigate?: (path: s
                       <div>
                         <h3 className="text-lg font-semibold text-gray-900">{request.title}</h3>
                         <p className="text-sm text-gray-600">
-                          <button
-                            onClick={() =>
-                              onNavigate?.(
-                                'client-profile',
-                                request.client_id,
-                              )
-                            }
-                            className="text-blue-600 hover:underline font-medium"
-                          >
-                            {request.clients?.company_name ||
-                              request.clients?.building_name}
-                          </button>
-                          {' - Ascensor #'}
-                          {request.elevators?.elevator_number}
+                          {request.clients?.company_name || request.clients?.building_name} - Ascensor #{request.elevators?.elevator_number}
                         </p>
                       </div>
                     </div>

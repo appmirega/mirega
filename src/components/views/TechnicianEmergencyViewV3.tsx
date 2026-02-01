@@ -1,20 +1,16 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { QrCode, Search, Clock, AlertTriangle, History } from 'lucide-react';
 import { EmergencyQRScanner } from '../emergency/EmergencyQRScanner';
 import { ClientSelector } from '../emergency/ClientSelector';
-import { EmergencyForm } from '../emergency/EmergencyForm';
-import { InProgressEmergencies } from '../emergency/InProgressEmergencies';
-import { StoppedElevators } from '../emergency/StoppedElevators';
-import { EmergencyHistory } from '../emergency/EmergencyHistory';
 
-type ViewMode = 'main' | 'qr-scanner' | 'client-selector' | 'emergency-form' | 'in-progress' | 'stopped' | 'history';
+type ViewMode = 'main' | 'qr-scanner' | 'client-selector' | 'in-progress' | 'stopped' | 'history';
 
-export function TechnicianEmergencyView() {
+export function TechnicianEmergencyViewV3() {
   const [viewMode, setViewMode] = useState<ViewMode>('main');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
-  const [selectedElevatorIds, setSelectedElevatorIds] = useState<string[]>([]);
-  const [resumeVisitId, setResumeVisitId] = useState<string | null>(null);
+  const [selectedElevatorId, setSelectedElevatorId] = useState<string | null>(null);
 
+  // Renderizar vista según modo
   const renderContent = () => {
     switch (viewMode) {
       case 'qr-scanner':
@@ -23,8 +19,8 @@ export function TechnicianEmergencyView() {
             onCancel={() => setViewMode('main')}
             onElevatorSelected={(clientId, elevatorId) => {
               setSelectedClientId(clientId);
-              setSelectedElevatorIds([elevatorId]);
-              setViewMode('emergency-form');
+              setSelectedElevatorId(elevatorId);
+              // Aquí se abrirá el formulario de emergencia
             }}
           />
         );
@@ -35,61 +31,20 @@ export function TechnicianEmergencyView() {
             onCancel={() => setViewMode('main')}
             onElevatorSelected={(clientId, elevatorId) => {
               setSelectedClientId(clientId);
-              setSelectedElevatorIds([elevatorId]);
-              setViewMode('emergency-form');
-            }}
-          />
-        );
-
-      case 'emergency-form':
-        console.log('🔀 TechnicianEmergencyView: Renderizando EmergencyForm', { 
-          selectedClientId, 
-          selectedElevatorIds 
-        });
-        
-        if (!selectedClientId || selectedElevatorIds.length === 0) {
-          console.warn('⚠️ No hay cliente o ascensores seleccionados, volviendo a main');
-          setViewMode('main');
-          return null;
-        }
-        return (
-          <EmergencyForm
-            clientId={selectedClientId}
-            elevatorIds={selectedElevatorIds}
-            existingVisitId={resumeVisitId}
-            onComplete={() => {
-              setSelectedClientId(null);
-              setSelectedElevatorIds([]);
-              setResumeVisitId(null);
-              setViewMode('main');
-            }}
-            onCancel={() => {
-              setSelectedClientId(null);
-              setSelectedElevatorIds([]);
-              setResumeVisitId(null);
-              setViewMode('main');
+              setSelectedElevatorId(elevatorId);
+              // Aquí se abrirá el formulario de emergencia
             }}
           />
         );
 
       case 'in-progress':
-        return (
-          <InProgressEmergencies 
-            onBack={() => setViewMode('main')} 
-            onResume={(visitId, clientId, elevatorIds) => {
-              setResumeVisitId(visitId);
-              setSelectedClientId(clientId);
-              setSelectedElevatorIds(elevatorIds);
-              setViewMode('emergency-form');
-            }}
-          />
-        );
+        return <div className="p-6"><p>Emergencias en Progreso (por implementar)</p></div>;
 
       case 'stopped':
-        return <StoppedElevators onBack={() => setViewMode('main')} />;
+        return <div className="p-6"><p className="text-red-600">Ascensores Detenidos (por implementar)</p></div>;
 
       case 'history':
-        return <EmergencyHistory onBack={() => setViewMode('main')} />;
+        return <div className="p-6"><p>Historial (por implementar)</p></div>;
 
       default:
         return (
@@ -99,7 +54,7 @@ export function TechnicianEmergencyView() {
               <p className="text-gray-600 mt-2">Gestión completa de emergencias</p>
             </div>
 
-            {/* Grid de opciones - 2 columnas como Mantenimiento */}
+            {/* Grid de opciones - Igual que mantenimiento */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Escanear QR */}
               <button
@@ -114,12 +69,12 @@ export function TechnicianEmergencyView() {
                     Escanear Código QR
                   </h3>
                   <p className="text-sm text-gray-600">
-                    Iniciar con código QR
+                    Buscar cliente por QR
                   </p>
                 </div>
               </button>
 
-              {/* Buscar Edificio Manualmente */}
+              {/* Buscar Cliente Manualmente */}
               <button
                 onClick={() => setViewMode('client-selector')}
                 className="flex items-start gap-4 p-6 bg-white border-2 border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all"
@@ -129,10 +84,10 @@ export function TechnicianEmergencyView() {
                 </div>
                 <div className="flex-1 text-left">
                   <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                    Buscar Edificio
+                    Buscar Cliente Manualmente
                   </h3>
                   <p className="text-sm text-gray-600">
-                    Seleccionar por nombre
+                    Seleccionar de la lista
                   </p>
                 </div>
               </button>
@@ -173,7 +128,7 @@ export function TechnicianEmergencyView() {
                 </div>
               </button>
 
-              {/* Historial - Ocupa 2 columnas */}
+              {/* Historial */}
               <button
                 onClick={() => setViewMode('history')}
                 className="flex items-start gap-4 p-6 bg-purple-50 border-2 border-purple-200 rounded-xl hover:bg-purple-100 hover:border-purple-300 transition-all md:col-span-2"

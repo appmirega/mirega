@@ -14,21 +14,10 @@ import {
   Eye,
   EyeOff,
   Shield,
-  Bell,
-  DollarSign,
 } from 'lucide-react';
 import { ClientForm } from '../forms/ClientForm';
 import TechnicianForm from '../forms/TechnicianForm';
 import AdminForm from '../forms/AdminForm';
-import { CoordinationRequestsPanel } from '../calendar/CoordinationRequestsPanel';
-import { AlertDashboard } from './AlertDashboard';
-import {
-  EmergenciesPanel,
-  MaintenancesPanel,
-  ServiceRequestsPanel,
-  QuotationsPanel,
-  WorkOrdersPanel,
-} from './AdminDashboardPanels';
 
 type ViewMode = 'dashboard' | 'add-client' | 'add-technician' | 'add-admin' | 'settings';
 
@@ -53,7 +42,6 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
     pendingQuotations: 0,
   });
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
-  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [viewSettings, setViewSettings] = useState<ViewSettings>({
@@ -95,40 +83,6 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
         scheduledToday: scheduled.count || 0,
         pendingQuotations: quotations.count || 0,
       });
-
-      // Cargar órdenes de trabajo pendientes de aprobación que llevan más de 3 días
-      const threeAgo = new Date();
-      threeAgo.setDate(threeAgo.getDate() - 3);
-      const threeDaysAgo = threeAgo.toISOString();
-
-      const { data: pendingWO } = await supabase
-        .from('work_orders')
-        .select(`
-          id,
-          folio_number,
-          description,
-          quotation_amount,
-          status,
-          created_at,
-          buildings:building_id (
-            name,
-            clients:client_id (
-              company_name
-            )
-          )
-        `)
-        .eq('status', 'pending_approval')
-        .lt('created_at', threeDaysAgo)
-        .order('created_at', { ascending: true });
-
-      if (pendingWO) {
-        const transformedWO = (pendingWO || []).map(item => ({
-          ...item,
-          buildings: Array.isArray(item.buildings) && item.buildings.length > 0 ? item.buildings[0] : item.buildings,
-          daysWaiting: Math.floor((new Date().getTime() - new Date(item.created_at).getTime()) / (1000 * 60 * 60 * 24))
-        }));
-        setPendingApprovals(transformedWO as any);
-      }
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
@@ -332,83 +286,70 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
       </div>
 
       {viewSettings.showStats && (
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Bell className="w-6 h-6 text-red-600" />
-            Centro de Alertas y Notificaciones
-          </h2>
-          <AlertDashboard onNavigate={onNavigate} />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-blue-500 p-3 rounded-lg">
+              <Building2 className="w-6 h-6 text-white" />
+            </div>
+          </div>
+          <h3 className="text-2xl font-bold text-slate-900 mb-1">{stats.totalClients}</h3>
+          <p className="text-sm text-slate-600">Clientes Activos</p>
         </div>
-      )}
 
-      {/* Paneles Dinámicos */}
-      {viewSettings.showPerformance && (
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold text-slate-900">Monitoreo Operacional</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <EmergenciesPanel />
-            <MaintenancesPanel />
-            <ServiceRequestsPanel />
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-slate-500 p-3 rounded-lg">
+              <Wrench className="w-6 h-6 text-white" />
+            </div>
           </div>
+          <h3 className="text-2xl font-bold text-slate-900 mb-1">{stats.totalElevators}</h3>
+          <p className="text-sm text-slate-600">Ascensores en Servicio</p>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <QuotationsPanel />
-            <WorkOrdersPanel />
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-green-500 p-3 rounded-lg">
+              <Users className="w-6 h-6 text-white" />
+            </div>
           </div>
+          <h3 className="text-2xl font-bold text-slate-900 mb-1">{stats.activeTechnicians}</h3>
+          <p className="text-sm text-slate-600">Técnicos Activos</p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-red-500 p-3 rounded-lg">
+              <AlertTriangle className="w-6 h-6 text-white" />
+            </div>
+          </div>
+          <h3 className="text-2xl font-bold text-slate-900 mb-1">{stats.activeEmergencies}</h3>
+          <p className="text-sm text-slate-600">Emergencias Activas</p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-purple-500 p-3 rounded-lg">
+              <Calendar className="w-6 h-6 text-white" />
+            </div>
+          </div>
+          <h3 className="text-2xl font-bold text-slate-900 mb-1">{stats.scheduledToday}</h3>
+          <p className="text-sm text-slate-600">Mantenimientos Hoy</p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-orange-500 p-3 rounded-lg">
+              <FileText className="w-6 h-6 text-white" />
+            </div>
+          </div>
+          <h3 className="text-2xl font-bold text-slate-900 mb-1">{stats.pendingQuotations}</h3>
+          <p className="text-sm text-slate-600">Cotizaciones Pendientes</p>
+        </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Panel de Alertas de Órdenes Pendientes */}
-        {pendingApprovals.length > 0 && (
-          <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl shadow-lg border-2 border-red-200 p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="bg-red-100 p-3 rounded-lg">
-                <Bell className="w-6 h-6 text-red-600" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-red-900">⚠️ Órdenes Pendientes de Respuesta</h2>
-                <p className="text-sm text-red-700">Han esperado más de 3 días sin aprobación</p>
-              </div>
-            </div>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {pendingApprovals.map((wo) => (
-                <div key={wo.id} className="bg-white rounded-lg p-4 border-l-4 border-red-500 shadow-sm hover:shadow-md transition">
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div className="flex-1">
-                      <h3 className="font-bold text-slate-900">{wo.folio_number}</h3>
-                      <p className="text-xs text-slate-500 mb-1">{wo.buildings?.name}</p>
-                      <p className="text-sm text-slate-600">{wo.description}</p>
-                    </div>
-                    <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded">
-                      {wo.daysWaiting} días
-                    </span>
-                  </div>
-                  {wo.quotation_amount && (
-                    <div className="flex items-center gap-1 text-sm font-semibold text-green-600 mt-2">
-                      <DollarSign className="w-4 h-4" />
-                      ${wo.quotation_amount.toLocaleString('es-CL')}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => onNavigate?.('work-orders')}
-              className="mt-4 w-full bg-red-600 text-white py-2 rounded-lg font-medium hover:bg-red-700 transition"
-            >
-              Revisar Órdenes Pendientes
-            </button>
-          </div>
-        )}
-
-        {viewSettings.showActivity && (
-          <div>
-            <CoordinationRequestsPanel />
-          </div>
-        )}
-
         {viewSettings.showActivity && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <div className="flex items-center gap-3 mb-6">
@@ -516,23 +457,16 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
             Asignar Ruta a Técnico
           </button>
           <button
-            onClick={() => onNavigate?.('maintenance-checklist')}
+            onClick={() => onNavigate?.('maintenance')}
             className="bg-slate-800 text-white px-6 py-3 rounded-lg font-semibold hover:bg-slate-700 transition border border-slate-700"
           >
-            Mantenimientos
-          </button>
-          <button
-            onClick={() => onNavigate?.('maintenance-calendar')}
-            className="bg-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-purple-700 transition flex items-center gap-2"
-          >
-            <Calendar className="w-5 h-5" />
-            📅 Calendario de Mantenimientos
+            Programar Mantenimiento
           </button>
           <button
             onClick={() => onNavigate?.('emergencies')}
-            className="bg-red-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-red-700 transition"
+            className="bg-slate-800 text-white px-6 py-3 rounded-lg font-semibold hover:bg-slate-700 transition border border-slate-700"
           >
-            🚨 Emergencias
+            Gestionar Emergencias
           </button>
           <button
             onClick={() => onNavigate?.('service-requests')}

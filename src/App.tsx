@@ -9,11 +9,13 @@ import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard
 import { ClientDashboard } from './components/dashboards/ClientDashboard';
 import { UserProfile } from './components/UserProfile';
 import { ManualsView } from './components/views/ManualsView';
-import { MaintenanceCalendarView } from './components/calendar/MaintenanceCalendarView';
+import { EmergencyView } from './components/views/EmergencyView';
 import { EmergencyV2View } from './components/views/EmergencyV2View';
 import { WorkOrdersView } from './components/views/WorkOrdersView';
 import { RoutesView } from './components/views/RoutesView';
 import { QuotationsManagementView } from './components/views/QuotationsManagementView';
+import { QRCodesManagementView } from './components/views/QRCodesManagementView';
+import { QRGalleryView } from './components/views/QRGalleryView';
 import { CertificationsDashboard } from './components/views/CertificationsDashboard';
 import { PDFHistoryView } from './components/views/PDFHistoryView';
 import { StatisticsView } from './components/views/StatisticsView';
@@ -25,9 +27,22 @@ import { CarpetaCeroView } from './components/views/CarpetaCeroView';
 import { RescueTrainingView } from './components/views/RescueTrainingView';
 import { MaintenanceCompleteView } from './components/views/MaintenanceCompleteView';
 import { EmergencyHistoryCompleteView } from './components/views/EmergencyHistoryCompleteView';
+import { EmergencyHistory } from './components/emergency/EmergencyHistory';
 import { QRCodesCompleteView } from './components/views/QRCodesCompleteView';
 import { AdminRescueTrainingView } from './components/views/AdminRescueTrainingView';
 import { TechnicianMaintenanceChecklistView } from './components/views/TechnicianMaintenanceChecklistView';
+import { TechnicianEmergencyView } from './components/views/TechnicianEmergencyView';
+import { TechnicianWorkOrdersView } from './components/views/TechnicianWorkOrdersView';
+import { TechnicianRoutesView } from './components/views/TechnicianRoutesView';
+import { NotificationsView } from './components/views/NotificationsView';
+import { ServiceRequestsDashboard } from './components/views/ServiceRequestsDashboard';
+import { UsersView } from './components/views/UsersView';
+import { ClientsView } from './components/views/ClientsView';
+import { ElevatorsCompleteView } from './components/views/ElevatorsCompleteView';
+import { ClientTechnicalInfoView } from './components/views/ClientTechnicalInfoView';
+import { DeveloperPermissionsPanel } from './components/views/DeveloperPermissionsPanel';
+import { AdminPermissionsPanel } from './components/views/AdminPermissionsPanel';
+import { StoppedElevators } from './components/emergency/StoppedElevators';
 
 interface DashboardRouterProps {
   onNavigate?: (path: string) => void;
@@ -35,10 +50,12 @@ interface DashboardRouterProps {
 
 function DashboardRouter({ onNavigate }: DashboardRouterProps) {
   const { profile } = useAuth();
+
   if (!profile) return null;
+
   switch (profile.role) {
     case 'developer':
-      return <DeveloperDashboard />;
+      return <DeveloperDashboard onNavigate={onNavigate} />;
     case 'admin':
       return <AdminDashboard onNavigate={onNavigate} />;
     case 'technician':
@@ -57,38 +74,37 @@ function DashboardRouter({ onNavigate }: DashboardRouterProps) {
 function AppContent() {
   const { user, profile, loading } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
-  const [viewKey, setViewKey] = useState(0);
   const [showSplash, setShowSplash] = useState(true);
-
+  const [viewKey, setViewKey] = useState(0); // Key para forzar re-render
+  
+  // Función mejorada para navegación que fuerza re-render
   const handleNavigate = (path: string) => {
     setCurrentView(path);
-    setViewKey(prev => prev + 1);
+    setViewKey(prev => prev + 1); // Incrementar key para forzar re-render
   };
 
   if (loading || showSplash) {
     return <SplashScreen onComplete={() => setShowSplash(false)} minDuration={3500} />;
   }
+
   if (!user) {
     return <LoginPage />;
   }
+
   const renderContent = () => {
     switch (currentView) {
       case 'profile':
         return <UserProfile />;
       case 'manuals':
         return <ManualsView />;
-      case 'maintenance-calendar':
-        return <MaintenanceCalendarView />;
-      case 'maintenance':
-        return <div>Mantenimiento: Vista no implementada o importación faltante</div>;
       case 'emergencies':
-        return profile?.role === 'technician' ? <TechnicianMaintenanceChecklistView /> : <EmergencyV2View />;
+        return profile?.role === 'technician' ? <TechnicianEmergencyView /> : <EmergencyV2View />;
       case 'client-emergencies':
         return <ClientEmergenciesView />;
       case 'work-orders':
-        return profile?.role === 'technician' ? <TechnicianMaintenanceChecklistView /> : <WorkOrdersView />;
+        return profile?.role === 'technician' ? <TechnicianWorkOrdersView /> : <WorkOrdersView />;
       case 'routes':
-        return profile?.role === 'technician' ? <TechnicianMaintenanceChecklistView /> : <RoutesView />;
+        return profile?.role === 'technician' ? <TechnicianRoutesView /> : <RoutesView />;
       case 'quotations':
         return <QuotationsManagementView />;
       case 'client-quotations':
@@ -104,11 +120,15 @@ function AppContent() {
       case 'maintenance-history':
         return <TechnicianMaintenanceChecklistView initialMode="history" />;
       case 'maintenance-complete':
-        return <MaintenanceCompleteView />;
+        return <MaintenanceCompleteView onNavigate={handleNavigate} />;
       case 'maintenance-complete-view':
-        return <MaintenanceCompleteView />;
+        return <MaintenanceCompleteView onNavigate={handleNavigate} />;
       case 'emergency-history':
-        return <EmergencyHistoryCompleteView />;
+        return <EmergencyHistory onBack={() => handleNavigate('dashboard')} />;
+      case 'emergency-history-complete':
+        return <EmergencyHistory onBack={() => handleNavigate('dashboard')} />;
+      case 'stopped-elevators':
+        return <StoppedElevators onBack={() => handleNavigate('dashboard')} />;
       case 'qr-codes-complete':
         return <QRCodesCompleteView />;
       case 'certifications':
@@ -122,26 +142,27 @@ function AppContent() {
       case 'bulk-operations':
         return <BulkOperationsView />;
       case 'notifications':
-        return <BulkOperationsView />;
+        return <NotificationsView />;
       case 'service-requests':
-        return <BulkOperationsView />;
+        return <ServiceRequestsDashboard />;
       case 'users':
-        return <BulkOperationsView />;
+        return <UsersView />;
       case 'clients':
-        return <BulkOperationsView />;
+        return <ClientsView />;
       case 'elevators':
-        return <BulkOperationsView />;
+        return <ElevatorsCompleteView onNavigate={handleNavigate} />;
       case 'client-technical-info':
-        return <BulkOperationsView />;
+        return <ClientTechnicalInfoView />;
       case 'developer-permissions':
-        return <BulkOperationsView />;
+        return <DeveloperPermissionsPanel />;
       case 'admin-permissions':
-        return <BulkOperationsView />;
+        return <AdminPermissionsPanel />;
       case 'dashboard':
       default:
         return <DashboardRouter onNavigate={handleNavigate} />;
     }
   };
+
   return (
     <Layout onNavigate={handleNavigate}>
       <div key={viewKey}>

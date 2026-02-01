@@ -170,7 +170,7 @@ export function EmergencyView() {
       low: 'Baja',
       medium: 'Media',
       high: 'Alta',
-      critical: 'Crtica',
+      critical: 'Crítica',
     };
     return labels[priority as keyof typeof labels] || priority;
   };
@@ -199,9 +199,249 @@ export function EmergencyView() {
             Cancelar
           </button>
         </div>
-        {/* ...resto del código del formulario... */}
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Ascensor *
+            </label>
+            <select
+              required
+              value={formData.elevator_id}
+              onChange={(e) => setFormData({ ...formData, elevator_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            >
+              <option value="">Seleccionar ascensor</option>
+              {elevators.map((elevator) => (
+                <option key={elevator.id} value={elevator.id}>
+                  {elevator.clients?.business_name} - {elevator.brand} {elevator.model} (S/N: {elevator.serial_number})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Reportado Por *
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.reported_by}
+              onChange={(e) => setFormData({ ...formData, reported_by: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              placeholder="Nombre de quien reporta"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Descripción del Problema *
+            </label>
+            <textarea
+              required
+              value={formData.issue_description}
+              onChange={(e) => setFormData({ ...formData, issue_description: e.target.value })}
+              rows={4}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              placeholder="Describe detalladamente el problema..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Prioridad *
+            </label>
+            <select
+              required
+              value={formData.priority}
+              onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            >
+              <option value="low">Baja</option>
+              <option value="medium">Media</option>
+              <option value="high">Alta</option>
+              <option value="critical">Crítica</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Asignar Técnico
+            </label>
+            <select
+              value={formData.assigned_technician_id}
+              onChange={(e) => setFormData({ ...formData, assigned_technician_id: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            >
+              <option value="">Sin asignar</option>
+              {technicians.map((tech) => (
+                <option key={tech.id} value={tech.id}>
+                  {tech.full_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition disabled:opacity-50"
+            >
+              {submitting ? 'Reportando...' : 'Reportar Emergencia'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className="px-6 py-3 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300 transition"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
       </div>
     );
   }
-  // ...resto del código de la vista de emergencias...
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Emergencias</h1>
+          <p className="text-slate-600 mt-1">Gestión de emergencias y atención inmediata</p>
+        </div>
+        <button
+          onClick={() => setViewMode('create')}
+          className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+        >
+          <Plus className="w-4 h-4" />
+          Reportar Emergencia
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-8 h-8 text-red-600" />
+            <div>
+              <p className="text-2xl font-bold text-red-900">
+                {emergencies.filter((e) => e.status === 'reported').length}
+              </p>
+              <p className="text-sm text-red-700">Reportadas</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <Clock className="w-8 h-8 text-blue-600" />
+            <div>
+              <p className="text-2xl font-bold text-blue-900">
+                {emergencies.filter((e) => e.status === 'in_progress').length}
+              </p>
+              <p className="text-sm text-blue-700">En Proceso</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <CheckCircle className="w-8 h-8 text-green-600" />
+            <div>
+              <p className="text-2xl font-bold text-green-900">
+                {emergencies.filter((e) => e.status === 'resolved').length}
+              </p>
+              <p className="text-sm text-green-700">Resueltas</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <User className="w-8 h-8 text-slate-600" />
+            <div>
+              <p className="text-2xl font-bold text-slate-900">{emergencies.length}</p>
+              <p className="text-sm text-slate-700">Total</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Cliente</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Ascensor</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Reportado</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Problema</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Prioridad</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Técnico</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {emergencies.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center">
+                    <AlertTriangle className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                    <p className="text-slate-600 font-medium">No hay emergencias reportadas</p>
+                    <p className="text-sm text-slate-500 mt-1">Las emergencias aparecerán aquí</p>
+                  </td>
+                </tr>
+              ) : (
+                emergencies.map((emergency) => (
+                  <tr key={emergency.id} className="hover:bg-slate-50 transition">
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-slate-900">
+                        {emergency.elevators?.clients?.business_name || 'N/A'}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-900">
+                        {emergency.elevators?.brand} {emergency.elevators?.model}
+                      </p>
+                      <p className="text-xs text-slate-500">S/N: {emergency.elevators?.serial_number}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-900">{emergency.reported_by}</p>
+                      <p className="text-xs text-slate-500">
+                        {new Date(emergency.reported_at).toLocaleString('es-ES')}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-900 max-w-xs truncate">{emergency.issue_description}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityBadge(
+                          emergency.priority
+                        )}`}
+                      >
+                        {getPriorityLabel(emergency.priority)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-900">{emergency.profiles?.full_name || 'Sin asignar'}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(
+                          emergency.status
+                        )}`}
+                      >
+                        {emergency.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }

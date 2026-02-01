@@ -71,23 +71,11 @@ export function ClientQuotationsView() {
 
   const loadQuotations = async () => {
     try {
-      // Intentar por profile_id primero
-      let { data: client } = await supabase
+      const { data: client } = await supabase
         .from('clients')
         .select('id')
         .eq('profile_id', profile?.id)
         .maybeSingle();
-
-      // Fallback a email matching para clientes legacy
-      if (!client && profile?.email) {
-        const { data: clientByEmail } = await supabase
-          .from('clients')
-          .select('id')
-          .eq('contact_email', profile.email)
-          .maybeSingle();
-        
-        client = clientByEmail;
-      }
 
       if (!client) {
         setLoading(false);
