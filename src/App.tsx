@@ -39,15 +39,6 @@ function App() {
 }
 
 export default App;
-  );
-}
-
-function App() {
-  return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
-  );
 
 }
 export default App;
