@@ -232,6 +232,7 @@ function AppContent() {
       </Layout>
     );
   }
+}
 
 function App() {
   return (
