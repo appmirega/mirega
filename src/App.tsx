@@ -15,8 +15,6 @@ function App() {
   const { user, profile, loading } = useAuth();
 
   const handleNavigate = (path) => {
-    setCurrentView(path);
-    setViewKey((prev) => prev + 1);
   };
 
   if (loading || showSplash) {
