@@ -62,6 +62,3 @@ export default function AppWrapper() {
     </AuthProvider>
   );
 }
-    setCurrentView(path);
-
-    setViewKey(prev => prev + 1);
