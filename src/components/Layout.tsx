@@ -183,6 +183,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
     };
   };
 
+  // Usa la función de navegación pasada por props para navegación centralizada
   const handleNavigation = (path: string) => {
     setSidebarOpen(false);
     if (onNavigate) {
@@ -287,6 +288,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
                   <div className="space-y-1 pl-2">
                     {section.items.map((item) => {
                       const Icon = item.icon;
+                      // Asegura que el resaltado depende de currentView recibido por props
                       const isActive = currentView === item.path;
                       return (
                         <button
