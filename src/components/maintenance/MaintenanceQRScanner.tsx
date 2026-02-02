@@ -30,9 +30,6 @@ export function MaintenanceQRScanner({
       setError(null);
       const qrData = JSON.parse(decodedText);
 
-      // ...existing code...
-      }
-
       // Si el QR tiene buildingId, buscar el edificio directamente
       if (qrData.buildingId) {
         const { data: building, error: buildingError } = await supabase
