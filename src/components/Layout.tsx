@@ -101,7 +101,7 @@ const navSections: NavSection[] = [
 
 export function Layout({ children, onNavigate }: LayoutProps) {
   const { profile, signOut } = useAuth();
-  const [currentView, setCurrentView] = useState('dashboard');
+  // Eliminado: el estado currentView se maneja globalmente en App.tsx
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -184,9 +184,6 @@ export function Layout({ children, onNavigate }: LayoutProps) {
   };
 
   const handleNavigation = (path: string) => {
-    // Siempre actualizar la vista, incluso si es la misma ruta
-    // Esto permite volver a la vista principal desde subsecciones
-    setCurrentView(path);
     setSidebarOpen(false);
     if (onNavigate) {
       onNavigate(path);
