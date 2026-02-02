@@ -7,6 +7,19 @@ import DeveloperDashboard from './components/dashboards/DeveloperDashboard';
 import { AdminDashboard } from './components/dashboards/AdminDashboard';
 import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard';
 import { ClientDashboard } from './components/dashboards/ClientDashboard';
+import { MaintenanceCalendarView } from './components/calendar/MaintenanceCalendarView';
+import { ManualsView } from './components/views/ManualsView';
+import { TechnicianMaintenanceChecklistView } from './components/views/TechnicianMaintenanceChecklistView';
+import { EmergencyV2View } from './components/views/EmergencyV2View';
+import { WorkOrdersView } from './components/views/WorkOrdersView';
+import { StatisticsView } from './components/views/StatisticsView';
+import { AuditLogView } from './components/views/AuditLogView';
+import { BulkOperationsView } from './components/views/BulkOperationsView';
+import { ClientEmergenciesView } from './components/views/ClientEmergenciesView';
+import { RescueTrainingView } from './components/views/RescueTrainingView';
+import { CarpetaCeroView } from './components/views/CarpetaCeroView';
+import { QRCodesCompleteView } from './components/views/QRCodesCompleteView';
+import { UserProfile } from './components/UserProfile';
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
