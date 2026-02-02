@@ -159,7 +159,3 @@ function App() {
   );
 }
 
-function App() {
-  return <div>Test mínimo</div>;
-}
-export default App;
