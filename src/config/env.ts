@@ -39,6 +39,10 @@ export const appConfig = {
   mode: import.meta.env.MODE,
 } as const;
 
+// Compatibilidad legacy: exportar SUPABASE_URL y SUPABASE_ANON_KEY
+export const SUPABASE_URL = supabaseConfig.url;
+export const SUPABASE_ANON_KEY = supabaseConfig.anonKey;
+
 /**
  * URLs y endpoints
  */
