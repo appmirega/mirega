@@ -31,8 +31,7 @@ export function MaintenanceQRScanner({
       setError(null);
       const qrData = JSON.parse(decodedText);
 
-      if (!qrData.buildingId && !qrData.clientId) {
-        throw new Error('Código QR inválido: falta información del edificio');
+        const [scanning, setScanning] = useState(false); // Restaurar scanning y setScanning necesarios para el funcionamiento del escáner
       }
 
       // Si el QR tiene buildingId, buscar el edificio directamente
