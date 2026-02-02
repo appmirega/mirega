@@ -184,6 +184,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
   };
 
   // Usa la función de navegación pasada por props para navegación centralizada
+  // Usa la función de navegación pasada por props para navegación centralizada
   const handleNavigation = (path: string) => {
     setSidebarOpen(false);
     if (onNavigate) {
