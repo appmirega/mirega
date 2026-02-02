@@ -13,6 +13,7 @@ import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard
 import { ClientDashboard } from './components/dashboards/ClientDashboard';
 
 function App() {
+  console.log('[App.tsx] App montando...');
   const [currentView, setCurrentView] = useState('dashboard');
   const [viewKey, setViewKey] = useState(0);
   const [showSplash, setShowSplash] = useState(true);
@@ -24,9 +25,11 @@ function App() {
   };
 
   if (loading || showSplash) {
+    console.log('[App.tsx] Mostrando SplashScreen');
     return <SplashScreen onComplete={() => setShowSplash(false)} minDuration={3500} />;
   }
   if (!user) {
+    console.log('[App.tsx] Mostrando LoginPage');
     return <LoginPage />;
   }
 
