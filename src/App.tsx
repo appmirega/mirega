@@ -1,3 +1,4 @@
+import { TechnicianMaintenanceChecklistView } from './components/views/TechnicianMaintenanceChecklistView';
 import { UserProfile } from './components/UserProfile';
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -95,6 +96,8 @@ function App() {
         }
       } else if (currentView === 'profile') {
         content = <UserProfile />;
+      } else if (currentView === 'maintenance-checklist') {
+        content = <TechnicianMaintenanceChecklistView />;
       } else {
         content = <div>Vista no implementada o importación faltante</div>;
       }
