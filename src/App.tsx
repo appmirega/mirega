@@ -1,4 +1,3 @@
-export default App;
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './components/LoginPage';
@@ -34,6 +33,7 @@ interface DashboardRouterProps {
   onNavigate?: (path: string) => void;
 }
 
+export default App;
 function DashboardRouter({ onNavigate }: DashboardRouterProps) {
   const { profile } = useAuth();
   if (!profile) return null;
