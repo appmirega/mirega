@@ -1,5 +1,4 @@
-  // Restaurar scanning y setScanning necesarios para el funcionamiento del escáner
-  const [scanning, setScanning] = useState(false);
+// ...existing code...
 import { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { supabase } from '../../lib/supabase';
@@ -31,7 +30,7 @@ export function MaintenanceQRScanner({
       setError(null);
       const qrData = JSON.parse(decodedText);
 
-        const [scanning, setScanning] = useState(false); // Restaurar scanning y setScanning necesarios para el funcionamiento del escáner
+      // ...existing code...
       }
 
       // Si el QR tiene buildingId, buscar el edificio directamente
