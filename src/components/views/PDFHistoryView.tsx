@@ -1,3 +1,4 @@
+import { SUPABASE_URL } from '../../config/env';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Download, FileText, Calendar, Mail, Search, Filter, Check, X } from 'lucide-react';
@@ -265,7 +266,7 @@ export function PDFHistoryView() {
         const base64 = base64data.split(',')[1];
 
         const response = await fetch(
-          `${import.meta.env.VITE_DATABASE_URL}/functions/v1/send-maintenance-report`,
+          `${SUPABASE_URL}/functions/v1/send-maintenance-report`,
           {
             method: 'POST',
             headers: {

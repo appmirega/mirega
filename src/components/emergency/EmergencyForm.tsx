@@ -1,3 +1,4 @@
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../config/env';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -37,16 +38,20 @@ interface LastEmergency {
 }
 
 export function EmergencyForm({ clientId, elevatorIds, onComplete, onCancel, existingVisitId }: EmergencyFormProps) {
-  console.log('🚨 ========== EMERGENCYFORM MONTADO ==========');
-  console.log('📥 Props recibidas:', { clientId, elevatorIds: elevatorIds.length, existingVisitId });
-  console.log('🔑 existingVisitId tipo:', typeof existingVisitId, 'valor:', existingVisitId);
+  if (import.meta.env.DEV) {
+    console.log('🚨 ========== EMERGENCYFORM MONTADO ==========');
+    console.log('📥 Props recibidas:', { clientId, elevatorIds: elevatorIds.length, existingVisitId });
+    console.log('🔑 existingVisitId tipo:', typeof existingVisitId, 'valor:', existingVisitId);
+  }
   
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [visitId, setVisitId] = useState<string | null>(existingVisitId || null);
   
-  console.log('📍 visitId inicial (state):', visitId);
+  if (import.meta.env.DEV) {
+    console.log('📍 visitId inicial (state):', visitId);
+  }
   
   // Datos del cliente y ascensores
   const [clientName, setClientName] = useState('');
@@ -123,16 +128,16 @@ export function EmergencyForm({ clientId, elevatorIds, onComplete, onCancel, exi
         resolution_photo_2_url: resolutionPhoto2Url || null,
         last_autosave: new Date().toISOString()
       };
-      
-      console.log('💾 Auto-guardando:', {
-        texto_descripcion: failureDescription?.length || 0,
-        texto_resolucion: resolutionSummary?.length || 0,
-        estado_final: finalStatus,
-        causa: failureCause,
-        receptor: receiverName
-      });
-      
-      console.log('📤 Enviando a BD:', dataToSave);
+      if (import.meta.env.DEV) {
+        console.log('💾 Auto-guardando:', {
+          texto_descripcion: failureDescription?.length || 0,
+          texto_resolucion: resolutionSummary?.length || 0,
+          estado_final: finalStatus,
+          causa: failureCause,
+          receptor: receiverName
+        });
+        console.log('📤 Enviando a BD:', dataToSave);
+      }
       
       const { data, error } = await supabase
         .from('emergency_visits')
@@ -143,7 +148,9 @@ export function EmergencyForm({ clientId, elevatorIds, onComplete, onCancel, exi
       if (error) {
         console.error('❌ Error auto-guardado:', error);
       } else {
-        console.log('✅ Guardado OK - Respuesta BD:', data);
+        if (import.meta.env.DEV) {
+          console.log('✅ Guardado OK - Respuesta BD:', data);
+        }
       }
       
     } catch (error) {
@@ -200,8 +207,8 @@ export function EmergencyForm({ clientId, elevatorIds, onComplete, onCancel, exi
         };
         
         // Usar fetch directamente (más confiable en cleanup)
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        const supabaseUrl = SUPABASE_URL;
+        const supabaseKey = SUPABASE_ANON_KEY;
         
         fetch(`${supabaseUrl}/rest/v1/emergency_visits?id=eq.${visitId}`, {
           method: 'PATCH',

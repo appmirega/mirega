@@ -1,3 +1,4 @@
+import { SUPABASE_URL } from '../config/env';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Database, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
@@ -17,7 +18,7 @@ export function DiagnosticPanel() {
   }, []);
 
   const runDiagnostics = async () => {
-    const supabaseUrl = import.meta.env.VITE_BOLT_DATABASE_URL || '';
+    const supabaseUrl = SUPABASE_URL;
     const supabaseKey = import.meta.env.VITE_BOLT_DATABASE_ANON_KEY || '';
 
     setDiagnostics(prev => ({

@@ -1,3 +1,5 @@
+import { SUPABASE_URL } from '../../config/env';
+import { validateRUT } from '../../utils/validateRUT';
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
@@ -347,6 +349,10 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       return fail('Todos los campos del cliente son obligatorios');
     }
 
+    if (clientData.rut && !validateRUT(clientData.rut)) {
+      return fail('El RUT ingresado no es válido.');
+    }
+
     if (!identicalElevators && elevators.length !== totalEquipments) {
       return fail(
         `Debes agregar exactamente ${totalEquipments} ascensores. Actualmente tienes ${elevators.length}.`
@@ -381,14 +387,10 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       }
 
       const apiBase =
-        import.meta.env.VITE_DATABASE_URL ||
-        import.meta.env.VITE_SUPABASE_URL ||
-        import.meta.env.VITE_SUPABASE_URL;
+        SUPABASE_URL;
 
       if (!apiBase) {
-        throw new Error(
-          'Falta VITE_DATABASE_URL / VITE_SUPABASE_URL en el frontend.'
-        );
+        throw new Error('Falta SUPABASE_URL en el frontend.');
       }
 
       const apiUrl = `${apiBase}/functions/v1/create-user`;

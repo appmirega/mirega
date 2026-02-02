@@ -1,4 +1,5 @@
 import { Bolt Database } from '../lib/supabase';
+import { SUPABASE_URL } from '../config/env';
 import { safeJson } from '../lib/safeJson';
 
 export type CreateUserPayload = {
@@ -13,7 +14,7 @@ export async function createUserViaApi(payload: CreateUserPayload) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('No hay sesión activa');
 
-  const supabaseUrl = import.meta.env.VITE_DATABASE_URL;
+  const supabaseUrl = SUPABASE_URL;
   const apiUrl = `${supabaseUrl}/functions/v1/create-user`;
 
   const resp = await fetch(apiUrl, {
@@ -39,7 +40,7 @@ export async function deleteUserViaApi(userId: string) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('No hay sesión activa');
 
-  const supabaseUrl = import.meta.env.VITE_DATABASE_URL;
+  const supabaseUrl = SUPABASE_URL;
   const apiUrl = `${supabaseUrl}/functions/v1/delete-user`;
 
   const resp = await fetch(apiUrl, {
