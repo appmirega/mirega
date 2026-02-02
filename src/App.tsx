@@ -7,19 +7,6 @@ import DeveloperDashboard from './components/dashboards/DeveloperDashboard';
 import { AdminDashboard } from './components/dashboards/AdminDashboard';
 import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard';
 import { ClientDashboard } from './components/dashboards/ClientDashboard';
-import { MaintenanceCalendarView } from './components/calendar/MaintenanceCalendarView';
-import { ManualsView } from './components/views/ManualsView';
-import { TechnicianMaintenanceChecklistView } from './components/views/TechnicianMaintenanceChecklistView';
-import { EmergencyV2View } from './components/views/EmergencyV2View';
-import { WorkOrdersView } from './components/views/WorkOrdersView';
-import { StatisticsView } from './components/views/StatisticsView';
-import { AuditLogView } from './components/views/AuditLogView';
-import { BulkOperationsView } from './components/views/BulkOperationsView';
-import { ClientEmergenciesView } from './components/views/ClientEmergenciesView';
-import { RescueTrainingView } from './components/views/RescueTrainingView';
-import { CarpetaCeroView } from './components/views/CarpetaCeroView';
-import { QRCodesCompleteView } from './components/views/QRCodesCompleteView';
-import { UserProfile } from './components/UserProfile';
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -88,28 +75,26 @@ function App() {
       break;
     case 'client-service-requests':
       content = <BulkOperationsView />;
-      break;
-    case 'client-emergencies':
-      content = <ClientEmergenciesView />;
-      break;
-    case 'rescue-training':
-      content = <RescueTrainingView />;
-      break;
-    case 'carpeta-cero':
-      content = <CarpetaCeroView />;
-      break;
-    case 'users':
-      content = <BulkOperationsView />;
-      break;
-    case 'clients':
-      content = <BulkOperationsView />;
-      break;
-    case 'qr-codes-complete':
-      content = <QRCodesCompleteView />;
-      break;
-    case 'developer-permissions':
-      content = <BulkOperationsView />;
-      break;
+      if (currentView === 'dashboard') {
+        switch (profile?.role) {
+          case 'developer':
+            content = <DeveloperDashboard />;
+            break;
+          case 'admin':
+            content = <AdminDashboard onNavigate={handleNavigate} />;
+            break;
+          case 'technician':
+            content = <TechnicianDashboard onNavigate={handleNavigate} />;
+            break;
+          case 'client':
+            content = <ClientDashboard onNavigate={handleNavigate} />;
+            break;
+          default:
+            content = <div className="text-center py-12"><p className="text-slate-600">Rol no reconocido</p></div>;
+        }
+      } else {
+        content = <div>Vista no implementada o importación faltante</div>;
+      }
     case 'admin-permissions':
       content = <BulkOperationsView />;
       break;
