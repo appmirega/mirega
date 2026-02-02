@@ -32,6 +32,7 @@ import {
 interface LayoutProps {
   children: ReactNode;
   onNavigate?: (path: string) => void;
+  currentView?: string;
 }
 
 interface NavItem {
@@ -99,9 +100,8 @@ const navSections: NavSection[] = [
   },
 ];
 
-export function Layout({ children, onNavigate }: LayoutProps) {
+export function Layout({ children, onNavigate, currentView }: LayoutProps) {
   const { profile, signOut } = useAuth();
-  // Eliminado: el estado currentView se maneja globalmente en App.tsx
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
