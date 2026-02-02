@@ -1,3 +1,4 @@
+import { UserProfile } from './components/UserProfile';
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './components/LoginPage';
@@ -92,6 +93,8 @@ function App() {
           default:
             content = <div className="text-center py-12"><p className="text-slate-600">Rol no reconocido</p></div>;
         }
+      } else if (currentView === 'profile') {
+        content = <UserProfile />;
       } else {
         content = <div>Vista no implementada o importación faltante</div>;
       }
