@@ -2,10 +2,16 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Plus, Edit, Download, Filter, Wrench } from 'lucide-react';
 
+
 interface Maintenance {
   id: string;
-  building: string;
-  client: string;
+  building: {
+    name: string;
+    address: string;
+  };
+  client: {
+    company_name: string;
+  };
   scheduled_date: string;
   status: string;
 }
@@ -17,18 +23,32 @@ export function AdminMaintenancesDashboard() {
   const [filter, setFilter] = useState('');
   const [showOperativeView, setShowOperativeView] = useState(false);
 
+
   useEffect(() => {
     loadMaintenances();
   }, []);
 
   const loadMaintenances = async () => {
     setLoading(true);
-    // Simulación: reemplazar por fetch real a supabase
-    setMaintenances([
-      { id: '1', building: 'Edificio A', client: 'Cliente X', scheduled_date: '2026-02-10', status: 'pending' },
-      { id: '2', building: 'Edificio B', client: 'Cliente Y', scheduled_date: '2026-02-12', status: 'completed' },
-    ]);
-    setLoading(false);
+    try {
+      const { data, error } = await supabase
+        .from('maintenance_schedules')
+        .select(`
+          id,
+          scheduled_date,
+          status,
+          building:building_id (name, address),
+          client:client_id (company_name)
+        `)
+        .order('scheduled_date', { ascending: true });
+      if (error) throw error;
+      setMaintenances(data || []);
+    } catch (err) {
+      console.error('Error loading maintenances:', err);
+      setMaintenances([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDownload = () => {
@@ -88,10 +108,10 @@ export function AdminMaintenancesDashboard() {
           ) : (
             maintenances.map(m => (
               <tr key={m.id} className="border-b">
-                <td className="p-2">{m.building}</td>
-                <td className="p-2">{m.client}</td>
-                <td className="p-2">{m.scheduled_date}</td>
-                <td className="p-2">{m.status === 'pending' ? 'Pendiente' : 'Completado'}</td>
+                <td className="p-2">{m.building?.name || '-'}</td>
+                <td className="p-2">{m.client?.company_name || '-'}</td>
+                <td className="p-2">{m.scheduled_date?.split('T')[0]}</td>
+                <td className="p-2">{m.status === 'pending' ? 'Pendiente' : m.status === 'completed' ? 'Completado' : m.status}</td>
                 <td className="p-2 flex gap-2">
                   <button className="text-blue-600 hover:underline flex items-center gap-1"><Edit className="w-4 h-4" /> Editar</button>
                   {/* Otras acciones: ver, eliminar, etc. */}
