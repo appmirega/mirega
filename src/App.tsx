@@ -67,9 +67,9 @@ function App() {
       break;
     case 'maintenance-checklist':
       content = <TechnicianMaintenanceChecklistView />;
-      break;
-    case 'emergencies':
-      content = <EmergencyV2View />;
+          case 'admin-maintenance-dashboard':
+            content = <AdminMaintenancesDashboard />;
+            break;
       break;
     case 'work-orders':
       content = <WorkOrdersView />;
