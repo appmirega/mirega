@@ -112,6 +112,8 @@ function App() {
         } else {
           content = <div className="text-center py-12">Rol no reconocido para mantenimientos.</div>;
         }
+      // Agregar navegación desde AdminMaintenancesDashboard a la vista operativa
+      // src/components/views/AdminMaintenancesDashboard.tsx
       } else {
         content = <div>Vista no implementada o importación faltante</div>;
       }
