@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Plus, Edit, Download, Filter } from 'lucide-react';
+import { Plus, Edit, Download, Filter, Wrench } from 'lucide-react';
 
 interface Maintenance {
   id: string;
