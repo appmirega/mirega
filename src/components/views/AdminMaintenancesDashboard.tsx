@@ -20,6 +20,56 @@ export function AdminMaintenancesDashboard() {
   const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewForm, setShowNewForm] = useState(false);
+  const [formData, setFormData] = useState({
+    building_id: '',
+    client_id: '',
+    scheduled_date: '',
+    status: 'pending',
+    notes: ''
+  });
+  const [formLoading, setFormLoading] = useState(false);
+  const [formError, setFormError] = useState<string|null>(null);
+  const [buildingsList, setBuildingsList] = useState<any[]>([]);
+  const [clientsList, setClientsList] = useState<any[]>([]);
+    useEffect(() => {
+      if (showNewForm) {
+        loadBuildingsAndClients();
+      }
+    }, [showNewForm]);
+
+    const loadBuildingsAndClients = async () => {
+      const { data: buildings } = await supabase.from('buildings').select('id, name, client_id').eq('is_active', true);
+      const { data: clients } = await supabase.from('clients').select('id, company_name');
+      setBuildingsList(buildings || []);
+      setClientsList(clients || []);
+    };
+
+    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+      setFormData({ ...formData, [e.target.name]: e.target.value });
+    };
+
+    const handleCreateMaintenance = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setFormLoading(true);
+      setFormError(null);
+      try {
+        const { error } = await supabase.from('maintenance_schedules').insert({
+          building_id: formData.building_id,
+          client_id: formData.client_id,
+          scheduled_date: formData.scheduled_date,
+          status: formData.status,
+          notes: formData.notes
+        });
+        if (error) throw error;
+        setShowNewForm(false);
+        setFormData({ building_id: '', client_id: '', scheduled_date: '', status: 'pending', notes: '' });
+        loadMaintenances();
+      } catch (err: any) {
+        setFormError(err.message || 'Error al crear mantenimiento');
+      } finally {
+        setFormLoading(false);
+      }
+    };
   const [filter, setFilter] = useState('');
   const [showOperativeView, setShowOperativeView] = useState(false);
 
@@ -125,8 +175,39 @@ export function AdminMaintenancesDashboard() {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-8 rounded shadow max-w-md w-full">
             <h2 className="text-xl font-bold mb-4">Nuevo Mantenimiento</h2>
-            {/* Aquí va el formulario real de creación */}
-            <button className="mt-4 px-4 py-2 bg-gray-200 rounded" onClick={() => setShowNewForm(false)}>Cerrar</button>
+            <form onSubmit={handleCreateMaintenance} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Edificio</label>
+                <select name="building_id" value={formData.building_id} onChange={handleFormChange} required className="w-full border rounded px-2 py-1">
+                  <option value="">Selecciona un edificio</option>
+                  {buildingsList.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Cliente</label>
+                <select name="client_id" value={formData.client_id} onChange={handleFormChange} required className="w-full border rounded px-2 py-1">
+                  <option value="">Selecciona un cliente</option>
+                  {clientsList.map(c => (
+                    <option key={c.id} value={c.id}>{c.company_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Fecha Programada</label>
+                <input type="date" name="scheduled_date" value={formData.scheduled_date} onChange={handleFormChange} required className="w-full border rounded px-2 py-1" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Notas</label>
+                <textarea name="notes" value={formData.notes} onChange={handleFormChange} className="w-full border rounded px-2 py-1" />
+              </div>
+              {formError && <div className="text-red-600 text-sm">{formError}</div>}
+              <div className="flex gap-2 justify-end">
+                <button type="button" className="px-4 py-2 bg-gray-200 rounded" onClick={() => setShowNewForm(false)} disabled={formLoading}>Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded" disabled={formLoading}>{formLoading ? 'Guardando...' : 'Crear'}</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
