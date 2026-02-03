@@ -21,7 +21,12 @@ function App() {
   const { user, profile, loading } = useAuth();
 
   const handleNavigate = (path) => {
-    setCurrentView(path);
+    // Si el usuario es admin y navega a 'maintenance-checklist', mostrar el dashboard de gestión
+    if (profile?.role === 'admin' && path === 'maintenance-checklist') {
+      setCurrentView('admin-maintenance-dashboard');
+    } else {
+      setCurrentView(path);
+    }
     setViewKey((prev) => prev + 1);
   };
 
@@ -105,13 +110,13 @@ function App() {
       } else if (currentView === 'maintenance-checklist') {
         if (profile?.role === 'technician') {
           content = <TechnicianMaintenanceChecklistView />;
-        } else if (profile?.role === 'admin') {
-          content = <AdminMaintenancesDashboard />;
         } else if (profile?.role === 'client') {
           content = <div className="text-center py-12">La vista de mantenimientos para cliente está en desarrollo.</div>;
         } else {
           content = <div className="text-center py-12">Rol no reconocido para mantenimientos.</div>;
         }
+      } else if (currentView === 'admin-maintenance-dashboard') {
+        content = <AdminMaintenancesDashboard />;
       // Agregar navegación desde AdminMaintenancesDashboard a la vista operativa
       // src/components/views/AdminMaintenancesDashboard.tsx
       } else {
