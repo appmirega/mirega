@@ -1,4 +1,5 @@
 import { MaintenancesDashboard } from './components/views/MaintenancesDashboard';
+import { AdminMaintenancesDashboard } from './components/views/AdminMaintenancesDashboard';
 import { MaintenanceAdminView } from './components/views/MaintenanceAdminView';
 import { TechnicianMaintenanceChecklistView } from './components/views/TechnicianMaintenanceChecklistView';
 import { UserProfile } from './components/UserProfile';
@@ -105,7 +106,7 @@ function App() {
         if (profile?.role === 'technician') {
           content = <TechnicianMaintenanceChecklistView />;
         } else if (profile?.role === 'admin') {
-          content = <MaintenancesDashboard />;
+          content = <AdminMaintenancesDashboard />;
         } else if (profile?.role === 'client') {
           content = <div className="text-center py-12">La vista de mantenimientos para cliente está en desarrollo.</div>;
         } else {
