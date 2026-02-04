@@ -31,6 +31,9 @@ export function AdminMaintenancesDashboard() {
   const [formError, setFormError] = useState<string|null>(null);
   const [buildingsList, setBuildingsList] = useState<any[]>([]);
   const [clientsList, setClientsList] = useState<any[]>([]);
+  // Nuevo: guardar el último mantenimiento creado
+  const [lastCreatedMaintenance, setLastCreatedMaintenance] = useState<any|null>(null);
+  const [showChecklistView, setShowChecklistView] = useState(false);
     useEffect(() => {
       if (showNewForm) {
         loadBuildingsAndClients();
@@ -53,17 +56,21 @@ export function AdminMaintenancesDashboard() {
       setFormLoading(true);
       setFormError(null);
       try {
-        const { error } = await supabase.from('maintenance_schedules').insert({
+        const { data, error } = await supabase.from('maintenance_schedules').insert({
           building_id: formData.building_id,
           client_id: formData.client_id,
           scheduled_date: formData.scheduled_date,
           status: formData.status,
           notes: formData.notes
-        });
+        }).select('id, building_id, client_id, scheduled_date, status');
         if (error) throw error;
         setShowNewForm(false);
         setFormData({ building_id: '', client_id: '', scheduled_date: '', status: 'pending', notes: '' });
         loadMaintenances();
+        // Guardar el mantenimiento recién creado para acceso directo al checklist
+        if (data && data.length > 0) {
+          setLastCreatedMaintenance(data[0]);
+        }
       } catch (err: any) {
         setFormError(err.message || 'Error al crear mantenimiento');
       } finally {
@@ -112,6 +119,24 @@ export function AdminMaintenancesDashboard() {
     // @ts-ignore
     const TechnicianMaintenanceChecklistView = require('./TechnicianMaintenanceChecklistView').TechnicianMaintenanceChecklistView;
     return <div className="p-6"><button className="mb-4 px-4 py-2 bg-gray-200 rounded" onClick={() => setShowOperativeView(false)}>Volver al dashboard</button><TechnicianMaintenanceChecklistView /></div>;
+  }
+
+  if (showChecklistView && lastCreatedMaintenance) {
+    // Renderizar TechnicianMaintenanceChecklistView con datos preseleccionados
+    // @ts-ignore
+    const TechnicianMaintenanceChecklistView = require('./TechnicianMaintenanceChecklistView').TechnicianMaintenanceChecklistView;
+    // Pasar props para inicializar el checklist (se puede expandir según lo que acepte el componente)
+    return (
+      <div className="p-6">
+        <button className="mb-4 px-4 py-2 bg-gray-200 rounded" onClick={() => setShowChecklistView(false)}>Volver al dashboard</button>
+        <TechnicianMaintenanceChecklistView
+          initialMode="client-selection"
+          initialClientId={lastCreatedMaintenance.client_id}
+          initialBuildingId={lastCreatedMaintenance.building_id}
+          initialScheduledDate={lastCreatedMaintenance.scheduled_date}
+        />
+      </div>
+    );
   }
   return (
     <div className="p-6">
@@ -208,6 +233,18 @@ export function AdminMaintenancesDashboard() {
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded" disabled={formLoading}>{formLoading ? 'Guardando...' : 'Crear'}</button>
               </div>
             </form>
+            {/* Acceso directo al checklist tras crear */}
+            {lastCreatedMaintenance && (
+              <div className="mt-6 flex flex-col items-center">
+                <button
+                  className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 font-semibold"
+                  onClick={() => { setShowNewForm(false); setShowChecklistView(true); }}
+                >
+                  Ir al checklist de mantenimiento
+                </button>
+                <span className="text-xs text-slate-500 mt-2">Registra el mantenimiento como técnico</span>
+              </div>
+            )}
           </div>
         </div>
       )}
