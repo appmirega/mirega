@@ -17,35 +17,6 @@ interface Maintenance {
 }
 
 export function AdminMaintenancesDashboard() {
-  const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showNewForm, setShowNewForm] = useState(false);
-  const [formData, setFormData] = useState({
-    building_id: '',
-    client_id: '',
-    scheduled_date: '',
-    status: 'pending',
-    notes: ''
-  });
-  const [formLoading, setFormLoading] = useState(false);
-  const [formError, setFormError] = useState<string|null>(null);
-  const [buildingsList, setBuildingsList] = useState<any[]>([]);
-  const [clientsList, setClientsList] = useState<any[]>([]);
-  // Nuevo: guardar el último mantenimiento creado
-  const [lastCreatedMaintenance, setLastCreatedMaintenance] = useState<any|null>(null);
-  const [showChecklistView, setShowChecklistView] = useState(false);
-    useEffect(() => {
-      if (showNewForm) {
-        loadBuildingsAndClients();
-      }
-    }, [showNewForm]);
-
-    const loadBuildingsAndClients = async () => {
-      const { data: buildings } = await supabase.from('buildings').select('id, name, client_id').eq('is_active', true);
-      const { data: clients } = await supabase.from('clients').select('id, company_name');
-      setBuildingsList(buildings || []);
-      setClientsList(clients || []);
-  export function AdminMaintenancesDashboard() {
     const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
     const [loading, setLoading] = useState(true);
     const [showChecklistView, setShowChecklistView] = useState(false);
