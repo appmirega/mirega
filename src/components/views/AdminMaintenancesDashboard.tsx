@@ -138,57 +138,7 @@ export function AdminMaintenancesDashboard() {
           )}
         </tbody>
       </table>
-      {/* Eliminado showNewForm: el formulario de agendamiento ya no existe */}
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded shadow max-w-md w-full">
-            <h2 className="text-xl font-bold mb-4">Nuevo Mantenimiento</h2>
-            <form onSubmit={handleCreateMaintenance} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Edificio</label>
-                <select name="building_id" value={formData.building_id} onChange={handleFormChange} required className="w-full border rounded px-2 py-1">
-                  <option value="">Selecciona un edificio</option>
-                  {buildingsList.map(b => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Cliente</label>
-                <select name="client_id" value={formData.client_id} onChange={handleFormChange} required className="w-full border rounded px-2 py-1">
-                  <option value="">Selecciona un cliente</option>
-                  {clientsList.map(c => (
-                    <option key={c.id} value={c.id}>{c.company_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Fecha Programada</label>
-                <input type="date" name="scheduled_date" value={formData.scheduled_date} onChange={handleFormChange} required className="w-full border rounded px-2 py-1" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Notas</label>
-                <textarea name="notes" value={formData.notes} onChange={handleFormChange} className="w-full border rounded px-2 py-1" />
-              </div>
-              {formError && <div className="text-red-600 text-sm">{formError}</div>}
-              <div className="flex gap-2 justify-end">
-                {/* Botón Cancelar eliminado junto con el formulario */}
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded" disabled={formLoading}>{formLoading ? 'Guardando...' : 'Crear'}</button>
-              </div>
-            </form>
-            {/* Acceso directo al checklist tras crear */}
-            {lastCreatedMaintenance && (
-              <div className="mt-6 flex flex-col items-center">
-                <button
-                  className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 font-semibold"
-                  onClick={() => setShowChecklistView(true)}
-                >
-                  Ir al checklist de mantenimiento
-                </button>
-                <span className="text-xs text-slate-500 mt-2">Registra el mantenimiento como técnico</span>
-              </div>
-            )}
-          </div>
-        </div>
+      {/* El formulario de agendamiento y lógica asociada han sido eliminados. */}
     </div>
   );
 }
