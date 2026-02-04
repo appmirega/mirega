@@ -87,7 +87,7 @@ export function AdminMaintenancesDashboard() {
         <div className="flex gap-2">
           <button
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            onClick={() => setShowNewForm(true)}
+            onClick={() => setShowChecklistView(true)}
           >
             <Plus className="w-5 h-5" /> Nuevo Mantenimiento
           </button>
@@ -138,7 +138,7 @@ export function AdminMaintenancesDashboard() {
           )}
         </tbody>
       </table>
-      {showNewForm && (
+      {/* Eliminado showNewForm: el formulario de agendamiento ya no existe */}
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-8 rounded shadow max-w-md w-full">
             <h2 className="text-xl font-bold mb-4">Nuevo Mantenimiento</h2>
@@ -171,7 +171,7 @@ export function AdminMaintenancesDashboard() {
               </div>
               {formError && <div className="text-red-600 text-sm">{formError}</div>}
               <div className="flex gap-2 justify-end">
-                <button type="button" className="px-4 py-2 bg-gray-200 rounded" onClick={() => setShowNewForm(false)} disabled={formLoading}>Cancelar</button>
+                {/* Botón Cancelar eliminado junto con el formulario */}
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded" disabled={formLoading}>{formLoading ? 'Guardando...' : 'Crear'}</button>
               </div>
             </form>
@@ -180,7 +180,7 @@ export function AdminMaintenancesDashboard() {
               <div className="mt-6 flex flex-col items-center">
                 <button
                   className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 font-semibold"
-                  onClick={() => { setShowNewForm(false); setShowChecklistView(true); }}
+                  onClick={() => setShowChecklistView(true)}
                 >
                   Ir al checklist de mantenimiento
                 </button>
