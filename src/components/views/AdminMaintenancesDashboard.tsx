@@ -45,24 +45,11 @@ export function AdminMaintenancesDashboard() {
       const { data: clients } = await supabase.from('clients').select('id, company_name');
       setBuildingsList(buildings || []);
       setClientsList(clients || []);
-    };
-
-    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-      setFormData({ ...formData, [e.target.name]: e.target.value });
-    };
-
-    const handleCreateMaintenance = async (e: React.FormEvent) => {
-      e.preventDefault();
-      setFormLoading(true);
-      setFormError(null);
-      try {
-        const { data, error } = await supabase.from('maintenance_schedules').insert({
-          building_id: formData.building_id,
-          client_id: formData.client_id,
-          scheduled_date: formData.scheduled_date,
-          status: formData.status,
-          notes: formData.notes
-        }).select('id, building_id, client_id, scheduled_date, status');
+  export function AdminMaintenancesDashboard() {
+    const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showChecklistView, setShowChecklistView] = useState(false);
+    const [showOperativeView, setShowOperativeView] = useState(false);
         if (error) throw error;
         setShowNewForm(false);
         setFormData({ building_id: '', client_id: '', scheduled_date: '', status: 'pending', notes: '' });
