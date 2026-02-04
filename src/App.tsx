@@ -66,10 +66,7 @@ function App() {
       content = <ManualsView />;
       break;
     case 'maintenance-checklist':
-      content = <TechnicianMaintenanceChecklistView />;
-          case 'admin-maintenance-dashboard':
-            content = <AdminMaintenancesDashboard />;
-            break;
+      // El renderizado por rol se maneja más abajo
       break;
     case 'work-orders':
       content = <WorkOrdersView />;
