@@ -17,25 +17,9 @@ interface Maintenance {
 }
 
 export function AdminMaintenancesDashboard() {
-    const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [showChecklistView, setShowChecklistView] = useState(false);
-    const [showOperativeView, setShowOperativeView] = useState(false);
-        if (error) throw error;
-        setShowNewForm(false);
-        setFormData({ building_id: '', client_id: '', scheduled_date: '', status: 'pending', notes: '' });
-        loadMaintenances();
-        // Guardar el mantenimiento recién creado para acceso directo al checklist
-        if (data && data.length > 0) {
-          setLastCreatedMaintenance(data[0]);
-        }
-      } catch (err: any) {
-        setFormError(err.message || 'Error al crear mantenimiento');
-      } finally {
-        setFormLoading(false);
-      }
-    };
-  const [filter, setFilter] = useState('');
+  const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showChecklistView, setShowChecklistView] = useState(false);
   const [showOperativeView, setShowOperativeView] = useState(false);
 
 
