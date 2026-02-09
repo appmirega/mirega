@@ -1,6 +1,7 @@
 import { AdminMaintenancesDashboard } from './components/views/AdminMaintenancesDashboard';
 import { TechnicianMaintenanceChecklistView } from './components/views/TechnicianMaintenanceChecklistView';
 import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard';
+import { TechnicianEmergencyView } from './components/views/TechnicianEmergencyView';
 import { UserProfile } from './components/UserProfile';
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -55,6 +56,13 @@ function App() {
       content = <AdminMaintenancesDashboard />;
     } else {
       content = <div className="text-center py-12">Vista de mantenimientos no disponible para este rol.</div>;
+    }
+  } else if (currentView === 'emergencies') {
+    // Emergencias
+    if (profile?.role === 'technician') {
+      content = <TechnicianEmergencyView />;
+    } else {
+      content = <div className="text-center py-12">Vista de emergencias no disponible para este rol.</div>;
     }
   } else if (currentView === 'profile') {
     content = <UserProfile />;
