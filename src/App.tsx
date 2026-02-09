@@ -1,6 +1,4 @@
-import { MaintenancesDashboard } from './components/views/MaintenancesDashboard';
 import { AdminMaintenancesDashboard } from './components/views/AdminMaintenancesDashboard';
-import { MaintenanceAdminView } from './components/views/MaintenanceAdminView';
 import { TechnicianMaintenanceChecklistView } from './components/views/TechnicianMaintenanceChecklistView';
 import { UserProfile } from './components/UserProfile';
 import { useState } from 'react';
@@ -8,10 +6,6 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './components/LoginPage';
 import { SplashScreen } from './components/SplashScreen';
 import { Layout } from './components/Layout';
-import DeveloperDashboard from './components/dashboards/DeveloperDashboard';
-import { AdminDashboard } from './components/dashboards/AdminDashboard';
-import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard';
-import { ClientDashboard } from './components/dashboards/ClientDashboard';
 
 function App() {
   console.log('[App.tsx] App montando...');
@@ -20,7 +14,7 @@ function App() {
   const [showSplash, setShowSplash] = useState(true);
   const { user, profile, loading } = useAuth();
 
-  const handleNavigate = (path) => {
+  const handleNavigate = (path: string) => {
     // Si el usuario es admin y navega a 'maintenance-checklist', mostrar el dashboard de gestión
     if (profile?.role === 'admin' && path === 'maintenance-checklist') {
       setCurrentView('admin-maintenance-dashboard');
@@ -40,96 +34,21 @@ function App() {
   }
 
   let content;
-  switch (currentView) {
-    case 'dashboard':
-      switch (profile?.role) {
-        case 'developer':
-          content = <DeveloperDashboard />;
-          break;
-        case 'admin':
-          content = <AdminDashboard onNavigate={handleNavigate} />;
-          break;
-        case 'technician':
-          content = <TechnicianDashboard onNavigate={handleNavigate} />;
-          break;
-        case 'client':
-          content = <ClientDashboard onNavigate={handleNavigate} />;
-          break;
-        default:
-          content = <div className="text-center py-12"><p className="text-slate-600">Rol no reconocido</p></div>;
-      }
-      break;
-    case 'maintenance-calendar':
-      content = <MaintenanceCalendarView />;
-      break;
-    case 'manuals':
-      content = <ManualsView />;
-      break;
-    case 'maintenance-checklist':
-      // El renderizado por rol se maneja más abajo
-      break;
-    case 'work-orders':
-      content = <WorkOrdersView />;
-      break;
-    case 'elevators':
-      content = <BulkOperationsView />;
-      break;
-    case 'statistics':
-      content = <StatisticsView />;
-      break;
-    case 'audit-logs':
-      content = <AuditLogView />;
-      break;
-    case 'client-maintenances':
-      content = <BulkOperationsView />;
-      break;
-    case 'client-service-requests':
-      content = <BulkOperationsView />;
-      if (currentView === 'dashboard') {
-        switch (profile?.role) {
-          case 'developer':
-            content = <DeveloperDashboard />;
-            break;
-          case 'admin':
-            content = <AdminDashboard onNavigate={handleNavigate} />;
-            break;
-          case 'technician':
-            content = <TechnicianDashboard onNavigate={handleNavigate} />;
-            break;
-          case 'client':
-            content = <ClientDashboard onNavigate={handleNavigate} />;
-            break;
-          default:
-            content = <div className="text-center py-12"><p className="text-slate-600">Rol no reconocido</p></div>;
-        }
-      } else if (currentView === 'profile') {
-        content = <UserProfile />;
-      } else if (currentView === 'maintenance-checklist') {
-        if (profile?.role === 'technician') {
-          content = <TechnicianMaintenanceChecklistView />;
-        } else if (profile?.role === 'client') {
-          content = <div className="text-center py-12">La vista de mantenimientos para cliente está en desarrollo.</div>;
-        } else {
-          content = <div className="text-center py-12">Rol no reconocido para mantenimientos.</div>;
-        }
-      } else if (currentView === 'admin-maintenance-dashboard') {
-        content = <AdminMaintenancesDashboard />;
-      // Agregar navegación desde AdminMaintenancesDashboard a la vista operativa
-      // src/components/views/AdminMaintenancesDashboard.tsx
-      } else {
-        content = <div>Vista no implementada o importación faltante</div>;
-      }
-    case 'admin-permissions':
-      content = <BulkOperationsView />;
-      break;
-    case 'settings':
-      content = <BulkOperationsView />;
-      break;
-    case 'profile':
-      content = <UserProfile />;
-      break;
-    default:
-      content = <div>Vista no implementada o importación faltante</div>;
+  // Navegación estricta por rol y vista
+  if (currentView === 'dashboard') {
+    if (profile?.role === 'admin') {
+      content = <AdminMaintenancesDashboard />;
+    } else if (profile?.role === 'technician') {
+      content = <TechnicianMaintenanceChecklistView />;
+    } else if (profile?.role === 'client') {
+      content = <div className="text-center py-12">La vista de mantenimientos para cliente está en desarrollo.</div>;
+    } else {
+      content = <div className="text-center py-12"><p className="text-slate-600">Rol no reconocido</p></div>;
+    }
+  } else if (currentView === 'profile') {
+    content = <UserProfile />;
+  } else {
+    content = <div>Vista no implementada o importación faltante</div>;
   }
 
   return (

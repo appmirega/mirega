@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Plus, Edit, Download, Filter, Wrench } from 'lucide-react';
+import { Plus, Edit, Download, Filter } from 'lucide-react';
 
 
 interface Maintenance {
@@ -19,8 +19,7 @@ interface Maintenance {
 export function AdminMaintenancesDashboard() {
   const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showChecklistView, setShowChecklistView] = useState(false);
-  const [showOperativeView, setShowOperativeView] = useState(false);
+  // Solo dashboard, sin vista operativa ni checklist técnico
 
 
   useEffect(() => {
@@ -41,7 +40,14 @@ export function AdminMaintenancesDashboard() {
         `)
         .order('scheduled_date', { ascending: true });
       if (error) throw error;
-      setMaintenances(data || []);
+      // Corregir: Supabase retorna arrays para relaciones, tomar el primer elemento
+      setMaintenances(
+        (data || []).map((m: any) => ({
+          ...m,
+          building: Array.isArray(m.building) ? m.building[0] : m.building,
+          client: Array.isArray(m.client) ? m.client[0] : m.client,
+        }))
+      );
     } catch (err) {
       console.error('Error loading maintenances:', err);
       setMaintenances([]);
@@ -55,31 +61,7 @@ export function AdminMaintenancesDashboard() {
     alert('Descarga masiva de PDFs (simulado)');
   };
 
-  if (showOperativeView) {
-    // Renderiza la vista operativa de mantenimientos (técnico)
-    // Importa TechnicianMaintenanceChecklistView si no está
-    // @ts-ignore
-    const TechnicianMaintenanceChecklistView = require('./TechnicianMaintenanceChecklistView').TechnicianMaintenanceChecklistView;
-    return <div className="p-6"><button className="mb-4 px-4 py-2 bg-gray-200 rounded" onClick={() => setShowOperativeView(false)}>Volver al dashboard</button><TechnicianMaintenanceChecklistView /></div>;
-  }
-
-  if (showChecklistView && lastCreatedMaintenance) {
-    // Renderizar TechnicianMaintenanceChecklistView con datos preseleccionados
-    // @ts-ignore
-    const TechnicianMaintenanceChecklistView = require('./TechnicianMaintenanceChecklistView').TechnicianMaintenanceChecklistView;
-    // Pasar props para inicializar el checklist (se puede expandir según lo que acepte el componente)
-    return (
-      <div className="p-6">
-        <button className="mb-4 px-4 py-2 bg-gray-200 rounded" onClick={() => setShowChecklistView(false)}>Volver al dashboard</button>
-        <TechnicianMaintenanceChecklistView
-          initialMode="client-selection"
-          initialClientId={lastCreatedMaintenance.client_id}
-          initialBuildingId={lastCreatedMaintenance.building_id}
-          initialScheduledDate={lastCreatedMaintenance.scheduled_date}
-        />
-      </div>
-    );
-  }
+  // El dashboard admin no debe mostrar la vista de técnico ni lógica de checklist técnico
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -91,12 +73,6 @@ export function AdminMaintenancesDashboard() {
             title="En desarrollo"
           >
             <Plus className="w-5 h-5" /> Nuevo Mantenimiento
-          </button>
-          <button
-            className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-            onClick={() => setShowOperativeView(true)}
-          >
-            <Wrench className="w-5 h-5" /> Vista Operativa
           </button>
         </div>
       </div>
