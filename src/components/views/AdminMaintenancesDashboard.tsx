@@ -39,19 +39,13 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: AdminMaintenanc
           id,
           scheduled_date,
           status,
-          building:building_id (name, address),
+          building_name,
+          building_address,
           client:client_id (company_name)
         `)
         .order('scheduled_date', { ascending: true });
       if (error) throw error;
-      // Corregir: Supabase retorna arrays para relaciones, tomar el primer elemento
-      setMaintenances(
-        (data || []).map((m: any) => ({
-          ...m,
-          building: Array.isArray(m.building) ? m.building[0] : m.building,
-          client: Array.isArray(m.client) ? m.client[0] : m.client,
-        }))
-      );
+      setMaintenances(data || []);
     } catch (err) {
       console.error('Error loading maintenances:', err);
       setMaintenances([]);
@@ -106,7 +100,7 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: AdminMaintenanc
           ) : (
             maintenances.map(m => (
               <tr key={m.id} className="border-b">
-                <td className="p-2">{m.building?.name || '-'}</td>
+                <td className="p-2">{m.building_name || '-'}</td>
                 <td className="p-2">{m.client?.company_name || '-'}</td>
                 <td className="p-2">{m.scheduled_date?.split('T')[0]}</td>
                 <td className="p-2">{m.status === 'pending' ? 'Pendiente' : m.status === 'completed' ? 'Completado' : m.status}</td>
