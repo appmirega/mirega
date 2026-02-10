@@ -16,11 +16,7 @@ interface Maintenance {
   status: string;
 }
 
-interface AdminMaintenancesDashboardProps {
-  onNewMaintenance?: () => void;
-}
-
-export function AdminMaintenancesDashboard({ onNewMaintenance }: AdminMaintenancesDashboardProps = {}) {
+export function AdminMaintenancesDashboard() {
   const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
   const [loading, setLoading] = useState(true);
   // Solo dashboard, sin vista operativa ni checklist técnico
@@ -72,9 +68,9 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: AdminMaintenanc
         <h1 className="text-2xl font-bold">Gestión de Mantenimientos</h1>
         <div className="flex gap-2">
           <button
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-            onClick={onNewMaintenance}
-            title="Crear nueva mantención"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-300 text-white rounded-lg cursor-not-allowed"
+            disabled
+            title="En desarrollo"
           >
             <Plus className="w-5 h-5" /> Nuevo Mantenimiento
           </button>
