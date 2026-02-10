@@ -55,9 +55,16 @@ function App() {
     if (profile?.role === 'technician') {
       content = <TechnicianMaintenanceChecklistView />;
     } else if (profile?.role === 'admin') {
-      content = <AdminMaintenancesDashboard />;
+      content = <AdminMaintenancesDashboard onNewMaintenance={() => setCurrentView('new-maintenance')} />;
     } else {
       content = <div className="text-center py-12">Vista de mantenimientos no disponible para este rol.</div>;
+    }
+  } else if (currentView === 'new-maintenance') {
+    // Nuevo mantenimiento desde admin
+    if (profile?.role === 'admin') {
+      content = <TechnicianEmergencyView />;
+    } else {
+      content = <div className="text-center py-12">Vista de nueva mantención no disponible para este rol.</div>;
     }
   } else if (currentView === 'emergencies') {
     // Emergencias
