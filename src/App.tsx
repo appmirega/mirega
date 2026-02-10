@@ -4,7 +4,6 @@ import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard
 import { TechnicianEmergencyView } from './components/views/TechnicianEmergencyView';
 import { ServiceRequestsDashboard } from './components/views/ServiceRequestsDashboard';
 import { UserProfile } from './components/UserProfile';
-import { MaintenanceCalendarView } from './components/calendar/MaintenanceCalendarView';
 import { AdminDashboard } from './components/dashboards/AdminDashboard';
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -50,13 +49,6 @@ function App() {
       content = <div className="text-center py-12">La vista de atajos para cliente está en desarrollo.</div>;
     } else {
       content = <div className="text-center py-12"><p className="text-slate-600">Rol no reconocido</p></div>;
-    }
-  } else if (currentView === 'calendar') {
-    // Calendario integral
-    if (profile?.role === 'admin') {
-      content = <MaintenanceCalendarView />;
-    } else {
-      content = <div className="text-center py-12">Vista de calendario no disponible para este rol.</div>;
     }
   } else if (currentView === 'maintenance-checklist') {
     // Mantenimientos
