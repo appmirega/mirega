@@ -5,14 +5,12 @@ import { Plus, Edit, Download, Filter } from 'lucide-react';
 
 interface Maintenance {
   id: string;
-  building: {
-    name: string;
-    address: string;
-  };
-  client: {
+  building_name: string;
+  building_address: string;
+  client?: {
     company_name: string;
   };
-  scheduled_date: string;
+  created_at: string;
   status: string;
 }
 
@@ -86,6 +84,7 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: AdminMaintenanc
         <thead>
           <tr className="bg-gray-100">
             <th className="p-2">Edificio</th>
+            <th className="p-2">Dirección</th>
             <th className="p-2">Cliente</th>
             <th className="p-2">Fecha</th>
             <th className="p-2">Estado</th>
@@ -101,6 +100,7 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: AdminMaintenanc
             maintenances.map(m => (
               <tr key={m.id} className="border-b">
                 <td className="p-2">{m.building_name || '-'}</td>
+                <td className="p-2">{m.building_address || '-'}</td>
                 <td className="p-2">{m.client?.company_name || '-'}</td>
                 <td className="p-2">{m.created_at ? m.created_at.split('T')[0] : '-'}</td>
                 <td className="p-2">{m.status === 'pending' ? 'Pendiente' : m.status === 'completed' ? 'Completado' : m.status}</td>
