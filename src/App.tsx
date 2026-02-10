@@ -3,6 +3,8 @@ import { TechnicianMaintenanceChecklistView } from './components/views/Technicia
 import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard';
 import { TechnicianEmergencyView } from './components/views/TechnicianEmergencyView';
 import { ServiceRequestsDashboard } from './components/views/ServiceRequestsDashboard';
+import { AdminDashboard } from './components/dashboards/AdminDashboard';
+import { MaintenanceCalendarView } from './components/calendar/MaintenanceCalendarView';
 import { UserProfile } from './components/UserProfile';
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -41,7 +43,7 @@ function App() {
   if (currentView === 'dashboard') {
     // Atajos rápidos
     if (profile?.role === 'admin') {
-      content = <AdminMaintenancesDashboard />;
+      content = <AdminDashboard />;
     } else if (profile?.role === 'technician') {
       content = <TechnicianDashboard />;
     } else if (profile?.role === 'client') {
@@ -49,14 +51,28 @@ function App() {
     } else {
       content = <div className="text-center py-12"><p className="text-slate-600">Rol no reconocido</p></div>;
     }
+  } else if (currentView === 'calendar') {
+    // Calendario integral
+    if (profile?.role === 'admin') {
+      content = <MaintenanceCalendarView />;
+    } else {
+      content = <div className="text-center py-12">Vista de calendario no disponible para este rol.</div>;
+    }
   } else if (currentView === 'maintenance-checklist') {
     // Mantenimientos
-    if (profile?.role === 'technician') {
+    if (profile?.role === 'admin') {
+      content = <AdminMaintenancesDashboard onNewMaintenance={() => setCurrentView('new-maintenance')} />;
+    } else if (profile?.role === 'technician') {
       content = <TechnicianMaintenanceChecklistView />;
-    } else if (profile?.role === 'admin') {
-      content = <AdminMaintenancesDashboard />;
     } else {
       content = <div className="text-center py-12">Vista de mantenimientos no disponible para este rol.</div>;
+    }
+  } else if (currentView === 'new-maintenance') {
+    // Nuevo mantenimiento desde admin
+    if (profile?.role === 'admin') {
+      content = <TechnicianEmergencyView />;
+    } else {
+      content = <div className="text-center py-12">Vista de nueva mantención no disponible para este rol.</div>;
     }
   } else if (currentView === 'emergencies') {
     // Emergencias
