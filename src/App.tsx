@@ -19,9 +19,9 @@ function App() {
   const { user, profile, loading } = useAuth();
 
   const handleNavigate = (path: string) => {
-    // Si el usuario es admin y navega a 'maintenance-checklist', mostrar el dashboard de gestión
+    // Para admin, el submenú 'Mantenimientos' debe mostrar la vista de mantenimientos admin
     if (profile?.role === 'admin' && path === 'maintenance-checklist') {
-      setCurrentView('admin-maintenance-dashboard');
+      setCurrentView('maintenance-checklist');
     } else {
       setCurrentView(path);
     }
