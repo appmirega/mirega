@@ -37,13 +37,13 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: AdminMaintenanc
         .from('maintenance_schedules')
         .select(`
           id,
-          scheduled_date,
+          created_at,
           status,
           building_name,
           building_address,
           client:client_id (company_name)
         `)
-        .order('scheduled_date', { ascending: true });
+        .order('created_at', { ascending: true });
       if (error) throw error;
       setMaintenances(data || []);
     } catch (err) {
@@ -102,7 +102,7 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: AdminMaintenanc
               <tr key={m.id} className="border-b">
                 <td className="p-2">{m.building_name || '-'}</td>
                 <td className="p-2">{m.client?.company_name || '-'}</td>
-                <td className="p-2">{m.scheduled_date?.split('T')[0]}</td>
+                <td className="p-2">{m.created_at ? m.created_at.split('T')[0] : '-'}</td>
                 <td className="p-2">{m.status === 'pending' ? 'Pendiente' : m.status === 'completed' ? 'Completado' : m.status}</td>
                 <td className="p-2 flex gap-2">
                   <button className="text-blue-600 hover:underline flex items-center gap-1"><Edit className="w-4 h-4" /> Editar</button>
