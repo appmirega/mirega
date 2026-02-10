@@ -4,6 +4,7 @@ import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard
 import { TechnicianEmergencyView } from './components/views/TechnicianEmergencyView';
 import { ServiceRequestsDashboard } from './components/views/ServiceRequestsDashboard';
 import { UserProfile } from './components/UserProfile';
+import { AdminDashboard } from './components/dashboards/AdminDashboard';
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './components/LoginPage';
@@ -41,7 +42,7 @@ function App() {
   if (currentView === 'dashboard') {
     // Atajos rápidos
     if (profile?.role === 'admin') {
-      content = <AdminMaintenancesDashboard />;
+      content = <AdminDashboard />;
     } else if (profile?.role === 'technician') {
       content = <TechnicianDashboard />;
     } else if (profile?.role === 'client') {
