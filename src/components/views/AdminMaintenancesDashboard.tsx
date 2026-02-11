@@ -24,6 +24,10 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: { onNewMaintena
   const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
   const [filtered, setFiltered] = useState<Maintenance[]>([]);
   const [filters, setFilters] = useState<Filters>({ building: '', elevator: '', client: '', year: '' });
+  const [buildingOptions, setBuildingOptions] = useState<string[]>([]);
+  const [elevatorOptions, setElevatorOptions] = useState<string[]>([]);
+  const [clientOptions, setClientOptions] = useState<string[]>([]);
+  const [yearOptions, setYearOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -43,6 +47,15 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: { onNewMaintena
         .order('created_at', { ascending: false });
       if (error) throw error;
       setMaintenances(data || []);
+      // Extraer opciones únicas para los selects
+      const buildings = Array.from(new Set((data || []).map(m => m.building_name).filter(Boolean)));
+      const elevators = Array.from(new Set((data || []).map(m => String(m.elevators_count)).filter(Boolean)));
+      const clients = Array.from(new Set((data || []).map(m => m.client?.company_name).filter(Boolean)));
+      const years = Array.from(new Set((data || []).map(m => m.created_at?.slice(0,4)).filter(Boolean)));
+      setBuildingOptions(buildings);
+      setElevatorOptions(elevators);
+      setClientOptions(clients);
+      setYearOptions(years);
     } catch (err) {
       console.error('Error loading maintenances:', err);
       setMaintenances([]);
@@ -94,43 +107,47 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: { onNewMaintena
           onChange={handleFilterChange}
         />
         <input
-          type="text"
-          name="elevator"
-          placeholder="Filtrar por ascensores"
-          className="px-3 py-2 border rounded"
-          value={filters.elevator}
-          onChange={handleFilterChange}
-        />
-        <input
-          type="text"
-          name="client"
-          placeholder="Filtrar por cliente"
-          className="px-3 py-2 border rounded"
-          value={filters.client}
-          onChange={handleFilterChange}
-        />
-        <input
-          type="text"
-          name="year"
-          placeholder="Filtrar por año (YYYY)"
-          className="px-3 py-2 border rounded"
-          value={filters.year}
-          onChange={handleFilterChange}
-        />
-        <button className="flex items-center gap-2 px-3 py-2 bg-green-200 rounded hover:bg-green-300" onClick={handleDownload}>
-          <Download className="w-4 h-4" /> Descargar PDFs
-        </button>
-      </div>
-      <table className="w-full bg-white rounded shadow">
-        <thead>
-          <tr className="bg-gray-100">
-            <th className="p-2">Edificio</th>
-            <th className="p-2">Dirección</th>
-            <th className="p-2">Ascensores</th>
-            <th className="p-2">Cliente</th>
-            <th className="p-2">Fecha</th>
-            <th className="p-2">Estado</th>
-            <th className="p-2">Acciones</th>
+        <div className="flex gap-2 mb-4">
+          <select
+            className="px-3 py-2 border rounded"
+            name="building"
+            value={filters.building}
+            onChange={handleFilterChange}
+          >
+            <option value="">Filtrar por edificio</option>
+            {buildingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+          <select
+            className="px-3 py-2 border rounded"
+            name="elevator"
+            value={filters.elevator}
+            onChange={handleFilterChange}
+          >
+            <option value="">Filtrar por ascensores</option>
+            {elevatorOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+          <select
+            className="px-3 py-2 border rounded"
+            name="client"
+            value={filters.client}
+            onChange={handleFilterChange}
+          >
+            <option value="">Filtrar por cliente</option>
+            {clientOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+          <select
+            className="px-3 py-2 border rounded"
+            name="year"
+            value={filters.year}
+            onChange={handleFilterChange}
+          >
+            <option value="">Filtrar por año (YYYY)</option>
+            {yearOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+          <button className="flex items-center gap-2 px-3 py-2 bg-green-200 rounded hover:bg-green-300" onClick={handleDownload}>
+            <Download className="w-4 h-4" /> Descargar PDFs
+          </button>
+        </div>
           </tr>
         </thead>
         <tbody>
