@@ -97,57 +97,47 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: { onNewMaintena
           <Plus className="w-5 h-5" /> Nuevo Mantenimiento
         </button>
       </div>
-      <div className="flex gap-4 mb-4">
-        <input
-          type="text"
-          name="building"
-          placeholder="Filtrar por edificio"
+      <div className="flex gap-2 mb-4">
+        <select
           className="px-3 py-2 border rounded"
+          name="building"
           value={filters.building}
-          onChange={handleFilterChange}
-        />
-        <input
-        <div className="flex gap-2 mb-4">
-          <select
-            className="px-3 py-2 border rounded"
-            name="building"
-            value={filters.building}
-            onChange={handleFilterChange}
-          >
-            <option value="">Filtrar por edificio</option>
-            {buildingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-          </select>
-          <select
-            className="px-3 py-2 border rounded"
-            name="elevator"
-            value={filters.elevator}
-            onChange={handleFilterChange}
-          >
-            <option value="">Filtrar por ascensores</option>
-            {elevatorOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-          </select>
-          <select
-            className="px-3 py-2 border rounded"
-            name="client"
-            value={filters.client}
-            onChange={handleFilterChange}
-          >
-            <option value="">Filtrar por cliente</option>
-            {clientOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-          </select>
-          <select
-            className="px-3 py-2 border rounded"
-            name="year"
-            value={filters.year}
-            onChange={handleFilterChange}
-          >
-            <option value="">Filtrar por año (YYYY)</option>
-            {yearOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-          </select>
-          <button className="flex items-center gap-2 px-3 py-2 bg-green-200 rounded hover:bg-green-300" onClick={handleDownload}>
-            <Download className="w-4 h-4" /> Descargar PDFs
-          </button>
-        </div>
+          onChange={handleFilterChange as any}
+        >
+          <option value="">Filtrar por edificio</option>
+          {buildingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+        <select
+          className="px-3 py-2 border rounded"
+          name="elevator"
+          value={filters.elevator}
+          onChange={handleFilterChange as any}
+        >
+          <option value="">Filtrar por ascensores</option>
+          {elevatorOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+        <select
+          className="px-3 py-2 border rounded"
+          name="client"
+          value={filters.client}
+          onChange={handleFilterChange as any}
+        >
+          <option value="">Filtrar por cliente</option>
+          {clientOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+        <select
+          className="px-3 py-2 border rounded"
+          name="year"
+          value={filters.year}
+          onChange={handleFilterChange as any}
+        >
+          <option value="">Filtrar por año (YYYY)</option>
+          {yearOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+        <button className="flex items-center gap-2 px-3 py-2 bg-green-200 rounded hover:bg-green-300" onClick={handleDownload}>
+          <Download className="w-4 h-4" /> Descargar PDFs
+        </button>
+      </div>
           </tr>
         </thead>
         <tbody>
