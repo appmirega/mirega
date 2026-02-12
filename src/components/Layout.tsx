@@ -53,12 +53,15 @@ const navSections: NavSection[] = [
     items: [
       { label: 'Atajos', icon: LayoutDashboard, path: 'dashboard', roles: ['developer', 'admin', 'technician', 'client'] },
       { label: 'Mi Perfil', icon: UserIcon, path: 'profile', roles: ['developer', 'admin', 'technician', 'client'] },
+      // Nuevo submenú para técnicos
+      { label: 'Mi Calendario', icon: CalendarRange, path: 'calendar', roles: ['technician'] },
     ],
   },
   {
     label: 'Operaciones',
     items: [
-      { label: 'Calendario Operativo', icon: CalendarRange, path: 'maintenance-calendar', roles: ['developer', 'admin'] },
+      // Reemplaza el antiguo calendario operativo por el nuevo para admin
+      { label: 'Gestión de Calendario', icon: CalendarRange, path: 'calendar', roles: ['developer', 'admin'] },
       { label: 'Mantenimientos', icon: ClipboardList, path: 'maintenance-checklist', roles: ['developer', 'admin', 'technician'] },
       { label: 'Solicitudes de Servicio', icon: FileText, path: 'service-requests', roles: ['developer', 'admin', 'technician'] },
       { label: 'Emergencias', icon: AlertTriangle, path: 'emergencies', roles: ['developer', 'admin', 'technician'] },
