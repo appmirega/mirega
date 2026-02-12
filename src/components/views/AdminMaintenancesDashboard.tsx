@@ -138,6 +138,16 @@ export function AdminMaintenancesDashboard({ onNewMaintenance }: { onNewMaintena
           <Download className="w-4 h-4" /> Descargar PDFs
         </button>
       </div>
+      <table className="w-full bg-white rounded shadow">
+        <thead>
+          <tr className="bg-gray-100">
+            <th className="p-2">Edificio</th>
+            <th className="p-2">Dirección</th>
+            <th className="p-2">Ascensores</th>
+            <th className="p-2">Cliente</th>
+            <th className="p-2">Fecha</th>
+            <th className="p-2">Estado</th>
+            <th className="p-2">Acciones</th>
           </tr>
         </thead>
         <tbody>
