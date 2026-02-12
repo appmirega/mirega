@@ -78,7 +78,9 @@ function App() {
     }
   } else if (currentView === 'service-requests') {
     // Solicitudes de servicio
-    if (profile?.role === 'technician') {
+    if (profile?.role === 'admin') {
+      content = <ServiceRequestsDashboard />;
+    } else if (profile?.role === 'technician') {
       content = <ServiceRequestsDashboard />;
     } else {
       content = <div className="text-center py-12">Vista de solicitudes de servicio no disponible para este rol.</div>;
