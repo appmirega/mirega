@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { Calendar, Wrench, AlertCircle, User, Lock } from 'lucide-react';
+import { useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Vista simplificada para técnicos: solo sus asignaciones y solicitudes
 export function TechnicianCalendarView() {
@@ -10,7 +13,30 @@ export function TechnicianCalendarView() {
   const [eventType, setEventType] = useState('permiso');
   const [eventDesc, setEventDesc] = useState('');
   const [eventDate, setEventDate] = useState<string>('');
+  const [assignments, setAssignments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const { user } = useAuth();
 
+  useEffect(() => {
+    if (!user) return;
+    setLoading(true);
+    setError('');
+    supabase
+      .from('maintenance_assignments')
+      .select(`id, scheduled_date, type, status, building_name, coordination_notes`)
+      .eq('assigned_technician_id', user.id)
+      .order('scheduled_date', { ascending: true })
+      .then(({ data, error }) => {
+        if (error) {
+          setError('Error al cargar asignaciones');
+          setAssignments([]);
+        } else {
+          setAssignments(data || []);
+        }
+        setLoading(false);
+      });
+  }, [user, currentMonth, currentYear]);
   // Aquí se consultarán los eventos reales desde Supabase
   const misEventos = [];
 
@@ -37,17 +63,29 @@ export function TechnicianCalendarView() {
       <div className="grid grid-cols-7 gap-1 bg-gray-100 rounded-t">
         {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map(d => <div key={d} className="text-center font-semibold py-2">{d}</div>)}
       </div>
-      {weeks.map((week, i) => (
+      {loading ? (
+        <div className="text-center py-8 text-blue-600">Cargando asignaciones...</div>
+      ) : error ? (
+        <div className="text-center py-8 text-red-600">{error}</div>
+      ) : weeks.map((week, i) => (
         <div key={i} className="grid grid-cols-7 gap-1">
           {week.map((date, j) => {
             const dateStr = date ? date.toISOString().slice(0,10) : '';
-            const dayEvents = misEventos.filter(ev => ev.date === dateStr);
+            const dayEvents = assignments.filter(ev => ev.scheduled_date === dateStr);
             return (
               <div key={j} className={`min-h-[80px] border rounded p-1 relative bg-white`}
                 onClick={() => date && setSelectedDay(date)}>
                 <div className="text-xs text-gray-500 text-right">{date?.getDate() || ''}</div>
-                {dayEvents.length === 0 && <div className="text-xs text-gray-400 text-center mt-2">Sin eventos</div>}
-                {/* Aquí se mostrarán los eventos reales */}
+                {dayEvents.length === 0 && <div className="text-xs text-gray-400 text-center mt-2">Sin asignaciones</div>}
+                {dayEvents.map((ev, idx) => (
+                  <div key={idx} className={`flex items-center gap-1 text-xs mt-1 px-1 py-0.5 rounded ${ev.status === 'ejecutado' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                    {ev.type === 'mantenimiento' && <Wrench className="w-3 h-3" />}
+                    {ev.type === 'vacaciones' && <User className="w-3 h-3" />}
+                    {ev.type === 'emergencia' && <AlertCircle className="w-3 h-3" />}
+                    <span>{ev.building_name}</span>
+                    {ev.status === 'ejecutado' && <Lock className="w-3 h-3 ml-1" title="Ejecutado" />}
+                  </div>
+                ))}
               </div>
             );
           })}
