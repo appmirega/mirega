@@ -879,6 +879,11 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
 
   // Cargar checklists en progreso
   const loadInProgressChecklists = async () => {
+    if (!profile?.id) {
+      setInProgressChecklists([]);
+      setLoadingInProgress(false);
+      return;
+    }
     setLoadingInProgress(true);
     const { data, error } = await supabase
       .from('mnt_checklists')
@@ -892,7 +897,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
         clients(id, company_name, building_name, internal_alias),
         elevators(id, location_name, elevator_number, elevator_type)
       `)
-      .eq('technician_id', profile?.id)
+      .eq('technician_id', profile.id)
       .in('status', ['pending', 'in_progress'])
       .order('created_at', { ascending: false });
 
