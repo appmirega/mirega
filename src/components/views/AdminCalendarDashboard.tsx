@@ -10,22 +10,16 @@ export function AdminCalendarDashboard() {
   const [repeatMode, setRepeatMode] = useState<'mensual'|'semestral'|'anual'>('mensual');
   // Estado para modal de detalle
   const [selectedDay, setSelectedDay] = useState<Date|null>(null);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [eventType, setEventType] = useState('turno');
+  const [eventDesc, setEventDesc] = useState('');
+  const [eventDate, setEventDate] = useState<string>('');
+  const [eventPerson, setEventPerson] = useState('');
 
-  // Placeholder: feriados y feriados irrenunciables de Chile (pueden venir de API)
-  const feriados = [
-    '2026-01-01', '2026-05-01', '2026-09-18', '2026-09-19', '2026-12-25' // etc
-  ];
-  const feriadosIrrenunciables = [
-    '2026-01-01', '2026-05-01', '2026-09-18', '2026-12-25' // etc
-  ];
-
-  // Placeholder: eventos del mes (mantenimientos, turnos, vacaciones, etc)
-  const eventos = [
-    { date: '2026-02-12', type: 'mantenimiento', tecnico: 'Juan', inamovible: true },
-    { date: '2026-02-13', type: 'vacaciones', tecnico: 'Pedro', inamovible: false },
-    { date: '2026-02-14', type: 'emergencia', tecnico: 'Ana', inamovible: false },
-    { date: '2026-02-15', type: 'externo', tecnico: 'EmpresaX', inamovible: false },
-  ];
+  // Aquí se consultarán feriados y eventos reales desde Supabase
+  const feriados = [];
+  const feriadosIrrenunciables = [];
+  const eventos = [];
 
   // Generar matriz de días del mes
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -52,7 +46,7 @@ export function AdminCalendarDashboard() {
             <option value="semestral">Semestral</option>
             <option value="anual">Anual</option>
           </select>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Plus className="w-4 h-4" /> Nuevo Evento</button>
+          <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2" onClick={() => setShowEventModal(true)}><Plus className="w-4 h-4" /> Nuevo Evento</button>
         </div>
       </div>
       <div className="grid grid-cols-7 gap-1 bg-gray-100 rounded-t">
@@ -69,22 +63,14 @@ export function AdminCalendarDashboard() {
               <div key={j} className={`min-h-[80px] border rounded p-1 relative ${isFeriadoIrr ? 'bg-red-200' : isFeriado ? 'bg-yellow-100' : 'bg-white'}`}
                 onClick={() => date && setSelectedDay(date)}>
                 <div className="text-xs text-gray-500 text-right">{date?.getDate() || ''}</div>
-                {dayEvents.map((ev, idx) => (
-                  <div key={idx} className={`flex items-center gap-1 text-xs mt-1 px-1 py-0.5 rounded ${ev.inamovible ? 'bg-gray-800 text-white' : 'bg-blue-100 text-blue-800'}`}>
-                    {ev.type === 'mantenimiento' && <Wrench className="w-3 h-3" />}
-                    {ev.type === 'vacaciones' && <User className="w-3 h-3" />}
-                    {ev.type === 'emergencia' && <AlertCircle className="w-3 h-3" />}
-                    {ev.type === 'externo' && <Users className="w-3 h-3" />}
-                    {ev.tecnico}
-                    {ev.inamovible && <Lock className="w-3 h-3 ml-1" title="Inamovible" />}
-                  </div>
-                ))}
+                {dayEvents.length === 0 && <div className="text-xs text-gray-400 text-center mt-2">Sin eventos</div>}
+                {/* Aquí se mostrarán los eventos reales */}
               </div>
             );
           })}
         </div>
       ))}
-      {/* Modal de detalle por día (placeholder) */}
+      {/* Modal de detalle por día */}
       {selectedDay && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-lg p-6 min-w-[320px]">
@@ -93,7 +79,44 @@ export function AdminCalendarDashboard() {
               <button onClick={() => setSelectedDay(null)} className="text-gray-500 hover:text-red-600">✕</button>
             </div>
             <div className="mb-2">(Aquí se mostrarán y gestionarán los eventos del día, asignaciones, ausencias, etc)</div>
-            <button className="mt-2 bg-blue-600 text-white px-4 py-2 rounded">Agregar/Editar Evento</button>
+            <button className="mt-2 bg-blue-600 text-white px-4 py-2 rounded" onClick={() => { setShowEventModal(true); setEventDate(selectedDay.toISOString().slice(0,10)); }}>Agregar/Editar Evento</button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para crear/editar evento admin */}
+      {showEventModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 min-w-[320px]">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-lg font-bold">Nuevo Evento de Calendario</h2>
+              <button onClick={() => setShowEventModal(false)} className="text-gray-500 hover:text-red-600">✕</button>
+            </div>
+            <form onSubmit={e => { e.preventDefault(); /* Aquí se implementará la lógica para guardar el evento en Supabase */ setShowEventModal(false); }}>
+              <div className="mb-2">
+                <label className="block text-sm font-semibold mb-1">Tipo de evento</label>
+                <select value={eventType} onChange={e => setEventType(e.target.value)} className="border rounded px-2 py-1 w-full">
+                  <option value="turno">Turno Técnico</option>
+                  <option value="emergencia">Emergencia</option>
+                  <option value="personal">Personal Adicional</option>
+                  <option value="vacaciones">Vacaciones</option>
+                  <option value="externo">Servicio Externo</option>
+                </select>
+              </div>
+              <div className="mb-2">
+                <label className="block text-sm font-semibold mb-1">Fecha</label>
+                <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} className="border rounded px-2 py-1 w-full" required />
+              </div>
+              <div className="mb-2">
+                <label className="block text-sm font-semibold mb-1">Persona/Técnico/Empresa</label>
+                <input type="text" value={eventPerson} onChange={e => setEventPerson(e.target.value)} className="border rounded px-2 py-1 w-full" placeholder="Nombre o empresa" required />
+              </div>
+              <div className="mb-2">
+                <label className="block text-sm font-semibold mb-1">Descripción</label>
+                <textarea value={eventDesc} onChange={e => setEventDesc(e.target.value)} className="border rounded px-2 py-1 w-full" rows={3} required />
+              </div>
+              <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded mt-2 w-full">Guardar Evento</button>
+            </form>
           </div>
         </div>
       )}
