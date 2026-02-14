@@ -189,8 +189,8 @@ export function AdminCalendarDashboard() {
       </div>
             {/* Modal Turnos de Emergencia */}
             {showEmergencyShifts && (
-              <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg shadow-lg p-6 max-w-3xl w-full relative">
+              <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 overflow-auto">
+                <div className="bg-white rounded-lg shadow-lg p-6 max-w-3xl w-full relative max-h-[90vh] overflow-y-auto">
                   <button onClick={() => setShowEmergencyShifts(false)} className="absolute top-2 right-2 text-gray-500 hover:text-red-600 text-2xl">✕</button>
                   <EmergencyShiftScheduler />
                 </div>

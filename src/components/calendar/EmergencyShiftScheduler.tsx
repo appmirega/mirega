@@ -247,7 +247,7 @@ export function EmergencyShiftScheduler() {
       <div className="flex-1 overflow-auto">
         {/* Formulario */}
         {showForm && (
-          <div className="bg-white border-b border-slate-200 p-6 m-4 rounded-lg">
+          <div className="bg-white border-b border-slate-200 p-6 m-4 rounded-lg max-h-[80vh] overflow-y-auto">
             <form onSubmit={handleSubmit} className="space-y-4 max-w-2xl">
               <h2 className="text-lg font-semibold text-slate-900 mb-4">Asignar Nuevo Turno</h2>
 
