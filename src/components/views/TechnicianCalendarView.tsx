@@ -1,6 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, Wrench, AlertCircle, User, Lock } from 'lucide-react';
-import { useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -14,6 +13,7 @@ export function TechnicianCalendarView() {
   const [eventDesc, setEventDesc] = useState('');
   const [eventDate, setEventDate] = useState<string>('');
   const [assignments, setAssignments] = useState([]);
+  const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { user } = useAuth();
@@ -22,18 +22,49 @@ export function TechnicianCalendarView() {
     if (!user) return;
     setLoading(true);
     setError('');
-    supabase
-      .from('maintenance_assignments')
-      .select(`id, scheduled_date, type, status, building_name, coordination_notes`)
+    const startDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+    const endDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${new Date(currentYear, currentMonth + 1, 0).getDate()}`;
+    // Consultar mantenimientos
+    const maintPromise = supabase
+      .from('maintenance_schedules')
+      .select('id, scheduled_date, status, building_name')
       .eq('assigned_technician_id', user.id)
-      .order('scheduled_date', { ascending: true })
-      .then(({ data, error }) => {
-        if (error) {
-          setError('Error al cargar asignaciones');
-          setAssignments([]);
-        } else {
-          setAssignments(data || []);
-        }
+      .gte('scheduled_date', startDate)
+      .lte('scheduled_date', endDate);
+    // Consultar emergencias
+    const emergPromise = supabase
+      .from('emergency_visits')
+      .select('id, attended_at, status, building_name')
+      .eq('assigned_technician_id', user.id)
+      .gte('attended_at', startDate)
+      .lte('attended_at', endDate);
+    // Consultar órdenes de trabajo
+    const otPromise = supabase
+      .from('work_orders')
+      .select('id, scheduled_date, status, title as building_name')
+      .eq('assigned_technician_id', user.id)
+      .gte('scheduled_date', startDate)
+      .lte('scheduled_date', endDate);
+    // Consultar permisos/vacaciones aprobados
+    const leavesPromise = supabase
+      .from('technician_leaves')
+      .select('id, leave_type, start_date, end_date, status, reason')
+      .eq('technician_id', user.id)
+      .eq('status', 'aprobado');
+    Promise.all([maintPromise, emergPromise, otPromise, leavesPromise])
+      .then(([maint, emerg, ot, leaves]) => {
+        let allAssignments = [];
+        if (maint.data) allAssignments = allAssignments.concat(maint.data.map(m => ({...m, type: 'mantenimiento'})));
+        if (emerg.data) allAssignments = allAssignments.concat(emerg.data.map(e => ({...e, type: 'emergencia', scheduled_date: e.attended_at })));
+        if (ot.data) allAssignments = allAssignments.concat(ot.data.map(o => ({...o, type: 'ot'})));
+        setAssignments(allAssignments);
+        setLeaves(leaves.data || []);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError('Error al cargar asignaciones');
+        setAssignments([]);
+        setLeaves([]);
         setLoading(false);
       });
   }, [user, currentMonth, currentYear]);
@@ -72,16 +103,23 @@ export function TechnicianCalendarView() {
           {week.map((date, j) => {
             const dateStr = date ? date.toISOString().slice(0,10) : '';
             const dayEvents = assignments.filter(ev => ev.scheduled_date === dateStr);
+            // Días bloqueados por permisos/vacaciones
+            const isBlocked = leaves.some(lv => {
+              const start = new Date(lv.start_date);
+              const end = new Date(lv.end_date);
+              return date && date >= start && date <= end;
+            });
             return (
-              <div key={j} className={`min-h-[80px] border rounded p-1 relative bg-white`}
+              <div key={j} className={`min-h-[80px] border rounded p-1 relative ${isBlocked ? 'bg-yellow-200' : 'bg-white'}`}
                 onClick={() => date && setSelectedDay(date)}>
                 <div className="text-xs text-gray-500 text-right">{date?.getDate() || ''}</div>
-                {dayEvents.length === 0 && <div className="text-xs text-gray-400 text-center mt-2">Sin asignaciones</div>}
-                {dayEvents.map((ev, idx) => (
+                {isBlocked && <div className="text-xs text-yellow-800 text-center mt-2 font-bold">Vacaciones/Permiso</div>}
+                {!isBlocked && dayEvents.length === 0 && <div className="text-xs text-gray-400 text-center mt-2">Sin asignaciones</div>}
+                {!isBlocked && dayEvents.map((ev, idx) => (
                   <div key={idx} className={`flex items-center gap-1 text-xs mt-1 px-1 py-0.5 rounded ${ev.status === 'ejecutado' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
                     {ev.type === 'mantenimiento' && <Wrench className="w-3 h-3" />}
-                    {ev.type === 'vacaciones' && <User className="w-3 h-3" />}
                     {ev.type === 'emergencia' && <AlertCircle className="w-3 h-3" />}
+                    {ev.type === 'ot' && <Lock className="w-3 h-3" />}
                     <span>{ev.building_name}</span>
                     {ev.status === 'ejecutado' && <Lock className="w-3 h-3 ml-1" title="Ejecutado" />}
                   </div>
@@ -113,7 +151,25 @@ export function TechnicianCalendarView() {
               <h2 className="text-lg font-bold">Solicitar Permiso/Vacaciones</h2>
               <button onClick={() => setShowEventModal(false)} className="text-gray-500 hover:text-red-600">✕</button>
             </div>
-            <form onSubmit={e => { e.preventDefault(); /* Aquí se implementará la lógica para guardar el evento en Supabase */ setShowEventModal(false); }}>
+            <form onSubmit={async e => {
+              e.preventDefault();
+              setLoading(true);
+              const { error } = await supabase.from('technician_leaves').insert([
+                {
+                  technician_id: user.id,
+                  leave_type: eventType,
+                  start_date: eventDate,
+                  end_date: eventDate,
+                  status: 'pendiente',
+                  reason: eventDesc
+                }
+              ]);
+              setShowEventModal(false);
+              setEventType('permiso');
+              setEventDate('');
+              setEventDesc('');
+              setLoading(false);
+            }}>
               <div className="mb-2">
                 <label className="block text-sm font-semibold mb-1">Tipo de evento</label>
                 <select value={eventType} onChange={e => setEventType(e.target.value)} className="border rounded px-2 py-1 w-full">
