@@ -33,9 +33,9 @@ export function AdminCalendarDashboard() {
     // Mantenimientos
     const maintPromise = supabase
       .from('maintenance_schedules')
-      .select('id, scheduled_date, status, building_name, assigned_technician_id')
-      .gte('scheduled_date', startDate)
-      .lte('scheduled_date', endDate);
+      .select('id, building_name, building_address, created_at, client_id, created_by')
+      .gte('created_at', startDate)
+      .lte('created_at', endDate);
     // Emergencias
     const emergPromise = supabase
       .from('emergency_visits')
@@ -64,7 +64,13 @@ export function AdminCalendarDashboard() {
     Promise.all([maintPromise, emergPromise, otPromise, leavesPromise, extPromise])
       .then(([maint, emerg, ot, leaves, ext]) => {
         let allEvents = [];
-        if (maint.data) allEvents = allEvents.concat(maint.data.map(m => ({...m, type: 'mantenimiento', date: m.scheduled_date })));
+        if (maint.data) allEvents = allEvents.concat(maint.data.map(m => ({
+          ...m,
+          type: 'mantenimiento',
+          date: m.created_at ? m.created_at.slice(0,10) : '',
+          building_name: m.building_name,
+          building_address: m.building_address
+        })));
         if (emerg.data) allEvents = allEvents.concat(emerg.data.map(e => ({...e, type: 'emergencia', date: e.attended_at })));
         if (ot.data) allEvents = allEvents.concat(ot.data.map(o => ({...o, type: 'ot', date: o.scheduled_date })));
         if (leaves.data) leaves.data.forEach(lv => {
