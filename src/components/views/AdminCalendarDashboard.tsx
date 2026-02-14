@@ -146,17 +146,7 @@ export function AdminCalendarDashboard() {
       });
   }, [currentMonth, currentYear]);
 
-  useEffect(() => {
-    setLoading(true);
-    setError('');
-    // Simulación: después se reemplazará por consulta real a Supabase
-    setTimeout(() => {
-      setEventos([]); // Aquí se cargarán los eventos reales
-      setFeriados([]); // Aquí se cargarán los feriados reales
-      setFeriadosIrrenunciables([]); // Aquí se cargarán los feriados irrenunciables reales
-      setLoading(false);
-    }, 500);
-  }, [currentMonth, currentYear, repeatMode]);
+
 
   // Generar matriz de días del mes
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
