@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Calendar, Lock, User, Users, Wrench, AlertCircle, Plus } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+// ...existing code...
+
+export function AdminCalendarDashboard() {
   // Listas de técnicos y edificios
   const [tecnicos, setTecnicos] = useState<any[]>([]);
   const [edificios, setEdificios] = useState<any[]>([]);
@@ -16,7 +16,6 @@ import { supabase } from '../../lib/supabase';
     });
     return () => { mounted = false; };
   }, []);
-
 // Estructura base para el dashboard calendario admin
 export function AdminCalendarDashboard() {
   // Estado para mes/año actual
