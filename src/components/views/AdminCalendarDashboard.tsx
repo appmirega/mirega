@@ -1,9 +1,29 @@
-// ...existing code...
-
+import { useState, useEffect } from 'react';
+import { Calendar, Lock, User, Users, Wrench, AlertCircle, Plus } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 export function AdminCalendarDashboard() {
+  // Estado para mes/año actual
+  const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth());
+  const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
   // Listas de técnicos y edificios
   const [tecnicos, setTecnicos] = useState<any[]>([]);
   const [edificios, setEdificios] = useState<any[]>([]);
+  // Estado para vista de repetición (mensual, semestral, anual)
+  const [repeatMode, setRepeatMode] = useState<'mensual'|'semestral'|'anual'>('mensual');
+  // Estado para modal de detalle
+  const [selectedDay, setSelectedDay] = useState<Date|null>(null);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [eventType, setEventType] = useState('turno');
+  const [eventDesc, setEventDesc] = useState('');
+  const [eventDate, setEventDate] = useState<string>('');
+  const [eventPerson, setEventPerson] = useState('');
+
+  // Simulación de consulta a Supabase (luego se reemplazará por la real)
+  const [feriados, setFeriados] = useState<string[]>([]);
+  const [feriadosIrrenunciables, setFeriadosIrrenunciables] = useState<string[]>([]);
+  const [eventos, setEventos] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
 
   // Cargar técnicos y edificios al montar
   useEffect(() => {
@@ -16,27 +36,6 @@ export function AdminCalendarDashboard() {
     });
     return () => { mounted = false; };
   }, []);
-// Estructura base para el dashboard calendario admin
-export function AdminCalendarDashboard() {
-  // Estado para mes/año actual
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  // Estado para vista de repetición (mensual, semestral, anual)
-  const [repeatMode, setRepeatMode] = useState<'mensual'|'semestral'|'anual'>('mensual');
-  // Estado para modal de detalle
-  const [selectedDay, setSelectedDay] = useState<Date|null>(null);
-  const [showEventModal, setShowEventModal] = useState(false);
-  const [eventType, setEventType] = useState('turno');
-  const [eventDesc, setEventDesc] = useState('');
-  const [eventDate, setEventDate] = useState<string>('');
-  const [eventPerson, setEventPerson] = useState('');
-
-  // Simulación de consulta a Supabase (luego se reemplazará por la real)
-  const [feriados, setFeriados] = useState([]);
-  const [feriadosIrrenunciables, setFeriadosIrrenunciables] = useState([]);
-  const [eventos, setEventos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   // Cargar todos los eventos relevantes desde Supabase
   useEffect(() => {
@@ -77,16 +76,23 @@ export function AdminCalendarDashboard() {
       .lte('event_date', endDate);
     Promise.all([maintPromise, emergPromise, otPromise, leavesPromise, extPromise])
       .then(([maint, emerg, ot, leaves, ext]) => {
-        let allEvents = [];
-        if (maint.data) allEvents = allEvents.concat(maint.data.map(m => ({
+        let allEvents: any[] = [];
+        if (maint.data) allEvents = allEvents.concat(maint.data.map((m: any) => ({
           ...m,
           type: 'mantenimiento',
           date: m.created_at ? m.created_at.slice(0,10) : '',
           building_name: m.building_name,
           building_address: m.building_address
         })));
-        if (emerg.data) allEvents = allEvents.concat(emerg.data.map(e => ({...e, type: 'emergencia', date: e.attended_at })));
-        if (ot.data) allEvents = allEvents.concat(ot.data.map(o => ({...o, type: 'ot', date: o.scheduled_date })));
+        if (emerg.data) allEvents = allEvents.concat(emerg.data.map((e: any) => ({...e, type: 'emergencia', date: e.attended_at })));
+        if (ot.data) allEvents = allEvents.concat(ot.data.map((o: any) => ({
+          id: o.id,
+          status: o.status,
+          building_name: o["title as building_name"],
+          assigned_technician_id: o.assigned_technician_id,
+          type: 'ot',
+          date: o.scheduled_date
+        })));
         if (leaves.data) leaves.data.forEach(lv => {
           // Generar un evento por cada día de permiso/vacaciones
           let d = new Date(lv.start_date);
@@ -186,7 +192,7 @@ export function AdminCalendarDashboard() {
                     {(ev.type === 'vacaciones' || ev.type === 'permiso') && <User className="w-3 h-3" />}
                     {ev.type === 'externo' && <Users className="w-3 h-3" />}
                     <span>{ev.building_name || ev.person || ''}</span>
-                    {ev.status === 'completado' && <Lock className="w-3 h-3 ml-1" title="Completado" />}
+                    {ev.status === 'completado' && <Lock className="w-3 h-3 ml-1" />}
                   </div>
                 ))}
               </div>
