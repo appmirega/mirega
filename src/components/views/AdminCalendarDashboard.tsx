@@ -1,14 +1,20 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, Lock, User, Users, Wrench, AlertCircle, Plus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
   // Listas de técnicos y edificios
-  const [tecnicos, setTecnicos] = useState([]);
-  const [edificios, setEdificios] = useState([]);
+  const [tecnicos, setTecnicos] = useState<any[]>([]);
+  const [edificios, setEdificios] = useState<any[]>([]);
 
   // Cargar técnicos y edificios al montar
   useEffect(() => {
-    supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => setTecnicos(data || []));
-    supabase.from('clients').select('id, company_name, address').then(({ data }) => setEdificios(data || []));
+    let mounted = true;
+    supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => {
+      if (mounted) setTecnicos(data || []);
+    });
+    supabase.from('clients').select('id, company_name, address').then(({ data }) => {
+      if (mounted) setEdificios(data || []);
+    });
+    return () => { mounted = false; };
   }, []);
 
 // Estructura base para el dashboard calendario admin
