@@ -3,13 +3,11 @@ import { Calendar, Lock, User, Users, Wrench, AlertCircle, Plus, Shield } from '
 import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
 import { supabase } from '../../lib/supabase';
 export function AdminCalendarDashboard() {
-      // Estado para turnos de emergencia
-      const [emergencyShifts, setEmergencyShifts] = useState<any[]>([]);
-    // Estado para mostrar el modal de turnos de emergencia
-    const [showEmergencyShifts, setShowEmergencyShifts] = useState(false);
+  // Estado para mostrar el modal de turnos de emergencia
+  const [showEmergencyShifts, setShowEmergencyShifts] = useState(false);
   // Estado para mes/año actual
-  const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth());
-  const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
+  const [currentMonth] = useState<number>(new Date().getMonth());
+  const [currentYear] = useState<number>(new Date().getFullYear());
   // Listas de técnicos y edificios
   const [tecnicos, setTecnicos] = useState<any[]>([]);
   const [edificios, setEdificios] = useState<any[]>([]);
@@ -121,7 +119,6 @@ export function AdminCalendarDashboard() {
         if (ext.data) allEvents = allEvents.concat(ext.data.map(ev => ({...ev, type: ev.event_type, date: ev.event_date })));
         // Integrar turnos de emergencia
         if (emergency.data) {
-          setEmergencyShifts(emergency.data);
           emergency.data.forEach((shift: any) => {
             let d = new Date(shift.shift_start_date);
             const end = new Date(shift.shift_end_date);
