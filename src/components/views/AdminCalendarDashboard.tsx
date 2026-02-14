@@ -319,6 +319,14 @@ export function AdminCalendarDashboard() {
           </div>
         </div>
       )}
+      {/* Desglose profesional debajo del calendario */}
+      <div className="mt-8">
+        <ProfessionalBreakdown
+          events={eventos}
+          selectedMonth={currentMonth}
+          selectedYear={currentYear}
+        />
+      </div>
     </div>
   );
 }
