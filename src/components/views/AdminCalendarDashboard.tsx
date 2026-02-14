@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Lock, User, Users, Wrench, AlertCircle, Plus } from 'lucide-react';
+import { Calendar, Lock, User, Users, Wrench, AlertCircle, Plus, Shield } from 'lucide-react';
+import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
 import { supabase } from '../../lib/supabase';
 export function AdminCalendarDashboard() {
+    // Estado para mostrar el modal de turnos de emergencia
+    const [showEmergencyShifts, setShowEmergencyShifts] = useState(false);
   // Estado para mes/año actual
   const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
@@ -157,8 +160,18 @@ export function AdminCalendarDashboard() {
             <option value="anual">Anual</option>
           </select>
           <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2" onClick={() => setShowEventModal(true)}><Plus className="w-4 h-4" /> Nuevo Evento</button>
+          <button className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2" onClick={() => setShowEmergencyShifts(true)}><Shield className="w-4 h-4" /> Turnos de Emergencia</button>
         </div>
       </div>
+            {/* Modal Turnos de Emergencia */}
+            {showEmergencyShifts && (
+              <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg shadow-lg p-6 max-w-3xl w-full relative">
+                  <button onClick={() => setShowEmergencyShifts(false)} className="absolute top-2 right-2 text-gray-500 hover:text-red-600 text-2xl">✕</button>
+                  <EmergencyShiftScheduler />
+                </div>
+              </div>
+            )}
       <div className="grid grid-cols-7 gap-1 bg-gray-100 rounded-t">
         {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map(d => <div key={d} className="text-center font-semibold py-2">{d}</div>)}
       </div>
