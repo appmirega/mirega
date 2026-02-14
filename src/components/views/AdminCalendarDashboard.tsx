@@ -24,21 +24,71 @@ export function AdminCalendarDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Cargar eventos desde Supabase
+  // Cargar todos los eventos relevantes desde Supabase
   useEffect(() => {
     setLoading(true);
     setError('');
     const startDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
     const endDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${new Date(currentYear, currentMonth + 1, 0).getDate()}`;
-    supabase
+    // Mantenimientos
+    const maintPromise = supabase
+      .from('maintenance_schedules')
+      .select('id, scheduled_date, status, building_name, assigned_technician_id')
+      .gte('scheduled_date', startDate)
+      .lte('scheduled_date', endDate);
+    // Emergencias
+    const emergPromise = supabase
+      .from('emergency_visits')
+      .select('id, attended_at, status, building_name, assigned_technician_id')
+      .gte('attended_at', startDate)
+      .lte('attended_at', endDate);
+    // Órdenes de trabajo
+    const otPromise = supabase
+      .from('work_orders')
+      .select('id, scheduled_date, status, title as building_name, assigned_technician_id')
+      .gte('scheduled_date', startDate)
+      .lte('scheduled_date', endDate);
+    // Permisos/vacaciones
+    const leavesPromise = supabase
+      .from('technician_leaves')
+      .select('id, leave_type, start_date, end_date, status, technician_id')
+      .eq('status', 'aprobado')
+      .gte('end_date', startDate)
+      .lte('start_date', endDate);
+    // Eventos externos
+    const extPromise = supabase
       .from('calendar_events')
       .select('*')
       .gte('event_date', startDate)
-      .lte('event_date', endDate)
-      .order('event_date', { ascending: true })
-      .then(({ data, error }) => {
-        if (error) setError(error.message);
-        else setEventos(data || []);
+      .lte('event_date', endDate);
+    Promise.all([maintPromise, emergPromise, otPromise, leavesPromise, extPromise])
+      .then(([maint, emerg, ot, leaves, ext]) => {
+        let allEvents = [];
+        if (maint.data) allEvents = allEvents.concat(maint.data.map(m => ({...m, type: 'mantenimiento', date: m.scheduled_date })));
+        if (emerg.data) allEvents = allEvents.concat(emerg.data.map(e => ({...e, type: 'emergencia', date: e.attended_at })));
+        if (ot.data) allEvents = allEvents.concat(ot.data.map(o => ({...o, type: 'ot', date: o.scheduled_date })));
+        if (leaves.data) leaves.data.forEach(lv => {
+          // Generar un evento por cada día de permiso/vacaciones
+          let d = new Date(lv.start_date);
+          const end = new Date(lv.end_date);
+          while (d <= end) {
+            allEvents.push({
+              id: lv.id,
+              type: lv.leave_type,
+              date: d.toISOString().slice(0,10),
+              status: 'aprobado',
+              technician_id: lv.technician_id
+            });
+            d.setDate(d.getDate() + 1);
+          }
+        });
+        if (ext.data) allEvents = allEvents.concat(ext.data.map(ev => ({...ev, type: ev.event_type, date: ev.event_date })));
+        setEventos(allEvents);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError('Error al cargar eventos');
+        setEventos([]);
         setLoading(false);
       });
   }, [currentMonth, currentYear]);
@@ -102,7 +152,23 @@ export function AdminCalendarDashboard() {
                 onClick={() => date && setSelectedDay(date)}>
                 <div className="text-xs text-gray-500 text-right">{date?.getDate() || ''}</div>
                 {dayEvents.length === 0 && <div className="text-xs text-gray-400 text-center mt-2">Sin eventos</div>}
-                {/* Aquí se mostrarán los eventos reales */}
+                {dayEvents.map((ev: any, idx: number) => (
+                  <div key={idx} className={`flex items-center gap-1 text-xs mt-1 px-1 py-0.5 rounded 
+                    ${ev.type === 'mantenimiento' ? 'bg-blue-100 text-blue-800' :
+                      ev.type === 'emergencia' ? 'bg-red-100 text-red-800' :
+                      ev.type === 'ot' ? 'bg-green-100 text-green-800' :
+                      (ev.type === 'vacaciones' || ev.type === 'permiso') ? 'bg-yellow-200 text-yellow-900 font-bold' :
+                      'bg-gray-100 text-gray-800'}`}
+                  >
+                    {ev.type === 'mantenimiento' && <Wrench className="w-3 h-3" />}
+                    {ev.type === 'emergencia' && <AlertCircle className="w-3 h-3" />}
+                    {ev.type === 'ot' && <Lock className="w-3 h-3" />}
+                    {(ev.type === 'vacaciones' || ev.type === 'permiso') && <User className="w-3 h-3" />}
+                    {ev.type === 'externo' && <Users className="w-3 h-3" />}
+                    <span>{ev.building_name || ev.person || ''}</span>
+                    {ev.status === 'completado' && <Lock className="w-3 h-3 ml-1" title="Completado" />}
+                  </div>
+                ))}
               </div>
             );
           })}
