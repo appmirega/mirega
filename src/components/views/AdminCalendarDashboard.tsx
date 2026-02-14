@@ -200,8 +200,14 @@ export function AdminCalendarDashboard() {
             const isFeriado = feriados.includes(dateStr);
             const isFeriadoIrr = feriadosIrrenunciables.includes(dateStr);
             const dayEvents = eventos.filter((ev: any) => ev.date === dateStr);
+            // Colorear turno de emergencia: rojo interno, naranjo externo
+            let bgColor = isFeriadoIrr ? 'bg-red-200' : isFeriado ? 'bg-yellow-100' : 'bg-white';
+            const hasEmergInt = dayEvents.some(ev => ev.type === 'turno_emergencia' && !ev.shift?.is_external);
+            const hasEmergExt = dayEvents.some(ev => ev.type === 'turno_emergencia' && ev.shift?.is_external);
+            if (hasEmergInt) bgColor = 'bg-red-300';
+            else if (hasEmergExt) bgColor = 'bg-orange-200';
             return (
-              <div key={j} className={`min-h-[80px] border rounded p-1 relative ${isFeriadoIrr ? 'bg-red-200' : isFeriado ? 'bg-yellow-100' : 'bg-white'}`}
+              <div key={j} className={`min-h-[80px] border rounded p-1 relative ${bgColor}`}
                 onClick={() => date && setSelectedDay(date)}>
                 <div className="text-xs text-gray-500 text-right">{date?.getDate() || ''}</div>
                 {dayEvents.length === 0 ? (
