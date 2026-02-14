@@ -1,9 +1,14 @@
 import { useState, useEffect } from 'react';
+import { getExternalTechnicians, addExternalTechnician } from '../../lib/external_technicians';
 import { Calendar, Plus, Shield } from 'lucide-react';
 import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
 import { ProfessionalBreakdown } from './ProfessionalBreakdown';
+import { EmergencyShiftsTable } from './EmergencyShiftsTable';
 import { supabase } from '../../lib/supabase';
 export function AdminCalendarDashboard() {
+  const [externalTechnicians, setExternalTechnicians] = useState<any[]>([]);
+  const [newExternalName, setNewExternalName] = useState('');
+  const [showExternalInput, setShowExternalInput] = useState(false);
   // Estado para mostrar el modal de turnos de emergencia
   const [showEmergencyShifts, setShowEmergencyShifts] = useState(false);
   // Estado para mes/año actual
@@ -29,7 +34,7 @@ export function AdminCalendarDashboard() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
 
-  // Cargar técnicos y edificios al montar
+  // Cargar técnicos, externos y edificios al montar
   useEffect(() => {
     let mounted = true;
     supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => {
@@ -38,6 +43,7 @@ export function AdminCalendarDashboard() {
     supabase.from('clients').select('id, company_name, address').then(({ data }) => {
       if (mounted) setEdificios(data || []);
     });
+    if (mounted) setExternalTechnicians(getExternalTechnicians());
     return () => { mounted = false; };
   }, []);
 
@@ -167,7 +173,7 @@ export function AdminCalendarDashboard() {
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Calendar className="w-6 h-6" /> Calendario Técnico - Admin</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2"><Calendar className="w-6 h-6" /> Calendario mensual</h1>
         <div className="flex gap-2">
           <select value={repeatMode} onChange={e => setRepeatMode(e.target.value as any)} className="border rounded px-2 py-1">
             <option value="mensual">Mensual</option>
@@ -278,33 +284,61 @@ export function AdminCalendarDashboard() {
               setLoading(false);
             }}>
               <div className="mb-2">
-                <label className="block text-sm font-semibold mb-1">Tipo de evento</label>
+                <label className="block text-sm font-semibold mb-1">Tipo de asignación</label>
                 <select value={eventType} onChange={e => setEventType(e.target.value)} className="border rounded px-2 py-1 w-full">
-                  <option value="turno">Turno Técnico</option>
-                  <option value="emergencia">Emergencia</option>
-                  <option value="personal">Personal Adicional</option>
-                  <option value="vacaciones">Vacaciones</option>
-                  <option value="externo">Servicio Externo</option>
+                  <option value="mantenimiento">Mantenimiento</option>
+                  <option value="reparaciones">Reparaciones</option>
+                  <option value="induccion_rescate">Inducción de rescate</option>
+                  <option value="vista_certificacion">Vista certificación</option>
+                  <option value="otros">Otros</option>
                 </select>
               </div>
               <div className="mb-2">
                 <label className="block text-sm font-semibold mb-1">Fecha</label>
                 <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} className="border rounded px-2 py-1 w-full" required />
               </div>
-              {/* Selección de técnico */}
+              {/* Selección de técnico interno o externo/empresa */}
               <div className="mb-2">
-                <label className="block text-sm font-semibold mb-1">Técnico asignado</label>
-                <select value={eventPerson} onChange={e => setEventPerson(e.target.value)} className="border rounded px-2 py-1 w-full" required>
-                  <option value="">Selecciona un técnico</option>
+                <label className="block text-sm font-semibold mb-1">Asignar a</label>
+                <select value={eventPerson} onChange={e => {
+                  if (e.target.value === '__nuevo_externo__') {
+                    setShowExternalInput(true);
+                    setEventPerson('');
+                  } else {
+                    setShowExternalInput(false);
+                    setEventPerson(e.target.value);
+                  }
+                }} className="border rounded px-2 py-1 w-full" required>
+                  <option value="">Selecciona técnico interno o empresa externa</option>
                   {tecnicos.map((t: any) => (
-                    <option key={t.id} value={t.full_name}>{t.full_name}</option>
+                    <option key={t.id} value={t.full_name}>{t.full_name} (Interno)</option>
                   ))}
+                  {externalTechnicians.length > 0 && <option disabled>──────────</option>}
+                  {externalTechnicians.map((ext: any) => (
+                    <option key={ext.id} value={ext.name}>{ext.name} (Externo)</option>
+                  ))}
+                  <option disabled>──────────</option>
+                  <option value="__nuevo_externo__">Agregar nuevo externo/empresa…</option>
                 </select>
+                {showExternalInput && (
+                  <div className="flex gap-2 mt-2">
+                    <input type="text" className="border rounded px-2 py-1 w-full" placeholder="Nombre externo/empresa" value={newExternalName} onChange={e => setNewExternalName(e.target.value)} />
+                    <button type="button" className="bg-green-600 text-white px-3 py-1 rounded" onClick={() => {
+                      if (newExternalName.trim()) {
+                        const ext = addExternalTechnician({ name: newExternalName.trim() });
+                        setExternalTechnicians(getExternalTechnicians());
+                        setEventPerson(ext.name);
+                        setShowExternalInput(false);
+                        setNewExternalName('');
+                      }
+                    }}>Guardar</button>
+                  </div>
+                )}
               </div>
               {/* Selección de edificio */}
               <div className="mb-2">
-                <label className="block text-sm font-semibold mb-1">Edificio/Cliente</label>
-                <select className="border rounded px-2 py-1 w-full">
+                <label className="block text-sm font-semibold mb-1">Edificio</label>
+                <select className="border rounded px-2 py-1 w-full" required>
                   <option value="">Selecciona un edificio</option>
                   {edificios.map((e: any) => (
                     <option key={e.id} value={e.company_name}>{e.company_name} - {e.address}</option>
@@ -312,7 +346,7 @@ export function AdminCalendarDashboard() {
                 </select>
               </div>
               <div className="mb-2">
-                <label className="block text-sm font-semibold mb-1">Descripción</label>
+                <label className="block text-sm font-semibold mb-1">Detalle</label>
                 <textarea value={eventDesc} onChange={e => setEventDesc(e.target.value)} className="border rounded px-2 py-1 w-full" rows={3} required />
               </div>
               <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded mt-2 w-full">Guardar Evento</button>
@@ -323,9 +357,12 @@ export function AdminCalendarDashboard() {
       {/* Desglose profesional debajo del calendario */}
       <div className="mt-8">
         <ProfessionalBreakdown
-          events={eventos}
+          events={eventos.filter(ev => ev.type !== 'turno_emergencia')}
           selectedMonth={currentMonth}
           selectedYear={currentYear}
+        />
+        <EmergencyShiftsTable
+          shifts={eventos.filter(ev => ev.type === 'turno_emergencia').map(ev => ev.shift || ev)}
         />
       </div>
     </div>
