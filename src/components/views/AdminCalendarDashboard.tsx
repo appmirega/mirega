@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Lock, User, Users, Wrench, AlertCircle, Plus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+  // Listas de técnicos y edificios
+  const [tecnicos, setTecnicos] = useState([]);
+  const [edificios, setEdificios] = useState([]);
+
+  // Cargar técnicos y edificios al montar
+  useEffect(() => {
+    supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => setTecnicos(data || []));
+    supabase.from('clients').select('id, company_name, address').then(({ data }) => setEdificios(data || []));
+  }, []);
 
 // Estructura base para el dashboard calendario admin
 export function AdminCalendarDashboard() {
@@ -248,9 +257,25 @@ export function AdminCalendarDashboard() {
                 <label className="block text-sm font-semibold mb-1">Fecha</label>
                 <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} className="border rounded px-2 py-1 w-full" required />
               </div>
+              {/* Selección de técnico */}
               <div className="mb-2">
-                <label className="block text-sm font-semibold mb-1">Persona/Técnico/Empresa</label>
-                <input type="text" value={eventPerson} onChange={e => setEventPerson(e.target.value)} className="border rounded px-2 py-1 w-full" placeholder="Nombre o empresa" required />
+                <label className="block text-sm font-semibold mb-1">Técnico asignado</label>
+                <select value={eventPerson} onChange={e => setEventPerson(e.target.value)} className="border rounded px-2 py-1 w-full" required>
+                  <option value="">Selecciona un técnico</option>
+                  {tecnicos.map((t: any) => (
+                    <option key={t.id} value={t.full_name}>{t.full_name}</option>
+                  ))}
+                </select>
+              </div>
+              {/* Selección de edificio */}
+              <div className="mb-2">
+                <label className="block text-sm font-semibold mb-1">Edificio/Cliente</label>
+                <select className="border rounded px-2 py-1 w-full">
+                  <option value="">Selecciona un edificio</option>
+                  {edificios.map((e: any) => (
+                    <option key={e.id} value={e.company_name}>{e.company_name} - {e.address}</option>
+                  ))}
+                </select>
               </div>
               <div className="mb-2">
                 <label className="block text-sm font-semibold mb-1">Descripción</label>
