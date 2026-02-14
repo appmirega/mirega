@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Lock, User, Users, Wrench, AlertCircle, Plus, Shield } from 'lucide-react';
+import { Calendar, Plus, Shield } from 'lucide-react';
 import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
 import { supabase } from '../../lib/supabase';
 export function AdminCalendarDashboard() {
@@ -214,27 +214,13 @@ export function AdminCalendarDashboard() {
               <div key={j} className={`min-h-[80px] border rounded p-1 relative ${isFeriadoIrr ? 'bg-red-200' : isFeriado ? 'bg-yellow-100' : 'bg-white'}`}
                 onClick={() => date && setSelectedDay(date)}>
                 <div className="text-xs text-gray-500 text-right">{date?.getDate() || ''}</div>
-                {dayEvents.length === 0 && <div className="text-xs text-gray-400 text-center mt-2">Sin eventos</div>}
-                {dayEvents.map((ev: any, idx: number) => (
-                  <div key={idx} className={`flex items-center gap-1 text-xs mt-1 px-1 py-0.5 rounded 
-                    ${ev.type === 'mantenimiento' ? 'bg-blue-100 text-blue-800' :
-                      ev.type === 'emergencia' ? 'bg-red-100 text-red-800' :
-                      ev.type === 'ot' ? 'bg-green-100 text-green-800' :
-                      ev.type === 'turno_emergencia' ? 'bg-red-200 text-red-900 font-bold' :
-                      (ev.type === 'vacaciones' || ev.type === 'permiso') ? 'bg-yellow-200 text-yellow-900 font-bold' :
-                      'bg-gray-100 text-gray-800'}`}
-                  >
-                    {ev.type === 'mantenimiento' && <Wrench className="w-3 h-3" />}
-                    {ev.type === 'emergencia' && <AlertCircle className="w-3 h-3" />}
-                    {ev.type === 'ot' && <Lock className="w-3 h-3" />}
-                    {ev.type === 'turno_emergencia' && <Shield className="w-3 h-3" />}
-                    {(ev.type === 'vacaciones' || ev.type === 'permiso') && <User className="w-3 h-3" />}
-                    {ev.type === 'externo' && <Users className="w-3 h-3" />}
-                    <span>{ev.assignee || ev.building_name || ev.person || ''}</span>
-                    {ev.type === 'turno_emergencia' && <span className="ml-1">{ev.shift_hours}</span>}
-                    {ev.status === 'completado' && <Lock className="w-3 h-3 ml-1" />}
+                {dayEvents.length === 0 ? (
+                  <div className="text-xs text-gray-400 text-center mt-2">Sin asignaciones</div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center mt-2">
+                    <span className="text-xs font-semibold text-blue-700">{dayEvents.length} asignación{dayEvents.length > 1 ? 'es' : ''}</span>
                   </div>
-                ))}
+                )}
               </div>
             );
           })}
