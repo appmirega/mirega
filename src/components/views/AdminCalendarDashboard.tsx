@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Plus, Shield } from 'lucide-react';
 import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
+import { ProfessionalBreakdown } from './ProfessionalBreakdown';
 import { supabase } from '../../lib/supabase';
 export function AdminCalendarDashboard() {
   // Estado para mostrar el modal de turnos de emergencia
