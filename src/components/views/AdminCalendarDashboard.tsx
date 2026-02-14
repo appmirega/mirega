@@ -122,15 +122,22 @@ export function AdminCalendarDashboard() {
         // Integrar turnos de emergencia
         if (emergency.data) {
           setEmergencyShifts(emergency.data);
-          allEvents = allEvents.concat(emergency.data.map((shift: any) => ({
-            id: shift.id,
-            type: 'turno_emergencia',
-            date: shift.shift_start_date,
-            shift,
-            assignee: shift.technician_id || shift.external_personnel_name,
-            is_primary: shift.is_primary,
-            shift_hours: shift.is_24h_shift ? '24h' : `${shift.shift_start_time?.slice(0,5)}-${shift.shift_end_time?.slice(0,5)}`
-          })));
+          emergency.data.forEach((shift: any) => {
+            let d = new Date(shift.shift_start_date);
+            const end = new Date(shift.shift_end_date);
+            while (d <= end) {
+              allEvents.push({
+                id: shift.id,
+                type: 'turno_emergencia',
+                date: d.toISOString().slice(0,10),
+                shift,
+                assignee: shift.technician_id || shift.external_personnel_name,
+                is_primary: shift.is_primary,
+                shift_hours: shift.is_24h_shift ? '24h' : `${shift.shift_start_time?.slice(0,5)}-${shift.shift_end_time?.slice(0,5)}`
+              });
+              d.setDate(d.getDate() + 1);
+            }
+          });
         }
         setEventos(allEvents);
         setLoading(false);

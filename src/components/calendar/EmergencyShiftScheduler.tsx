@@ -221,12 +221,8 @@ export function EmergencyShiftScheduler() {
 
   return (
     <div className="h-full flex flex-col bg-slate-50 relative">
-      {/* Botón X para cerrar modal */}
-      <button
-        className="absolute top-2 right-2 text-gray-500 hover:text-red-600 text-2xl z-50"
-        onClick={() => typeof window !== 'undefined' && window.close && window.close()}
-        aria-label="Cerrar"
-      >✕</button>
+      {/* Botón X para cerrar modal (solo en el modal principal, no en el formulario) */}
+      {/* El botón X debe estar en el modal padre, no aquí. Elimino este botón. */}
       {/* Header */}
       <div className="bg-white border-b border-slate-200 px-6 py-4">
         <div className="flex items-center justify-between">
