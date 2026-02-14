@@ -3,6 +3,8 @@ import { Calendar, Lock, User, Users, Wrench, AlertCircle, Plus, Shield } from '
 import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
 import { supabase } from '../../lib/supabase';
 export function AdminCalendarDashboard() {
+      // Estado para turnos de emergencia
+      const [emergencyShifts, setEmergencyShifts] = useState<any[]>([]);
     // Estado para mostrar el modal de turnos de emergencia
     const [showEmergencyShifts, setShowEmergencyShifts] = useState(false);
   // Estado para mes/año actual
@@ -77,8 +79,14 @@ export function AdminCalendarDashboard() {
       .select('*')
       .gte('event_date', startDate)
       .lte('event_date', endDate);
-    Promise.all([maintPromise, emergPromise, otPromise, leavesPromise, extPromise])
-      .then(([maint, emerg, ot, leaves, ext]) => {
+    // Turnos de emergencia
+    const emergencyPromise = supabase
+      .from('emergency_shifts')
+      .select('*')
+      .gte('shift_start_date', startDate)
+      .lte('shift_end_date', endDate);
+    Promise.all([maintPromise, emergPromise, otPromise, leavesPromise, extPromise, emergencyPromise])
+      .then(([maint, emerg, ot, leaves, ext, emergency]) => {
         let allEvents: any[] = [];
         if (maint.data) allEvents = allEvents.concat(maint.data.map((m: any) => ({
           ...m,
@@ -97,7 +105,6 @@ export function AdminCalendarDashboard() {
           date: o.scheduled_date
         })));
         if (leaves.data) leaves.data.forEach(lv => {
-          // Generar un evento por cada día de permiso/vacaciones
           let d = new Date(lv.start_date);
           const end = new Date(lv.end_date);
           while (d <= end) {
@@ -112,6 +119,19 @@ export function AdminCalendarDashboard() {
           }
         });
         if (ext.data) allEvents = allEvents.concat(ext.data.map(ev => ({...ev, type: ev.event_type, date: ev.event_date })));
+        // Integrar turnos de emergencia
+        if (emergency.data) {
+          setEmergencyShifts(emergency.data);
+          allEvents = allEvents.concat(emergency.data.map((shift: any) => ({
+            id: shift.id,
+            type: 'turno_emergencia',
+            date: shift.shift_start_date,
+            shift,
+            assignee: shift.technician_id || shift.external_personnel_name,
+            is_primary: shift.is_primary,
+            shift_hours: shift.is_24h_shift ? '24h' : `${shift.shift_start_time?.slice(0,5)}-${shift.shift_end_time?.slice(0,5)}`
+          })));
+        }
         setEventos(allEvents);
         setLoading(false);
       })
@@ -196,15 +216,18 @@ export function AdminCalendarDashboard() {
                     ${ev.type === 'mantenimiento' ? 'bg-blue-100 text-blue-800' :
                       ev.type === 'emergencia' ? 'bg-red-100 text-red-800' :
                       ev.type === 'ot' ? 'bg-green-100 text-green-800' :
+                      ev.type === 'turno_emergencia' ? 'bg-red-200 text-red-900 font-bold' :
                       (ev.type === 'vacaciones' || ev.type === 'permiso') ? 'bg-yellow-200 text-yellow-900 font-bold' :
                       'bg-gray-100 text-gray-800'}`}
                   >
                     {ev.type === 'mantenimiento' && <Wrench className="w-3 h-3" />}
                     {ev.type === 'emergencia' && <AlertCircle className="w-3 h-3" />}
                     {ev.type === 'ot' && <Lock className="w-3 h-3" />}
+                    {ev.type === 'turno_emergencia' && <Shield className="w-3 h-3" />}
                     {(ev.type === 'vacaciones' || ev.type === 'permiso') && <User className="w-3 h-3" />}
                     {ev.type === 'externo' && <Users className="w-3 h-3" />}
-                    <span>{ev.building_name || ev.person || ''}</span>
+                    <span>{ev.assignee || ev.building_name || ev.person || ''}</span>
+                    {ev.type === 'turno_emergencia' && <span className="ml-1">{ev.shift_hours}</span>}
                     {ev.status === 'completado' && <Lock className="w-3 h-3 ml-1" />}
                   </div>
                 ))}
