@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, Lock, User, Users, Wrench, AlertCircle, Plus } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 // Estructura base para el dashboard calendario admin
 export function AdminCalendarDashboard() {
@@ -16,10 +17,43 @@ export function AdminCalendarDashboard() {
   const [eventDate, setEventDate] = useState<string>('');
   const [eventPerson, setEventPerson] = useState('');
 
-  // Aquí se consultarán feriados y eventos reales desde Supabase
-  const feriados = [];
-  const feriadosIrrenunciables = [];
-  const eventos = [];
+  // Simulación de consulta a Supabase (luego se reemplazará por la real)
+  const [feriados, setFeriados] = useState([]);
+  const [feriadosIrrenunciables, setFeriadosIrrenunciables] = useState([]);
+  const [eventos, setEventos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  // Cargar eventos desde Supabase
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    const startDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+    const endDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${new Date(currentYear, currentMonth + 1, 0).getDate()}`;
+    supabase
+      .from('calendar_events')
+      .select('*')
+      .gte('event_date', startDate)
+      .lte('event_date', endDate)
+      .order('event_date', { ascending: true })
+      .then(({ data, error }) => {
+        if (error) setError(error.message);
+        else setEventos(data || []);
+        setLoading(false);
+      });
+  }, [currentMonth, currentYear]);
+
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    // Simulación: después se reemplazará por consulta real a Supabase
+    setTimeout(() => {
+      setEventos([]); // Aquí se cargarán los eventos reales
+      setFeriados([]); // Aquí se cargarán los feriados reales
+      setFeriadosIrrenunciables([]); // Aquí se cargarán los feriados irrenunciables reales
+      setLoading(false);
+    }, 500);
+  }, [currentMonth, currentYear, repeatMode]);
 
   // Generar matriz de días del mes
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -52,13 +86,17 @@ export function AdminCalendarDashboard() {
       <div className="grid grid-cols-7 gap-1 bg-gray-100 rounded-t">
         {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map(d => <div key={d} className="text-center font-semibold py-2">{d}</div>)}
       </div>
-      {weeks.map((week, i) => (
+      {loading ? (
+        <div className="text-center py-8 text-blue-600">Cargando eventos...</div>
+      ) : error ? (
+        <div className="text-center py-8 text-red-600">{error}</div>
+      ) : weeks.map((week, i) => (
         <div key={i} className="grid grid-cols-7 gap-1">
           {week.map((date, j) => {
             const dateStr = date ? date.toISOString().slice(0,10) : '';
             const isFeriado = feriados.includes(dateStr);
             const isFeriadoIrr = feriadosIrrenunciables.includes(dateStr);
-            const dayEvents = eventos.filter(ev => ev.date === dateStr);
+            const dayEvents = eventos.filter((ev: any) => ev.date === dateStr);
             return (
               <div key={j} className={`min-h-[80px] border rounded p-1 relative ${isFeriadoIrr ? 'bg-red-200' : isFeriado ? 'bg-yellow-100' : 'bg-white'}`}
                 onClick={() => date && setSelectedDay(date)}>
@@ -92,7 +130,38 @@ export function AdminCalendarDashboard() {
               <h2 className="text-lg font-bold">Nuevo Evento de Calendario</h2>
               <button onClick={() => setShowEventModal(false)} className="text-gray-500 hover:text-red-600">✕</button>
             </div>
-            <form onSubmit={e => { e.preventDefault(); /* Aquí se implementará la lógica para guardar el evento en Supabase */ setShowEventModal(false); }}>
+            <form onSubmit={async e => {
+              e.preventDefault();
+              setLoading(true);
+              const { error } = await supabase.from('calendar_events').insert([
+                {
+                  event_type: eventType,
+                  event_date: eventDate,
+                  person: eventPerson,
+                  description: eventDesc,
+                  created_by: null // Puedes agregar el id del usuario si lo tienes
+                }
+              ]);
+              if (error) setError(error.message);
+              else {
+                setShowEventModal(false);
+                setEventType('turno');
+                setEventDate('');
+                setEventPerson('');
+                setEventDesc('');
+                // Refrescar eventos
+                const startDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+                const endDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${new Date(currentYear, currentMonth + 1, 0).getDate()}`;
+                const { data } = await supabase
+                  .from('calendar_events')
+                  .select('*')
+                  .gte('event_date', startDate)
+                  .lte('event_date', endDate)
+                  .order('event_date', { ascending: true });
+                setEventos(data || []);
+              }
+              setLoading(false);
+            }}>
               <div className="mb-2">
                 <label className="block text-sm font-semibold mb-1">Tipo de evento</label>
                 <select value={eventType} onChange={e => setEventType(e.target.value)} className="border rounded px-2 py-1 w-full">
