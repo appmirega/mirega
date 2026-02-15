@@ -1,3 +1,4 @@
+// Commit de prueba para forzar build limpio en Vercel
 import { useState, useEffect } from 'react';
 import { getExternalTechnicians, addExternalTechnician } from '../../lib/external_technicians';
 import { Calendar, Plus, Shield } from 'lucide-react';
