@@ -17,6 +17,11 @@ interface EmergencyShiftsTableProps {
 }
 
 export const EmergencyShiftsTable: React.FC<EmergencyShiftsTableProps> = ({ shifts }) => {
+  // Agrupar turnos por id para mostrar solo una fila por periodo
+  const uniqueShifts = shifts.reduce((acc: EmergencyShiftRow[], shift) => {
+    if (!acc.some(s => s.id === shift.id)) acc.push(shift);
+    return acc;
+  }, []);
   return (
     <div className="mt-8">
       <h2 className="text-xl font-bold mb-4">Turnos de emergencia del mes</h2>
@@ -30,7 +35,7 @@ export const EmergencyShiftsTable: React.FC<EmergencyShiftsTableProps> = ({ shif
             </tr>
           </thead>
           <tbody>
-            {shifts.map((shift, idx) => (
+            {uniqueShifts.map((shift, idx) => (
               <tr key={shift.id + '-' + idx} className="hover:bg-gray-50">
                 <td className="border px-2 py-1">
                   {new Date(shift.shift_start_date).toLocaleDateString()} - {new Date(shift.shift_end_date).toLocaleDateString()}
