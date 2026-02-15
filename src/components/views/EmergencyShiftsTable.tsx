@@ -14,26 +14,20 @@ interface EmergencyShiftRow {
 
 interface EmergencyShiftsTableProps {
   shifts: EmergencyShiftRow[];
+  tecnicos?: any[];
 }
 
-export const EmergencyShiftsTable: React.FC<EmergencyShiftsTableProps> = ({ shifts }) => {
   // Agrupar turnos por id para mostrar solo una fila por periodo
   const uniqueShifts = shifts.reduce((acc: EmergencyShiftRow[], shift) => {
     if (!acc.some(s => s.id === shift.id)) acc.push(shift);
     return acc;
   }, []);
 
-  // Obtener nombres reales desde window para técnicos y externos
-  let tecnicos: any[] = [];
-  let externos: any[] = [];
-  if (typeof window !== 'undefined') {
-    try {
-      tecnicos = JSON.parse(localStorage.getItem('tecnicos') || '[]');
-      externos = JSON.parse(localStorage.getItem('external_technicians') || '[]');
-    } catch {}
-  }
+  // Usar tecnicos y externos pasados por props
+  const externos = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('external_technicians') || '[]') : [];
   const getTechnicianName = (id: string) => {
-    const tech = tecnicos.find((t: any) => t.id === id);
+    if (!id) return '';
+    const tech = (typeof tecnicos !== 'undefined' ? tecnicos : []).find((t: any) => t.id === id);
     return tech ? tech.full_name : id;
   };
   const getExternalName = (name: string) => {

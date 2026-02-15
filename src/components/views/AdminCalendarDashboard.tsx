@@ -32,6 +32,12 @@ export function AdminCalendarDashboard() {
         .select('*')
         .gte('shift_start_date', startDate)
         .lte('shift_end_date', endDate);
+        // Consulta eventos de calendario personalizados
+        const calendarPromise = supabase
+          .from('calendar_events')
+          .select('*')
+          .gte('event_date', startDate)
+          .lte('event_date', endDate);
 
       Promise.all([maintPromise, emergPromise, otPromise, emergencyPromise])
         .then(([maint, emerg, ot, emergency]) => {
@@ -79,6 +85,15 @@ export function AdminCalendarDashboard() {
               }
             });
           }
+            // Mapear eventos de calendar_events
+            if (calendar.data) allEvents = allEvents.concat(calendar.data.map((ev: any) => ({
+              ...ev,
+              type: ev.event_type || 'evento',
+              date: ev.event_date,
+              assignee: ev.person,
+              building_name: ev.building_name,
+              description: ev.description
+            })));
           setEventos(allEvents);
           setLoading(false);
         })
@@ -352,6 +367,7 @@ export function AdminCalendarDashboard() {
         />
         <EmergencyShiftsTable
           shifts={eventos.filter(ev => ev.type === 'turno_emergencia').map(ev => ev.shift || ev)}
+          tecnicos={tecnicos}
         />
       </div>
       {/* Zona para validar solicitudes */}
