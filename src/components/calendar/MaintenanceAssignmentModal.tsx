@@ -80,7 +80,9 @@ export function MaintenanceAssignmentModal({
   useEffect(() => {
     loadBuildings();
     if (selectedDate) {
-      const dateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+      // Corregir desfase de fecha: usar toISOString y extraer YYYY-MM-DD en zona local
+      const localDate = new Date(selectedDate.getTime() - selectedDate.getTimezoneOffset() * 60000);
+      const dateStr = localDate.toISOString().slice(0, 10);
       setFormData(prev => ({ ...prev, scheduled_date: dateStr }));
       checkHoliday(dateStr);
     }
@@ -251,7 +253,8 @@ export function MaintenanceAssignmentModal({
         requires_additional_technicians: formData.requires_additional_technicians,
         additional_technicians_count: formData.additional_technicians_count,
         coordination_notes: formData.coordination_notes || null,
-        calendar_month: formData.scheduled_date.substring(0, 7)
+        calendar_month: formData.scheduled_date.substring(0, 7),
+        assignment_type: formData.is_external ? 'turno' : 'mantenimiento' // Corregir tipo según selección
       };
 
       if (assignment) {
@@ -272,6 +275,7 @@ export function MaintenanceAssignmentModal({
       }
 
       onSuccess();
+      if (onClose) onClose();
     } catch (error: any) {
       console.error('Error saving assignment:', error);
       setErrors({ submit: error.message || 'Error al guardar la asignación' });
