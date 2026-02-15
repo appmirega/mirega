@@ -1,3 +1,4 @@
+// Cambio menor para forzar deploy en Vercel
 import React from 'react';
 
 interface EmergencyShiftRow {
