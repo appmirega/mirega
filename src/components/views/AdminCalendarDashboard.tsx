@@ -17,21 +17,21 @@ export function AdminCalendarDashboard() {
         .select('id, elevator_id, assigned_technician_id, scheduled_date, status')
         .gte('scheduled_date', startDate)
         .lte('scheduled_date', endDate);
+      const maintPromise = supabase
+        .from('maintenance_schedules')
+        .select('id, elevator_id, assigned_technician_id, scheduled_date, status, created_at')
+        .gte('scheduled_date', startDate)
+        .lte('scheduled_date', endDate);
       const emergPromise = supabase
         .from('emergency_visits')
-        .select('id, attended_at, status, elevator_id, assigned_technician_id')
+        .select('id, attended_at, status, elevator_id, assigned_technician_id, client_id')
         .gte('attended_at', startDate)
         .lte('attended_at', endDate);
       const otPromise = supabase
         .from('work_orders')
-        .select('id, scheduled_date, status, title, assigned_technician_id')
+        .select('id, order_number, elevator_id, client_id, order_type, title, assigned_technician_id, scheduled_date, status')
         .gte('scheduled_date', startDate)
         .lte('scheduled_date', endDate);
-      Promise.all([maintPromise, emergPromise, otPromise])
-        .then(([maint, emerg, ot]) => {
-          let allEvents: any[] = [];
-          const getTechnicianName = (id: string) => {
-            const tech = tecnicos.find(t => t.id === id);
             return tech ? tech.full_name : id;
           };
           if (maint.data) allEvents = allEvents.concat(maint.data.map((m: any) => ({
@@ -49,8 +49,8 @@ export function AdminCalendarDashboard() {
           if (ot.data) allEvents = allEvents.concat(ot.data.map((o: any) => ({
             id: o.id,
             status: o.status,
-            building_name: o.title,
-            type: o.order_type || 'ot',
+            order_type: o.order_type,
+            title: o.title,
             date: o.scheduled_date,
             assignee: getTechnicianName(o.assigned_technician_id)
           })));
