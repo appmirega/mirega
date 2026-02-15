@@ -53,6 +53,7 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
               <th className="border px-2 py-1">Edificio</th>
               <th className="border px-2 py-1">Descripción</th>
               <th className="border px-2 py-1">Listo</th>
+              <th className="border px-2 py-1">Editar</th>
             </tr>
           </thead>
           <tbody>
@@ -67,6 +68,9 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
                     <td className="border px-2 py-1">{ev.description || '-'}</td>
                     <td className="border px-2 py-1 text-center">
                       <input type="checkbox" checked={!!checked[ev.id + '-' + idx]} onChange={() => setChecked(c => ({ ...c, [ev.id + '-' + idx]: !c[ev.id + '-' + idx] }))} />
+                    </td>
+                    <td className="border px-2 py-1 text-center">
+                      <button className="text-blue-600 hover:underline" title="Editar asignación" onClick={() => alert('Funcionalidad de edición en desarrollo')}>✏️</button>
                     </td>
                   </tr>
                 ))
