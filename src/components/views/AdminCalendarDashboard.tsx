@@ -3,7 +3,7 @@ import { getExternalTechnicians, addExternalTechnician } from '../../lib/externa
 import { Calendar, Plus, Shield } from 'lucide-react';
 import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
 import { ProfessionalBreakdown } from './ProfessionalBreakdown';
-import { EmergencyShiftsTable } from './EmergencyShiftsTable.tsx';
+import { EmergencyShiftsTable } from './EmergencyShiftsTable';
 import { supabase } from '../../lib/supabase';
 export function AdminCalendarDashboard() {
   const [externalTechnicians, setExternalTechnicians] = useState<any[]>([]);
