@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { supabase } from '../../lib/supabase';
 
 interface BreakdownEvent {
   id: string | number;
@@ -47,8 +48,7 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
   // Eliminar asignación
   const handleDelete = async (ev: BreakdownEvent) => {
     if (window.confirm('¿Seguro que deseas eliminar esta asignación?')) {
-      // Eliminar en Supabase
-      const { error } = await window.supabase.from('calendar_events').delete().eq('id', ev.id);
+      const { error } = await supabase.from('calendar_events').delete().eq('id', ev.id);
       if (error) alert('Error al eliminar: ' + error.message);
       else window.location.reload();
     }
@@ -61,7 +61,7 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
   };
   const handleEditSave = async () => {
     if (!editEvent) return;
-    const { error } = await window.supabase.from('calendar_events').update({ description: editDesc, building_name: editBuilding }).eq('id', editEvent.id);
+    const { error } = await supabase.from('calendar_events').update({ description: editDesc, building_name: editBuilding }).eq('id', editEvent.id);
     if (error) alert('Error al editar: ' + error.message);
     else window.location.reload();
     setEditEvent(null);
