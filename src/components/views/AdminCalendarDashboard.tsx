@@ -27,21 +27,12 @@ export function AdminCalendarDashboard() {
         .select('id, scheduled_date, status, title, assigned_technician_id')
         .gte('scheduled_date', startDate)
         .lte('scheduled_date', endDate);
-      // Si tienes technician_leaves, calendar_events, emergency_shifts, ajusta aquí según tu esquema real
-      // const leavesPromise = ...
-      // const extPromise = ...
-      // const emergencyPromise = ...
       Promise.all([maintPromise, emergPromise, otPromise])
-      Promise.all([maintPromise, emergPromise, otPromise, leavesPromise, extPromise, emergencyPromise])
-        .then(([maint, emerg, ot, leaves, ext, emergency]) => {
+        .then(([maint, emerg, ot]) => {
           let allEvents: any[] = [];
           const getTechnicianName = (id: string) => {
             const tech = tecnicos.find(t => t.id === id);
             return tech ? tech.full_name : id;
-          };
-          const getExternalName = (name: string) => {
-            const ext = externalTechnicians.find(e => e.name === name);
-            return ext ? ext.name : name;
           };
           if (maint.data) allEvents = allEvents.concat(maint.data.map((m: any) => ({
             ...m,
@@ -65,7 +56,8 @@ export function AdminCalendarDashboard() {
           })));
           setEventos(allEvents);
           setLoading(false);
-              Promise.all([maintPromise, emergPromise, otPromise])
+        })
+        .catch(() => {
           setError('Error al cargar eventos');
           setEventos([]);
           setLoading(false);
