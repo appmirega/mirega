@@ -42,7 +42,7 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
 
   return (
     <div className="mt-8">
-      <h2 className="text-xl font-bold mb-4">ASIGNACION DEL MES</h2>
+      <h2 className="text-2xl font-bold flex items-center gap-2 mb-4 uppercase tracking-wide">Asignación del mes</h2>
       <div className="overflow-x-auto">
         <table className="min-w-full border text-sm">
           <thead>
@@ -51,7 +51,6 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
               <th className="border px-2 py-1">Tipo</th>
               <th className="border px-2 py-1">Asignado</th>
               <th className="border px-2 py-1">Edificio</th>
-              <th className="border px-2 py-1">Estado</th>
               <th className="border px-2 py-1">Descripción</th>
               <th className="border px-2 py-1">Listo</th>
             </tr>
@@ -65,7 +64,6 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
                     <td className="border px-2 py-1">{eventTypeLabels[ev.type] || ev.type}</td>
                     <td className="border px-2 py-1">{ev.assignee || '-'}</td>
                     <td className="border px-2 py-1">{ev.building_name || '-'}</td>
-                    <td className="border px-2 py-1">{ev.status || '-'}</td>
                     <td className="border px-2 py-1">{ev.description || '-'}</td>
                     <td className="border px-2 py-1 text-center">
                       <input type="checkbox" checked={!!checked[ev.id + '-' + idx]} onChange={() => setChecked(c => ({ ...c, [ev.id + '-' + idx]: !c[ev.id + '-' + idx] }))} />
