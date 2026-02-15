@@ -65,8 +65,8 @@ export function AdminCalendarDashboard() {
           })));
           setEventos(allEvents);
           setLoading(false);
-        })
-        .catch(() => {
+              Promise.all([maintPromise, emergPromise, otPromise])
+              Promise.all([maintPromise, emergPromise, otPromise])
           setError('Error al cargar eventos');
           setEventos([]);
           setLoading(false);
