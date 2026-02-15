@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { getExternalTechnicians } from '../../lib/external_technicians';
 
 interface BreakdownEvent {
   id: string | number;
@@ -45,12 +46,27 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
   const [editEvent, setEditEvent] = useState<BreakdownEvent | null>(null);
   const [editDesc, setEditDesc] = useState('');
   const [editBuilding, setEditBuilding] = useState('');
+  const [editPerson, setEditPerson] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [tecnicos, setTecnicos] = useState<any[]>([]);
+  const [externalTechnicians, setExternalTechnicians] = useState<any[]>([]);
+  const [edificios, setEdificios] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    // Cargar técnicos y edificios solo una vez
+    supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => setTecnicos(data || []));
+    supabase.from('clients').select('id, company_name, address').then(({ data }) => setEdificios(data || []));
+    setExternalTechnicians(getExternalTechnicians());
+  }, []);
   // Eliminar asignación
   const handleDelete = async (ev: BreakdownEvent) => {
     if (window.confirm('¿Seguro que deseas eliminar esta asignación?')) {
       const { error } = await supabase.from('calendar_events').delete().eq('id', ev.id);
       if (error) alert('Error al eliminar: ' + error.message);
-      else window.location.reload();
+      else {
+        // Refrescar solo la vista, no recargar la página ni navegar
+        window.dispatchEvent(new Event('asignacion-eliminada'));
+      }
     }
   };
   // Editar asignación
@@ -58,13 +74,22 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
     setEditEvent(ev);
     setEditDesc(ev.description || '');
     setEditBuilding(ev.building_name || '');
+    setEditPerson(ev.assignee || '');
+    setEditDate(ev.date || '');
   };
   const handleEditSave = async () => {
     if (!editEvent) return;
-    const { error } = await supabase.from('calendar_events').update({ description: editDesc, building_name: editBuilding }).eq('id', editEvent.id);
+    const { error } = await supabase.from('calendar_events').update({
+      description: editDesc,
+      building_name: editBuilding,
+      person: editPerson,
+      event_date: editDate
+    }).eq('id', editEvent.id);
     if (error) alert('Error al editar: ' + error.message);
-    else window.location.reload();
-    setEditEvent(null);
+    else {
+      setEditEvent(null);
+      window.dispatchEvent(new Event('asignacion-eliminada'));
+    }
   };
   const handleEditCancel = () => setEditEvent(null);
   return (
@@ -110,14 +135,36 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
               {/* Modal de edición */}
               {editEvent && (
                 <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-                  <div className="bg-white rounded shadow-lg p-6 min-w-[320px]">
+                  <div className="bg-white rounded shadow-lg p-6 min-w-[320px] max-w-[95vw] w-full">
                     <div className="flex justify-between items-center mb-2">
                       <h2 className="text-lg font-bold">Editar Asignación</h2>
                       <button onClick={handleEditCancel} className="text-gray-500 hover:text-red-600">✕</button>
                     </div>
                     <div className="mb-2">
+                      <label className="block text-sm font-semibold mb-1">Fecha</label>
+                      <input type="date" className="border rounded px-2 py-1 w-full" value={editDate} onChange={e => setEditDate(e.target.value)} />
+                    </div>
+                    <div className="mb-2">
+                      <label className="block text-sm font-semibold mb-1">Técnico/Empresa</label>
+                      <select className="border rounded px-2 py-1 w-full" value={editPerson} onChange={e => setEditPerson(e.target.value)}>
+                        <option value="">Selecciona técnico interno o empresa externa</option>
+                        {tecnicos.map((t: any) => (
+                          <option key={t.id} value={t.full_name}>{t.full_name} (Interno)</option>
+                        ))}
+                        {externalTechnicians.length > 0 && <option disabled>──────────</option>}
+                        {externalTechnicians.map((ext: any) => (
+                          <option key={ext.id} value={ext.name}>{ext.name} (Externo)</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mb-2">
                       <label className="block text-sm font-semibold mb-1">Edificio</label>
-                      <input type="text" className="border rounded px-2 py-1 w-full" value={editBuilding} onChange={e => setEditBuilding(e.target.value)} />
+                      <select className="border rounded px-2 py-1 w-full" value={editBuilding} onChange={e => setEditBuilding(e.target.value)}>
+                        <option value="">Selecciona un edificio</option>
+                        {edificios.map((e: any) => (
+                          <option key={e.id} value={e.company_name}>{e.company_name} - {e.address}</option>
+                        ))}
+                      </select>
                     </div>
                     <div className="mb-2">
                       <label className="block text-sm font-semibold mb-1">Descripción</label>
