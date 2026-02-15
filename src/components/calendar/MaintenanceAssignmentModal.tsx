@@ -80,9 +80,11 @@ export function MaintenanceAssignmentModal({
   useEffect(() => {
     loadBuildings();
     if (selectedDate) {
-      // Corregir desfase de fecha: usar toISOString y extraer YYYY-MM-DD en zona local
-      const localDate = new Date(selectedDate.getTime() - selectedDate.getTimezoneOffset() * 60000);
-      const dateStr = localDate.toISOString().slice(0, 10);
+      // Usar fecha local exacta seleccionada, sin desfase ni conversión a UTC
+      const yyyy = selectedDate.getFullYear();
+      const mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const dd = String(selectedDate.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
       setFormData(prev => ({ ...prev, scheduled_date: dateStr }));
       checkHoliday(dateStr);
     }
