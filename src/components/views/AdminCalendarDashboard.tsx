@@ -26,6 +26,7 @@ export function AdminCalendarDashboard() {
   const [eventDesc, setEventDesc] = useState('');
   const [eventDate, setEventDate] = useState<string>('');
   const [eventPerson, setEventPerson] = useState('');
+  const [eventBuilding, setEventBuilding] = useState('');
 
   // Simulación de consulta a Supabase (luego se reemplazará por la real)
   const [feriados, setFeriados] = useState<string[]>([]);
@@ -280,6 +281,7 @@ export function AdminCalendarDashboard() {
                   event_type: eventType,
                   event_date: eventDate,
                   person: eventPerson,
+                  building_name: eventBuilding,
                   description: eventDesc,
                   created_by: null // Puedes agregar el id del usuario si lo tienes
                 }
@@ -291,12 +293,123 @@ export function AdminCalendarDashboard() {
                 setEventDate('');
                 setEventPerson('');
                 setEventDesc('');
-                // Refrescar todos los eventos (incluyendo técnicos internos y externos)
-                // Forzar actualización de useEffect cambiando el mes (trigger)
-                setEventos([]); // Limpia para forzar render inmediato
-                setTimeout(() => {
-                  setEventos([]); // Asegura doble render
-                }, 10);
+                setEventBuilding('');
+                // Refrescar todos los eventos (igual que en useEffect)
+                setLoading(true);
+                setError('');
+                const startDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+                const endDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${new Date(currentYear, currentMonth + 1, 0).getDate()}`;
+                const maintPromise = supabase
+                  .from('maintenance_schedules')
+                  .select('id, building_name, building_address, created_at, client_id, created_by')
+                  .gte('created_at', startDate)
+                  .lte('created_at', endDate);
+                const emergPromise = supabase
+                  .from('emergency_visits')
+                  .select('id, attended_at, status, building_name, assigned_technician_id')
+                  .gte('attended_at', startDate)
+                  .lte('attended_at', endDate);
+                const otPromise = supabase
+                  .from('work_orders')
+                  .select('id, scheduled_date, status, title as building_name, assigned_technician_id')
+                  .gte('scheduled_date', startDate)
+                  .lte('scheduled_date', endDate);
+                const leavesPromise = supabase
+                  .from('technician_leaves')
+                  .select('id, leave_type, start_date, end_date, status, technician_id')
+                  .eq('status', 'aprobado')
+                  .gte('end_date', startDate)
+                  .lte('start_date', endDate);
+                const extPromise = supabase
+                  .from('calendar_events')
+                  .select('*')
+                  .gte('event_date', startDate)
+                  .lte('event_date', endDate);
+                const emergencyPromise = supabase
+                  .from('emergency_shifts')
+                  .select('*')
+                  .gte('shift_start_date', startDate)
+                  .lte('shift_end_date', endDate);
+                Promise.all([maintPromise, emergPromise, otPromise, leavesPromise, extPromise, emergencyPromise])
+                  .then(([maint, emerg, ot, leaves, ext, emergency]) => {
+                    let allEvents: any[] = [];
+                    const getTechnicianName = (id: string) => {
+                      const tech = tecnicos.find(t => t.id === id);
+                      return tech ? tech.full_name : id;
+                    };
+                    const getExternalName = (name: string) => {
+                      const ext = externalTechnicians.find(e => e.name === name);
+                      return ext ? ext.name : name;
+                    };
+                    if (maint.data) allEvents = allEvents.concat(maint.data.map((m: any) => ({
+                      ...m,
+                      type: 'mantenimiento',
+                      date: m.created_at ? m.created_at.slice(0,10) : '',
+                      building_name: m.building_name,
+                      building_address: m.building_address,
+                      assignee: getTechnicianName(m.created_by)
+                    })));
+                    if (emerg.data) allEvents = allEvents.concat(emerg.data.map((e: any) => ({
+                      ...e,
+                      type: 'emergencia',
+                      date: e.attended_at,
+                      assignee: getTechnicianName(e.assigned_technician_id)
+                    })));
+                    if (ot.data) allEvents = allEvents.concat(ot.data.map((o: any) => ({
+                      id: o.id,
+                      status: o.status,
+                      building_name: o["title as building_name"],
+                      type: 'ot',
+                      date: o.scheduled_date,
+                      assignee: getTechnicianName(o.assigned_technician_id)
+                    })));
+                    if (leaves.data) leaves.data.forEach(lv => {
+                      let d = new Date(lv.start_date);
+                      const end = new Date(lv.end_date);
+                      while (d <= end) {
+                        allEvents.push({
+                          id: lv.id,
+                          type: lv.leave_type,
+                          date: d.toISOString().slice(0,10),
+                          status: 'aprobado',
+                          assignee: getTechnicianName(lv.technician_id)
+                        });
+                        d.setDate(d.getDate() + 1);
+                      }
+                    });
+                    if (ext.data) allEvents = allEvents.concat(ext.data.map(ev => ({
+                      ...ev,
+                      type: ev.event_type,
+                      date: ev.event_date,
+                      building_name: ev.building_name,
+                      assignee: ev.person ? getExternalName(ev.person) : undefined
+                    })));
+                    if (emergency.data) {
+                      emergency.data.forEach((shift: any) => {
+                        let d = new Date(shift.shift_start_date);
+                        const end = new Date(shift.shift_end_date);
+                        while (d <= end) {
+                          allEvents.push({
+                            id: shift.id,
+                            type: 'turno_emergencia',
+                            date: d.toISOString().slice(0,10),
+                            shift,
+                            assignee: shift.is_external ? getExternalName(shift.external_personnel_name) : getTechnicianName(shift.technician_id),
+                            is_primary: shift.is_primary,
+                            shift_hours: shift.is_24h_shift ? '24h' : `${shift.shift_start_time?.slice(0,5)}-${shift.shift_end_time?.slice(0,5)}`
+                          });
+                          d.setDate(d.getDate() + 1);
+                        }
+                      });
+                    }
+                    setEventos(allEvents);
+                    setLoading(false);
+                  })
+                  .catch(() => {
+                    setError('Error al refrescar eventos');
+                    setEventos([]);
+                    setLoading(false);
+                  });
               }
               setLoading(false);
             }}>
@@ -355,7 +468,7 @@ export function AdminCalendarDashboard() {
               {/* Selección de edificio */}
               <div className="mb-2">
                 <label className="block text-sm font-semibold mb-1">Edificio</label>
-                <select className="border rounded px-2 py-1 w-full" required>
+                <select className="border rounded px-2 py-1 w-full" required value={eventBuilding} onChange={e => setEventBuilding(e.target.value)}>
                   <option value="">Selecciona un edificio</option>
                   {edificios.map((e: any) => (
                     <option key={e.id} value={e.company_name}>{e.company_name} - {e.address}</option>
