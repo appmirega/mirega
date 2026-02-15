@@ -153,6 +153,7 @@ export function EmergencyShiftScheduler() {
       if (error) throw error;
 
       alert('✅ Turno de emergencia asignado exitosamente');
+      window.dispatchEvent(new CustomEvent('turno-emergencia-actualizado'));
       setFormData({
         technician_id: '',
         is_external: false,
@@ -183,6 +184,7 @@ export function EmergencyShiftScheduler() {
       if (error) throw error;
 
       alert('✅ Turno eliminado');
+      window.dispatchEvent(new CustomEvent('turno-emergencia-actualizado'));
       loadData();
     } catch (error) {
       console.error('Error deleting shift:', error);

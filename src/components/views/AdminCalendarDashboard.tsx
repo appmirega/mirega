@@ -138,11 +138,15 @@ export function AdminCalendarDashboard() {
     }
   }, [tecnicos, currentMonth, currentYear]);
 
-  // Escuchar evento de eliminación para refrescar
+  // Escuchar eventos personalizados para refrescar (asignaciones y turnos de emergencia)
   useEffect(() => {
     const handler = () => fetchEventos();
     window.addEventListener('asignacion-eliminada', handler);
-    return () => window.removeEventListener('asignacion-eliminada', handler);
+    window.addEventListener('turno-emergencia-actualizado', handler);
+    return () => {
+      window.removeEventListener('asignacion-eliminada', handler);
+      window.removeEventListener('turno-emergencia-actualizado', handler);
+    };
   }, []);
 
 
