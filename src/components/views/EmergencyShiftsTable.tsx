@@ -1,3 +1,4 @@
+// Commit de prueba para forzar deploy Vercel
 // Cambio menor para forzar deploy en Vercel
 import React from 'react';
 
