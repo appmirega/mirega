@@ -66,7 +66,6 @@ export function AdminCalendarDashboard() {
           setEventos(allEvents);
           setLoading(false);
               Promise.all([maintPromise, emergPromise, otPromise])
-              Promise.all([maintPromise, emergPromise, otPromise])
           setError('Error al cargar eventos');
           setEventos([]);
           setLoading(false);
@@ -105,6 +104,15 @@ export function AdminCalendarDashboard() {
   useEffect(() => {
     let mounted = true;
     supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => {
+              if (maint.error) console.error('Supabase maintenance_schedules error:', maint.error.message);
+              if (emerg.error) console.error('Supabase emergency_visits error:', emerg.error.message);
+              if (ot.error) console.error('Supabase work_orders error:', ot.error.message);
+              .catch((err) => {
+                  setError('Error al cargar eventos');
+                  setEventos([]);
+                  setLoading(false);
+                  console.error('Error en fetchEventos:', err);
+                });
       if (mounted) setTecnicos(data || []);
     });
     supabase.from('clients').select('id, company_name, address').then(({ data }) => {
