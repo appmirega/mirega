@@ -40,22 +40,37 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
     if (grouped[ev.date]) grouped[ev.date].push(ev);
   });
 
-  // Funciones para editar y eliminar
-  const handleEdit = (ev: BreakdownEvent) => {
-    alert('Funcionalidad de edición en desarrollo');
-    // Aquí puedes abrir un modal o formulario para editar la asignación
-  };
+  // Estado para edición
+  const [editEvent, setEditEvent] = useState<BreakdownEvent | null>(null);
+  const [editDesc, setEditDesc] = useState('');
+  const [editBuilding, setEditBuilding] = useState('');
+  // Eliminar asignación
   const handleDelete = async (ev: BreakdownEvent) => {
     if (window.confirm('¿Seguro que deseas eliminar esta asignación?')) {
       // Eliminar en Supabase
-      // ...implementar lógica de eliminación...
-      alert('Funcionalidad de eliminación en desarrollo');
+      const { error } = await window.supabase.from('calendar_events').delete().eq('id', ev.id);
+      if (error) alert('Error al eliminar: ' + error.message);
+      else window.location.reload();
     }
   };
+  // Editar asignación
+  const handleEdit = (ev: BreakdownEvent) => {
+    setEditEvent(ev);
+    setEditDesc(ev.description || '');
+    setEditBuilding(ev.building_name || '');
+  };
+  const handleEditSave = async () => {
+    if (!editEvent) return;
+    const { error } = await window.supabase.from('calendar_events').update({ description: editDesc, building_name: editBuilding }).eq('id', editEvent.id);
+    if (error) alert('Error al editar: ' + error.message);
+    else window.location.reload();
+    setEditEvent(null);
+  };
+  const handleEditCancel = () => setEditEvent(null);
   return (
     <div className="mt-8">
       <h2 className="text-2xl font-bold flex items-center gap-2 mb-4 uppercase tracking-wide">Asignación del mes</h2>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto max-h-[400px]">
         <table className="min-w-full border text-sm">
           <thead>
             <tr className="bg-gray-100">
@@ -92,6 +107,26 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
                 ))
             )}
           </tbody>
+              {/* Modal de edición */}
+              {editEvent && (
+                <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+                  <div className="bg-white rounded shadow-lg p-6 min-w-[320px]">
+                    <div className="flex justify-between items-center mb-2">
+                      <h2 className="text-lg font-bold">Editar Asignación</h2>
+                      <button onClick={handleEditCancel} className="text-gray-500 hover:text-red-600">✕</button>
+                    </div>
+                    <div className="mb-2">
+                      <label className="block text-sm font-semibold mb-1">Edificio</label>
+                      <input type="text" className="border rounded px-2 py-1 w-full" value={editBuilding} onChange={e => setEditBuilding(e.target.value)} />
+                    </div>
+                    <div className="mb-2">
+                      <label className="block text-sm font-semibold mb-1">Descripción</label>
+                      <textarea className="border rounded px-2 py-1 w-full" rows={3} value={editDesc} onChange={e => setEditDesc(e.target.value)} />
+                    </div>
+                    <button className="bg-blue-600 text-white px-4 py-2 rounded mt-2 w-full" onClick={handleEditSave}>Guardar Cambios</button>
+                  </div>
+                </div>
+              )}
         </table>
       </div>
       {/* Sección inicial para validar solicitudes */}
