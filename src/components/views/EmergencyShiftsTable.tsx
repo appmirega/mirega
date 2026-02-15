@@ -22,6 +22,25 @@ export const EmergencyShiftsTable: React.FC<EmergencyShiftsTableProps> = ({ shif
     if (!acc.some(s => s.id === shift.id)) acc.push(shift);
     return acc;
   }, []);
+
+  // Obtener nombres reales desde window para técnicos y externos
+  let tecnicos: any[] = [];
+  let externos: any[] = [];
+  if (typeof window !== 'undefined') {
+    try {
+      tecnicos = JSON.parse(localStorage.getItem('tecnicos') || '[]');
+      externos = JSON.parse(localStorage.getItem('external_technicians') || '[]');
+    } catch {}
+  }
+  const getTechnicianName = (id: string) => {
+    const tech = tecnicos.find((t: any) => t.id === id);
+    return tech ? tech.full_name : id;
+  };
+  const getExternalName = (name: string) => {
+    const ext = externos.find((e: any) => e.name === name);
+    return ext ? ext.name : name;
+  };
+
   return (
     <div className="mt-8">
       <h2 className="text-xl font-bold mb-4">Turnos de emergencia del mes</h2>
@@ -44,7 +63,7 @@ export const EmergencyShiftsTable: React.FC<EmergencyShiftsTableProps> = ({ shif
                   {shift.is_24h_shift ? '24 horas' : `${shift.shift_start_time?.slice(0,5) || ''} - ${shift.shift_end_time?.slice(0,5) || ''}`}
                 </td>
                 <td className="border px-2 py-1">
-                  {shift.is_external ? shift.external_personnel_name : shift.technician_id}
+                  {shift.is_external ? getExternalName(shift.external_personnel_name || '') : getTechnicianName(shift.technician_id || '')}
                 </td>
               </tr>
             ))}

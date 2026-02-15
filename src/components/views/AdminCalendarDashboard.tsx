@@ -492,6 +492,15 @@ export function AdminCalendarDashboard() {
           shifts={eventos.filter(ev => ev.type === 'turno_emergencia').map(ev => ev.shift || ev)}
         />
       </div>
+      {/* Zona para validar solicitudes */}
+      <div className="mt-12">
+        <h2 className="text-xl font-bold mb-4">Validación de Solicitudes</h2>
+        <div className="bg-white border rounded shadow p-4">
+          <p className="mb-2 text-gray-700">Aquí aparecerán las solicitudes pendientes para validar, aprobar o rechazar.</p>
+          {/* Aquí puedes mapear solicitudes reales si existen */}
+          <div className="text-gray-400">(Funcionalidad en desarrollo)</div>
+        </div>
+      </div>
     </div>
   );
 }

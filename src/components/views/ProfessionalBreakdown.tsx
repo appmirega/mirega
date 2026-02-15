@@ -21,14 +21,10 @@ interface ProfessionalBreakdownProps {
 
 const eventTypeLabels: Record<string, string> = {
   mantenimiento: 'Mantenimiento',
-  emergencia: 'Emergencia',
-  ot: 'Orden de Trabajo',
-  turno_emergencia: 'Turno Emergencia',
-  vacaciones: 'Vacaciones',
-  permiso: 'Permiso',
-  externo: 'Servicio Externo',
-  personal: 'Personal Adicional',
-  turno: 'Turno Técnico',
+  reparaciones: 'Reparaciones',
+  induccion_rescate: 'Inducción de rescate',
+  vista_certificacion: 'Vista certificación',
+  otros: 'Otros',
 };
 
 export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ events, selectedMonth, selectedYear }) => {
@@ -46,7 +42,7 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
 
   return (
     <div className="mt-8">
-      <h2 className="text-xl font-bold mb-4">Desglose profesional del mes</h2>
+      <h2 className="text-xl font-bold mb-4">ASIGNACION DEL MES</h2>
       <div className="overflow-x-auto">
         <table className="min-w-full border text-sm">
           <thead>
@@ -55,7 +51,6 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
               <th className="border px-2 py-1">Tipo</th>
               <th className="border px-2 py-1">Asignado</th>
               <th className="border px-2 py-1">Edificio</th>
-              <th className="border px-2 py-1">Horario</th>
               <th className="border px-2 py-1">Estado</th>
               <th className="border px-2 py-1">Descripción</th>
               <th className="border px-2 py-1">Listo</th>
@@ -70,7 +65,6 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
                     <td className="border px-2 py-1">{eventTypeLabels[ev.type] || ev.type}</td>
                     <td className="border px-2 py-1">{ev.assignee || '-'}</td>
                     <td className="border px-2 py-1">{ev.building_name || '-'}</td>
-                    <td className="border px-2 py-1">{ev.shift_hours || '-'}</td>
                     <td className="border px-2 py-1">{ev.status || '-'}</td>
                     <td className="border px-2 py-1">{ev.description || '-'}</td>
                     <td className="border px-2 py-1 text-center">
