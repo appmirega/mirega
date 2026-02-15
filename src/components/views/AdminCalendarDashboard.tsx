@@ -27,8 +27,14 @@ export function AdminCalendarDashboard() {
         .select('id, order_number, elevator_id, client_id, order_type, title, assigned_technician_id, scheduled_date, status')
         .gte('scheduled_date', startDate)
         .lte('scheduled_date', endDate);
-      Promise.all([maintPromise, emergPromise, otPromise])
-        .then(([maint, emerg, ot]) => {
+      const emergencyPromise = supabase
+        .from('emergency_shifts')
+        .select('*')
+        .gte('shift_start_date', startDate)
+        .lte('shift_end_date', endDate);
+
+      Promise.all([maintPromise, emergPromise, otPromise, emergencyPromise])
+        .then(([maint, emerg, ot, emergency]) => {
           let allEvents: any[] = [];
           const getTechnicianName = (id: string) => {
             const tech = tecnicos.find(t => t.id === id);
@@ -54,6 +60,25 @@ export function AdminCalendarDashboard() {
             date: o.scheduled_date,
             assignee: getTechnicianName(o.assigned_technician_id)
           })));
+          // Mapear turnos de emergencia: un evento por cada día del rango
+          if (emergency.data) {
+            emergency.data.forEach((shift: any) => {
+              let d = new Date(shift.shift_start_date);
+              const end = new Date(shift.shift_end_date);
+              while (d <= end) {
+                allEvents.push({
+                  id: shift.id,
+                  type: 'turno_emergencia',
+                  date: d.toISOString().slice(0,10),
+                  shift,
+                  assignee: shift.external_personnel_name ? shift.external_personnel_name : getTechnicianName(shift.technician_id),
+                  is_primary: shift.is_primary,
+                  shift_hours: shift.is_24h_shift ? '24h' : `${shift.shift_start_time?.slice(0,5)}-${shift.shift_end_time?.slice(0,5)}`
+                });
+                d.setDate(d.getDate() + 1);
+              }
+            });
+          }
           setEventos(allEvents);
           setLoading(false);
         })
