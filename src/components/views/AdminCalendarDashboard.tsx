@@ -14,11 +14,6 @@ export function AdminCalendarDashboard() {
       const endDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${new Date(currentYear, currentMonth + 1, 0).getDate()}`;
       const maintPromise = supabase
         .from('maintenance_schedules')
-        .select('id, elevator_id, assigned_technician_id, scheduled_date, status')
-        .gte('scheduled_date', startDate)
-        .lte('scheduled_date', endDate);
-      const maintPromise = supabase
-        .from('maintenance_schedules')
         .select('id, elevator_id, assigned_technician_id, scheduled_date, status, created_at')
         .gte('scheduled_date', startDate)
         .lte('scheduled_date', endDate);
@@ -32,6 +27,11 @@ export function AdminCalendarDashboard() {
         .select('id, order_number, elevator_id, client_id, order_type, title, assigned_technician_id, scheduled_date, status')
         .gte('scheduled_date', startDate)
         .lte('scheduled_date', endDate);
+      Promise.all([maintPromise, emergPromise, otPromise])
+        .then(([maint, emerg, ot]) => {
+          let allEvents: any[] = [];
+          const getTechnicianName = (id: string) => {
+            const tech = tecnicos.find(t => t.id === id);
             return tech ? tech.full_name : id;
           };
           if (maint.data) allEvents = allEvents.concat(maint.data.map((m: any) => ({
