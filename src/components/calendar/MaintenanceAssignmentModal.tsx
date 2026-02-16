@@ -256,7 +256,7 @@ export function MaintenanceAssignmentModal({
         additional_technicians_count: formData.additional_technicians_count,
         coordination_notes: formData.coordination_notes || null,
         calendar_month: formData.scheduled_date.substring(0, 7),
-        assignment_type: formData.is_external ? 'turno' : 'mantenimiento' // Corregir tipo según selección
+        assignment_type: formData.assignment_type || (formData.is_external ? 'turno' : 'mantenimiento') // Guarda el tipo seleccionado
       };
 
       if (assignment) {
@@ -405,6 +405,19 @@ export function MaintenanceAssignmentModal({
             <label className="text-sm font-medium text-slate-700 mb-2 block">
               Tipo de Asignación *
             </label>
+            <select
+              value={formData.assignment_type || (formData.is_external ? 'turno' : 'mantenimiento')}
+              onChange={e => setFormData({ ...formData, assignment_type: e.target.value })}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-2"
+              required
+            >
+              <option value="mantenimiento">Mantenimiento</option>
+              <option value="reparaciones">Reparaciones</option>
+              <option value="induccion_rescate">Inducción de rescate</option>
+              <option value="vista_certificacion">Vista certificación</option>
+              <option value="otros">Otros</option>
+              <option value="turno">Turno</option>
+            </select>
             <div className="flex gap-4">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
