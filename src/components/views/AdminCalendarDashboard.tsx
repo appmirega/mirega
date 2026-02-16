@@ -40,8 +40,8 @@ export function AdminCalendarDashboard() {
           .gte('event_date', startDate)
           .lte('event_date', endDate);
 
-      Promise.all([maintPromise, emergPromise, otPromise, emergencyPromise])
-        .then(([maint, emerg, ot, emergency]) => {
+      Promise.all([maintPromise, emergPromise, otPromise, emergencyPromise, calendarPromise])
+        .then(([maint, emerg, ot, emergency, calendar]) => {
           let allEvents: any[] = [];
           const getTechnicianName = (id: string) => {
             const tech = tecnicos.find(t => t.id === id);
