@@ -170,9 +170,9 @@ export function EmergencyShiftScheduler() {
       });
       setShowForm(false);
       loadData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating shift:', error);
-      alert('❌ Error al crear turno de emergencia');
+      alert('❌ Error al crear turno de emergencia: ' + (error?.message || JSON.stringify(error)));
     }
   };
 

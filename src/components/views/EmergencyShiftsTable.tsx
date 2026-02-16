@@ -55,7 +55,7 @@ export function EmergencyShiftsTable({ shifts, tecnicos }: EmergencyShiftsTableP
             {uniqueShifts.map((shift, idx) => (
               <tr key={shift.id + '-' + idx} className="hover:bg-gray-50">
                 <td className="border px-2 py-1">
-                  {new Date(shift.shift_start_date).toLocaleDateString()} - {new Date(shift.shift_end_date).toLocaleDateString()}
+                  {shift.shift_start_date} - {shift.shift_end_date}
                 </td>
                 <td className="border px-2 py-1">
                   {shift.is_24h_shift ? '24 horas' : `${shift.shift_start_time?.slice(0,5) || ''} - ${shift.shift_end_time?.slice(0,5) || ''}`}
