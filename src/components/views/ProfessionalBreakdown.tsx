@@ -22,11 +22,16 @@ interface ProfessionalBreakdownProps {
 }
 
 const eventTypeLabels: Record<string, string> = {
+  preventive: 'Preventivo',
+  corrective: 'Correctivo',
+  emergency: 'Emergencia',
   mantenimiento: 'Mantenimiento',
   reparaciones: 'Reparaciones',
   induccion_rescate: 'Inducción de rescate',
   vista_certificacion: 'Vista certificación',
   otros: 'Otros',
+  turno_emergencia: 'Turno Emergencia',
+  turno: 'Turno',
 };
 
 export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ events, selectedMonth, selectedYear }) => {
