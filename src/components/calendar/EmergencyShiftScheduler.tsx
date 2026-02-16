@@ -133,19 +133,21 @@ export function EmergencyShiftScheduler() {
     if (!validateForm()) return;
 
     try {
-      const payload = {
+      // Validar fechas como string local YYYY-MM-DD
+      const shift_start_date = formData.shift_start_date;
+      const shift_end_date = formData.shift_end_date;
+      const payload: any = {
         technician_id: formData.is_external ? null : formData.technician_id,
         external_personnel_name: formData.is_external ? formData.external_personnel_name : null,
         external_personnel_phone: formData.is_external ? formData.external_personnel_phone : null,
-        shift_start_date: formData.shift_start_date,
-        shift_end_date: formData.shift_end_date,
+        shift_start_date,
+        shift_end_date,
         is_primary: formData.is_primary,
-        shift_type: formData.is_24h_shift ? '24x7' : 'weekday',
         is_24h_shift: formData.is_24h_shift,
         shift_start_time: formData.is_24h_shift ? '00:00:00' : formData.shift_start_time + ':00',
         shift_end_time: formData.is_24h_shift ? '23:59:59' : formData.shift_end_time + ':00'
       };
-
+      // Eliminar shift_type si la tabla no lo requiere
       const { error } = await supabase
         .from('emergency_shifts')
         .insert([payload]);
@@ -160,9 +162,11 @@ export function EmergencyShiftScheduler() {
         external_personnel_name: '',
         external_personnel_phone: '',
         shift_start_date: '',
-        shift_end_date: '',        is_24h_shift: true,
+        shift_end_date: '',
+        is_24h_shift: true,
         shift_start_time: '08:30',
-        shift_end_time: '17:59',        is_primary: true
+        shift_end_time: '17:59',
+        is_primary: true
       });
       setShowForm(false);
       loadData();
