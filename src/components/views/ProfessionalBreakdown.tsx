@@ -119,7 +119,10 @@ export const ProfessionalBreakdown: React.FC<ProfessionalBreakdownProps> = ({ ev
               dayEvents.length === 0 ? [] :
                 dayEvents.map((ev, idx) => (
                   <tr key={ev.id + '-' + idx} className="hover:bg-gray-50">
-                    <td className="border px-2 py-1">{new Date(date).toLocaleDateString()}</td>
+                    <td className="border px-2 py-1">{(() => {
+                      const [y, m, d] = date.split('-');
+                      return `${d}-${m}-${y}`;
+                    })()}</td>
                     <td className="border px-2 py-1">{eventTypeLabels[ev.type] || ev.type}</td>
                     <td className="border px-2 py-1">{ev.assignee || '-'}</td>
                     <td className="border px-2 py-1">{ev.building_name || '-'}</td>
