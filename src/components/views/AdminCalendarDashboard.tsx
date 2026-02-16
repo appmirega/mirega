@@ -98,7 +98,8 @@ export function AdminCalendarDashboard() {
           setEventos(allEvents);
           setLoading(false);
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error('Error real al cargar eventos:', err);
           setError('Error al cargar eventos');
           setEventos([]);
           setLoading(false);
