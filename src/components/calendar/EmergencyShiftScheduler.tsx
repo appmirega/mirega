@@ -29,12 +29,8 @@ export function EmergencyShiftScheduler() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [externalList, setExternalList] = useState<any[]>([]);
   const [formData, setFormData] = useState({
-      const [externalList, setExternalList] = useState<any[]>([]);
-
-      useEffect(() => {
-        setExternalList(getExternalTechnicians());
-      }, [showForm]);
     technician_id: '',
     is_external: false,
     external_personnel_name: '',
@@ -46,6 +42,10 @@ export function EmergencyShiftScheduler() {
     shift_end_time: '17:59',
     is_primary: true
   });
+
+  useEffect(() => {
+    setExternalList(getExternalTechnicians());
+  }, [showForm]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
