@@ -7,6 +7,21 @@ import { ProfessionalBreakdown } from './ProfessionalBreakdown';
 import { EmergencyShiftsTable } from './EmergencyShiftsTable';
 import { supabase } from '../../lib/supabase';
 export function AdminCalendarDashboard() {
+    // Función para mapear el tipo de asignación
+    const getTypeLabel = (type: string) => {
+      const labels: Record<string, string> = {
+        preventive: 'Preventivo',
+        corrective: 'Correctivo',
+        emergency: 'Emergencia',
+        mantenimiento: 'Mantenimiento',
+        reparaciones: 'Reparaciones',
+        induccion_rescate: 'Inducción de rescate',
+        vista_certificacion: 'Vista certificación',
+        otros: 'Otros',
+      };
+      return labels[type] || type;
+    };
+
     // Refrescar eventos manualmente
     const fetchEventos = () => {
       setLoading(true);
@@ -15,7 +30,7 @@ export function AdminCalendarDashboard() {
       const endDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${new Date(currentYear, currentMonth + 1, 0).getDate()}`;
       const maintPromise = supabase
         .from('maintenance_schedules')
-        .select('id, elevator_id, assigned_technician_id, scheduled_date, status, created_at')
+        .select('id, elevator_id, assigned_technician_id, maintenance_type, scheduled_date, status, created_at')
         .gte('scheduled_date', startDate)
         .lte('scheduled_date', endDate);
       const emergPromise = supabase
@@ -33,12 +48,12 @@ export function AdminCalendarDashboard() {
         .select('*')
         .gte('shift_start_date', startDate)
         .lte('shift_end_date', endDate);
-        // Consulta eventos de calendario personalizados
-        const calendarPromise = supabase
-          .from('calendar_events')
-          .select('*')
-          .gte('event_date', startDate)
-          .lte('event_date', endDate);
+      // Consulta eventos de calendario personalizados
+      const calendarPromise = supabase
+        .from('calendar_events')
+        .select('*')
+        .gte('event_date', startDate)
+        .lte('event_date', endDate);
 
       Promise.all([maintPromise, emergPromise, otPromise, emergencyPromise, calendarPromise])
         .then(([maint, emerg, ot, emergency, calendar]) => {
@@ -53,20 +68,6 @@ export function AdminCalendarDashboard() {
             date: m.scheduled_date,
             assignee: getTechnicianName(m.assigned_technician_id)
           })));
-            // Función para mapear el tipo de asignación
-            const getTypeLabel = (type: string) => {
-              const labels: Record<string, string> = {
-                preventive: 'Preventivo',
-                corrective: 'Correctivo',
-                emergency: 'Emergencia',
-                mantenimiento: 'Mantenimiento',
-                reparaciones: 'Reparaciones',
-                induccion_rescate: 'Inducción de rescate',
-                vista_certificacion: 'Vista certificación',
-                otros: 'Otros',
-              };
-              return labels[type] || type;
-            };
           if (emerg.data) allEvents = allEvents.concat(emerg.data.map((e: any) => ({
             ...e,
             type: 'emergencia',
@@ -103,15 +104,15 @@ export function AdminCalendarDashboard() {
               }
             });
           }
-            // Mapear eventos de calendar_events
-            if (calendar.data) allEvents = allEvents.concat(calendar.data.map((ev: any) => ({
-              ...ev,
-              type: ev.event_type || 'evento',
-              date: ev.event_date,
-              assignee: ev.person,
-              building_name: ev.building_name,
-              description: ev.description
-            })));
+          // Mapear eventos de calendar_events
+          if (calendar.data) allEvents = allEvents.concat(calendar.data.map((ev: any) => ({
+            ...ev,
+            type: ev.event_type || 'evento',
+            date: ev.event_date,
+            assignee: ev.person,
+            building_name: ev.building_name,
+            description: ev.description
+          })));
           setEventos(allEvents);
           setLoading(false);
         })
