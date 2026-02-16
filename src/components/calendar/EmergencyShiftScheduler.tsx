@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getExternalTechnicians, addExternalTechnician } from '../../lib/external_technicians';
 import { supabase } from '../../lib/supabase';
 import { Calendar, Plus, Trash2, Users, AlertCircle, Clock } from 'lucide-react';
 
@@ -29,6 +30,11 @@ export function EmergencyShiftScheduler() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
+      const [externalList, setExternalList] = useState<any[]>([]);
+
+      useEffect(() => {
+        setExternalList(getExternalTechnicians());
+      }, [showForm]);
     technician_id: '',
     is_external: false,
     external_personnel_name: '',
@@ -314,15 +320,26 @@ export function EmergencyShiftScheduler() {
                     </label>
                     <input
                       type="text"
+                      list="external-tech-list"
                       value={formData.external_personnel_name}
-                      onChange={(e) =>
-                        setFormData({ ...formData, external_personnel_name: e.target.value })
-                      }
+                      onChange={(e) => {
+                        setFormData({ ...formData, external_personnel_name: e.target.value });
+                        // Guardar nuevo técnico externo si no existe
+                        if (e.target.value && !externalList.some(ext => ext.name === e.target.value)) {
+                          addExternalTechnician({ name: e.target.value });
+                          setExternalList(getExternalTechnicians());
+                        }
+                      }}
                       className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 ${
                         errors.external_personnel_name ? 'border-red-300' : 'border-slate-300'
                       }`}
                       placeholder="Ej: Carlos García"
                     />
+                    <datalist id="external-tech-list">
+                      {externalList.map(ext => (
+                        <option key={ext.id} value={ext.name} />
+                      ))}
+                    </datalist>
                     {errors.external_personnel_name && (
                       <p className="text-xs text-red-600 mt-1">{errors.external_personnel_name}</p>
                     )}
