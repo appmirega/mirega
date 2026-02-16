@@ -19,6 +19,8 @@ interface EmergencyShiftsTableProps {
   tecnicos?: any[];
 }
 
+
+export function EmergencyShiftsTable({ shifts, tecnicos }: EmergencyShiftsTableProps) {
   // Agrupar turnos por id para mostrar solo una fila por periodo
   const uniqueShifts = shifts.reduce((acc: EmergencyShiftRow[], shift) => {
     if (!acc.some(s => s.id === shift.id)) acc.push(shift);
@@ -68,4 +70,4 @@ interface EmergencyShiftsTableProps {
       </div>
     </div>
   );
-};
+}
