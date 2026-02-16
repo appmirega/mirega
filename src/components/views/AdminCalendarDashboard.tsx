@@ -70,13 +70,16 @@ export function AdminCalendarDashboard() {
           // Mapear turnos de emergencia: un evento por cada día del rango
           if (emergency.data) {
             emergency.data.forEach((shift: any) => {
-              let d = new Date(shift.shift_start_date);
-              const end = new Date(shift.shift_end_date);
+              // Manejo local de fechas para evitar desfase por zona horaria
+              let [sy, sm, sd] = shift.shift_start_date.split('-').map(Number);
+              let [ey, em, ed] = shift.shift_end_date.split('-').map(Number);
+              let d = new Date(sy, sm - 1, sd);
+              const end = new Date(ey, em - 1, ed);
               while (d <= end) {
                 allEvents.push({
                   id: shift.id,
                   type: 'turno_emergencia',
-                  date: d.toISOString().slice(0,10),
+                  date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
                   shift,
                   assignee: shift.external_personnel_name ? shift.external_personnel_name : getTechnicianName(shift.technician_id),
                   is_primary: shift.is_primary,
