@@ -287,7 +287,7 @@ export function AdminCalendarDashboard() {
               setLoading(true);
               const { error } = await supabase.from('calendar_events').insert([
                 {
-                  event_type: eventType,
+                  event_type: eventType, // Guarda el valor seleccionado correctamente
                   event_date: eventDate,
                   person: eventPerson,
                   building_name: eventBuilding,
@@ -298,7 +298,7 @@ export function AdminCalendarDashboard() {
               if (error) setError(error.message);
               else {
                 setShowEventModal(false);
-                setEventType('turno');
+                setEventType('mantenimiento'); // Por defecto vuelve a mantenimiento
                 setEventDate('');
                 setEventPerson('');
                 setEventDesc('');
