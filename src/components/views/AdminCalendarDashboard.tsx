@@ -219,7 +219,7 @@ export function AdminCalendarDashboard() {
       ) : weeks.map((week, i) => (
         <div key={i} className="grid grid-cols-7 gap-1">
           {week.map((date, j) => {
-            const dateStr = date ? date.toISOString().slice(0,10) : '';
+            const dateStr = date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : '';
             const isFeriado = feriados.includes(dateStr);
             const isFeriadoIrr = feriadosIrrenunciables.includes(dateStr);
             const dayEvents = eventos.filter((ev: any) => ev.date === dateStr);
@@ -250,7 +250,7 @@ export function AdminCalendarDashboard() {
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-lg p-6 min-w-[320px]">
             <div className="flex justify-between items-center mb-2">
-              <h2 className="text-lg font-bold">Detalle {selectedDay.toLocaleDateString()}</h2>
+              <h2 className="text-lg font-bold">Detalle {selectedDay ? `${selectedDay.getDate()}/${selectedDay.getMonth()+1}/${selectedDay.getFullYear()}` : ''}</h2>
               <button onClick={() => setSelectedDay(null)} className="text-gray-500 hover:text-red-600">✕</button>
             </div>
             <div className="mb-2">(Aquí se mostrarán y gestionarán los eventos del día, asignaciones, ausencias, etc)</div>
