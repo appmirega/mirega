@@ -49,10 +49,24 @@ export function AdminCalendarDashboard() {
           };
           if (maint.data) allEvents = allEvents.concat(maint.data.map((m: any) => ({
             ...m,
-            type: 'mantenimiento',
+            type: getTypeLabel(m.maintenance_type),
             date: m.scheduled_date,
             assignee: getTechnicianName(m.assigned_technician_id)
           })));
+            // Función para mapear el tipo de asignación
+            const getTypeLabel = (type: string) => {
+              const labels: Record<string, string> = {
+                preventive: 'Preventivo',
+                corrective: 'Correctivo',
+                emergency: 'Emergencia',
+                mantenimiento: 'Mantenimiento',
+                reparaciones: 'Reparaciones',
+                induccion_rescate: 'Inducción de rescate',
+                vista_certificacion: 'Vista certificación',
+                otros: 'Otros',
+              };
+              return labels[type] || type;
+            };
           if (emerg.data) allEvents = allEvents.concat(emerg.data.map((e: any) => ({
             ...e,
             type: 'emergencia',
