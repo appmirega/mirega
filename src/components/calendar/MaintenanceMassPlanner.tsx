@@ -247,9 +247,13 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
         </div>
         <div className="flex-1 min-w-[350px]">
           <label className="block font-medium mb-1">Edificios</label>
-          <select multiple value={selectedBuildings} onChange={e => setSelectedBuildings(Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 w-full min-h-[320px] text-lg">
-            {buildings.map(b => <option key={b.id} value={b.id}>{b.name} - {b.address}</option>)}
-          </select>
+          {buildings.length === 0 ? (
+            <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">No hay edificios disponibles en la base de datos.</div>
+          ) : (
+            <select multiple value={selectedBuildings} onChange={e => setSelectedBuildings(Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 w-full min-h-[320px] text-lg">
+              {buildings.map(b => <option key={b.id} value={b.id}>{b.name} - {b.address}</option>)}
+            </select>
+          )}
         </div>
         <div className="min-w-[320px]">
           <label className="block font-medium mb-1">Técnico externo (nuevo)</label>
@@ -260,6 +264,9 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
           <div className="text-xs text-gray-500 mt-1">Técnicos externos agregados estarán disponibles en la tabla.</div>
         </div>
       </div>
+      {technicians.length === 0 && (
+        <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mb-4">No hay técnicos internos disponibles en la base de datos.</div>
+      )}
       {selectedBuildings.length === 0 ? (
         <div className="text-center text-gray-500 text-lg my-10">Selecciona uno o más edificios para planificar mantenimientos.</div>
       ) : (
