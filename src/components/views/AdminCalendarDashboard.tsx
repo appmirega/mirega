@@ -2,11 +2,13 @@
 import { useState, useEffect } from 'react';
 import { getExternalTechnicians, addExternalTechnician } from '../../lib/external_technicians';
 import { Calendar, Plus, Shield } from 'lucide-react';
+import { MaintenanceBatchPlanner } from '../calendar/MaintenanceBatchPlanner';
 import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
 import { ProfessionalBreakdown } from './ProfessionalBreakdown';
 import { EmergencyShiftsTable } from './EmergencyShiftsTable';
 import { supabase } from '../../lib/supabase';
 export function AdminCalendarDashboard() {
+  const [showMaintenanceBatchPlanner, setShowMaintenanceBatchPlanner] = useState(false);
     // Función para mapear el tipo de asignación
     const getTypeLabel = (type: string) => {
       const labels: Record<string, string> = {
@@ -212,8 +214,18 @@ export function AdminCalendarDashboard() {
             <option value="anual">Anual</option>
           </select>
           <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2" onClick={() => setShowEventModal(true)}><Plus className="w-4 h-4" /> Nuevo Evento</button>
+          <button className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2" onClick={() => setShowMaintenanceBatchPlanner(true)}><Calendar className="w-4 h-4" /> Planificar Mantenimiento</button>
           <button className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2" onClick={() => setShowEmergencyShifts(true)}><Shield className="w-4 h-4" /> Turnos de Emergencia</button>
         </div>
+            {/* Modal Planificador de Mantenimiento */}
+            {showMaintenanceBatchPlanner && (
+              <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 overflow-auto">
+                <div className="bg-white rounded-lg shadow-lg p-6 max-w-3xl w-full relative max-h-[90vh] overflow-y-auto">
+                  <button onClick={() => setShowMaintenanceBatchPlanner(false)} className="absolute top-2 right-2 text-gray-500 hover:text-red-600 text-2xl">✕</button>
+                  <MaintenanceBatchPlanner onClose={() => setShowMaintenanceBatchPlanner(false)} onSuccess={fetchEventos} />
+                </div>
+              </div>
+            )}
       </div>
             {/* Modal Turnos de Emergencia */}
             {showEmergencyShifts && (
