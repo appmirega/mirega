@@ -70,7 +70,8 @@ export function MaintenanceAssignmentModal({
     notes: '',
     requires_additional_technicians: false,
     additional_technicians_count: 1,
-    coordination_notes: ''
+    coordination_notes: '',
+    assignment_type: 'mantenimiento',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -278,6 +279,11 @@ export function MaintenanceAssignmentModal({
 
       onSuccess();
       if (onClose) onClose();
+      // Resetear assignment_type correctamente al crear nueva asignación
+      setFormData(prev => ({
+        ...prev,
+        assignment_type: prev.is_external ? 'turno' : 'mantenimiento',
+      }));
     } catch (error: any) {
       console.error('Error saving assignment:', error);
       setErrors({ submit: error.message || 'Error al guardar la asignación' });
