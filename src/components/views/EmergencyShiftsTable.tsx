@@ -1,6 +1,6 @@
 // Commit de prueba para forzar deploy Vercel
 // Cambio menor para forzar deploy en Vercel
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 // Función para mapear el tipo de asignación
 const getTypeLabel = (type: string) => {
@@ -45,16 +45,13 @@ export function EmergencyShiftsTable({ shifts, tecnicos }: EmergencyShiftsTableP
   }, []);
 
   // Usar tecnicos y externos pasados por props
-  const externos = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('external_technicians') || '[]') : [];
+
   const getTechnicianName = (id: string) => {
     if (!id) return '';
     const tech = (typeof tecnicos !== 'undefined' ? tecnicos : []).find((t: any) => t.id === id);
     return tech ? tech.full_name : id;
   };
-  const getExternalName = (name: string) => {
-    const ext = externos.find((e: any) => e.name === name);
-    return ext ? ext.name : name;
-  };
+
 
   // Helper para formatear fecha dd-mm-aaaa
   const formatDate = (dateStr: string) => {
@@ -119,7 +116,7 @@ export function EmergencyShiftsTable({ shifts, tecnicos }: EmergencyShiftsTableP
             </tr>
           </thead>
           <tbody>
-            {uniqueShifts.map((shift, idx) => (
+            {uniqueShifts.map((shift, idx) => [
               <tr key={shift.id + '-' + idx} className="hover:bg-gray-50">
                 <td className="border px-2 py-1 whitespace-nowrap">
                   <span className="font-semibold">Desde:</span> {formatDate(shift.shift_start_date)}<span className="mx-2"> </span>
@@ -129,7 +126,7 @@ export function EmergencyShiftsTable({ shifts, tecnicos }: EmergencyShiftsTableP
                   {shift.is_24h_shift ? '24 horas' : `${shift.shift_start_time?.slice(0,5) || ''} - ${shift.shift_end_time?.slice(0,5) || ''}`}
                 </td>
                 <td className="border px-2 py-1">
-                  {getTypeLabel(shift.type || 'turno_emergencia')}
+                  {getTypeLabel('turno_emergencia')}
                 </td>
                 <td className="border px-2 py-1">
                   {shift.is_external
@@ -149,25 +146,25 @@ export function EmergencyShiftsTable({ shifts, tecnicos }: EmergencyShiftsTableP
                 <td className="border px-2 py-1 text-center">
                   <button className="text-red-600 hover:text-red-800" onClick={() => handleDelete(shift)} title="Eliminar" disabled={loading}>🗑️</button>
                 </td>
-              </tr>
-            editing === shift.id ? (
-              <tr>
-                <td colSpan={6} className="bg-blue-50 border px-2 py-2">
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <label>Desde: <input type="date" value={editData.shift_start_date} onChange={e => setEditData({ ...editData, shift_start_date: e.target.value })} className="border rounded px-2 py-1" /></label>
-                    <label>Hasta: <input type="date" value={editData.shift_end_date} onChange={e => setEditData({ ...editData, shift_end_date: e.target.value })} className="border rounded px-2 py-1" /></label>
-                    <label><input type="checkbox" checked={!!editData.is_24h_shift} onChange={e => setEditData({ ...editData, is_24h_shift: e.target.checked })} /> 24h</label>
-                    {!editData.is_24h_shift && (
-                      <>
-                        <label>Inicio: <input type="time" value={editData.shift_start_time || ''} onChange={e => setEditData({ ...editData, shift_start_time: e.target.value })} className="border rounded px-2 py-1" /></label>
-                        <label>Fin: <input type="time" value={editData.shift_end_time || ''} onChange={e => setEditData({ ...editData, shift_end_time: e.target.value })} className="border rounded px-2 py-1" /></label>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ) : null
-          ))}
+              </tr>,
+              editing === shift.id && (
+                <tr key={shift.id + '-edit'}>
+                  <td colSpan={6} className="bg-blue-50 border px-2 py-2">
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <label>Desde: <input type="date" value={editData.shift_start_date} onChange={e => setEditData({ ...editData, shift_start_date: e.target.value })} className="border rounded px-2 py-1" /></label>
+                      <label>Hasta: <input type="date" value={editData.shift_end_date} onChange={e => setEditData({ ...editData, shift_end_date: e.target.value })} className="border rounded px-2 py-1" /></label>
+                      <label><input type="checkbox" checked={!!editData.is_24h_shift} onChange={e => setEditData({ ...editData, is_24h_shift: e.target.checked })} /> 24h</label>
+                      {!editData.is_24h_shift && (
+                        <>
+                          <label>Inicio: <input type="time" value={editData.shift_start_time || ''} onChange={e => setEditData({ ...editData, shift_start_time: e.target.value })} className="border rounded px-2 py-1" /></label>
+                          <label>Fin: <input type="time" value={editData.shift_end_time || ''} onChange={e => setEditData({ ...editData, shift_end_time: e.target.value })} className="border rounded px-2 py-1" /></label>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )
+            ])}
           </tbody>
         </table>
       </div>
