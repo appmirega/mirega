@@ -40,7 +40,11 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    supabase.from('buildings').select('id, name, address').then(({ data }) => setBuildings(data || []));
+    supabase.from('buildings').select('id, name, address').then(({ data }) => {
+      setBuildings(data || []);
+      // Si solo hay un edificio, seleccionarlo automáticamente
+      if (data && data.length === 1) setSelectedBuildings([data[0].id]);
+    });
     supabase.from('profiles').select('id, full_name, is_on_leave').eq('role', 'technician').then(({ data }) => setTechnicians(data || []));
     // Cargar técnicos externos guardados en localStorage
     const ext = localStorage.getItem('external_technicians');
@@ -256,7 +260,9 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
           <div className="text-xs text-gray-500 mt-1">Técnicos externos agregados estarán disponibles en la tabla.</div>
         </div>
       </div>
-      {drafts.length > 0 && (
+      {selectedBuildings.length === 0 ? (
+        <div className="text-center text-gray-500 text-lg my-10">Selecciona uno o más edificios para planificar mantenimientos.</div>
+      ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full border text-base mb-4">
             <thead>
@@ -272,17 +278,19 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
               </tr>
             </thead>
             <tbody>
-              {drafts.map(draft => (
+              {drafts.length === 0 ? (
+                <tr><td colSpan={8} className="text-center text-gray-400 py-8">No hay datos para mostrar.</td></tr>
+              ) : drafts.map(draft => (
                 <tr key={draft.building.id} className={draft.status !== 'ok' ? 'bg-red-50' : ''}>
                   <td className="border px-4 py-2 font-semibold text-lg">{draft.building.name}</td>
                   <td className="border px-4 py-2">
                     <select multiple value={draft.internalTechnicians.map(t => t.id)} onChange={e => handleInternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[90px] text-base">
-                      {technicians.map(t => <option key={t.id} value={t.id} disabled={t.is_on_leave}>{t.full_name}{t.is_on_leave ? ' (ausente)' : ''}</option>)}
+                      {technicians.length === 0 ? <option disabled>No hay técnicos internos</option> : technicians.map(t => <option key={t.id} value={t.id} disabled={t.is_on_leave}>{t.full_name}{t.is_on_leave ? ' (ausente)' : ''}</option>)}
                     </select>
                   </td>
                   <td className="border px-4 py-2">
                     <select multiple value={draft.externalTechnicians.map(t => t.id)} onChange={e => handleExternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[60px] text-base">
-                      {externalTechnicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                      {externalTechnicians.length === 0 ? <option disabled>No hay técnicos externos</option> : externalTechnicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
                     </select>
                   </td>
                   <td className="border px-4 py-2">
@@ -290,7 +298,7 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
                   </td>
                   <td className="border px-4 py-2">
                     <select value={draft.days[0].date} onChange={e => handleDayChange(draft.building.id, e.target.value)} className="border rounded px-2 py-2 text-base">
-                      {getWeekdays().map(d => <option key={d.date} value={d.date}>{d.label}</option>)}
+                      {getWeekdays().length === 0 ? <option disabled>No hay días hábiles</option> : getWeekdays().map(d => <option key={d.date} value={d.date}>{d.label}</option>)}
                     </select>
                   </td>
                   <td className="border px-4 py-2">
