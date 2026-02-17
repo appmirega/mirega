@@ -119,12 +119,7 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       days: [{ ...d.days[0], duration }]
     } : d));
   };
-  const handleTechnicianChange = (bid: string, tids: string[]) => {
-    setDrafts(ds => ds.map(d => d.building.id === bid ? {
-      ...d,
-      technicians: tids.map(tid => technicians.find(t => t.id === tid)!).filter(Boolean)
-    } : d));
-  };
+  // (Eliminada declaración duplicada de handleTechnicianChange)
   const handleFixedChange = (bid: string, is_fixed: boolean) => {
     setDrafts(ds => ds.map(d => d.building.id === bid ? {
       ...d,
