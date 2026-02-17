@@ -41,11 +41,12 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
 
   // Genera los días hábiles del mes
   const getWeekdays = () => {
-    const days: string[] = [];
+    const days: { date: string, label: string }[] = [];
     const d = new Date(year, month, 1);
     while (d.getMonth() === month) {
       if (d.getDay() !== 0 && d.getDay() !== 6) {
-        days.push(d.toISOString().slice(0, 10));
+        const label = d.toLocaleDateString('es-CL', { weekday: 'short', day: '2-digit', month: 'short' });
+        days.push({ date: d.toISOString().slice(0, 10), label });
       }
       d.setDate(d.getDate() + 1);
     }
@@ -61,11 +62,11 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
     const days = getWeekdays();
     const drafts: AssignmentDraft[] = selectedBuildings.map(bid => {
       const building = buildings.find(b => b.id === bid)!;
-      // Por defecto, todos los días hábiles, duración 1 día, ambos técnicos si hay dos
+      // Por defecto, solo un día (el primero hábil), duración 1 día, sin técnicos, no inamovible
       return {
         building,
-        technicians: selectedTechnicians.map(tid => technicians.find(t => t.id === tid)!).filter(Boolean),
-        days: days.map(date => ({ date, duration: 1 })),
+        technicians: [],
+        days: [{ date: days[0]?.date || '', duration: 1, is_fixed: false }],
         status: 'ok',
       };
     });
@@ -105,11 +106,29 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
     // eslint-disable-next-line
   }, [drafts.length]);
 
-  // Maneja la edición de días/duración por edificio
-  const handleDayChange = (bid: string, date: string, duration: 0.5 | 1) => {
+  // Maneja la edición de día, duración, técnicos y bloqueo por edificio
+  const handleDayChange = (bid: string, newDate: string) => {
     setDrafts(ds => ds.map(d => d.building.id === bid ? {
       ...d,
-      days: d.days.map(day => day.date === date ? { ...day, duration } : day)
+      days: [{ ...d.days[0], date: newDate }]
+    } : d));
+  };
+  const handleDurationChange = (bid: string, duration: 0.5 | 1) => {
+    setDrafts(ds => ds.map(d => d.building.id === bid ? {
+      ...d,
+      days: [{ ...d.days[0], duration }]
+    } : d));
+  };
+  const handleTechnicianChange = (bid: string, tids: string[]) => {
+    setDrafts(ds => ds.map(d => d.building.id === bid ? {
+      ...d,
+      technicians: tids.map(tid => technicians.find(t => t.id === tid)!).filter(Boolean)
+    } : d));
+  };
+  const handleFixedChange = (bid: string, is_fixed: boolean) => {
+    setDrafts(ds => ds.map(d => d.building.id === bid ? {
+      ...d,
+      days: [{ ...d.days[0], is_fixed }]
     } : d));
   };
 
@@ -132,19 +151,18 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       setLoading(false);
       return;
     }
-    // Crea asignaciones para cada día y técnico
+    // Crea asignaciones para cada edificio, día y técnico
     const assignments = toSave.flatMap(draft =>
-      draft.days.map(day =>
-        draft.technicians.map(tech => ({
-          building_id: draft.building.id,
-          assigned_technician_id: tech.id,
-          scheduled_date: day.date,
-          duration: day.duration,
-          assignment_type: 'mantenimiento',
-          is_external: false,
-          status: 'scheduled',
-        }))
-      ).flat()
+      draft.technicians.map(tech => ({
+        building_id: draft.building.id,
+        assigned_technician_id: tech.id,
+        scheduled_date: draft.days[0].date,
+        duration: draft.days[0].duration,
+        assignment_type: 'mantenimiento',
+        is_external: false,
+        status: 'scheduled',
+        is_fixed: draft.days[0].is_fixed || false,
+      }))
     );
     const { error: insertError } = await supabase.from('maintenance_assignments').insert(assignments);
     setLoading(false);
@@ -159,29 +177,23 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
 
   // UI
   return (
-    <div className="max-w-4xl mx-auto bg-white rounded shadow p-6 mt-8">
+    <div className="max-w-6xl mx-auto bg-white rounded shadow p-10 mt-8">
       <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Calendar className="w-6 h-6" /> Planificación Masiva de Mantenimiento</h2>
-      <div className="flex gap-4 mb-4">
-        <div>
-          <label className="block font-medium mb-1">Mes</label>
-          <select value={month} onChange={e => setMonth(Number(e.target.value))} className="border rounded px-2 py-1">
-            {[...Array(12)].map((_, i) => <option key={i} value={i}>{i+1}</option>)}
-          </select>
-        </div>
+      <div className="flex gap-6 mb-6 flex-wrap items-end">
         <div>
           <label className="block font-medium mb-1">Año</label>
-          <input type="number" value={year} onChange={e => setYear(Number(e.target.value))} className="border rounded px-2 py-1 w-24" />
+          <input type="number" value={year} onChange={e => setYear(Number(e.target.value))} className="border rounded px-2 py-1 w-28" />
         </div>
         <div>
-          <label className="block font-medium mb-1">Edificios</label>
-          <select multiple value={selectedBuildings} onChange={e => setSelectedBuildings(Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-1 min-w-[200px] h-24">
-            {buildings.map(b => <option key={b.id} value={b.id}>{b.name} - {b.address}</option>)}
+          <label className="block font-medium mb-1">Mes</label>
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} className="border rounded px-2 py-1 w-44">
+            {[...Array(12)].map((_, i) => <option key={i} value={i}>{new Date(2000, i, 1).toLocaleString('es-CL', { month: 'long' })}</option>)}
           </select>
         </div>
-        <div>
-          <label className="block font-medium mb-1">Técnicos (máx 2)</label>
-          <select multiple value={selectedTechnicians} onChange={e => setSelectedTechnicians(Array.from(e.target.selectedOptions, o => o.value).slice(0,2))} className="border rounded px-2 py-1 min-w-[180px] h-24">
-            {technicians.map(t => <option key={t.id} value={t.id} disabled={t.is_on_leave}>{t.full_name}{t.is_on_leave ? ' (ausente)' : ''}</option>)}
+        <div className="flex-1 min-w-[260px]">
+          <label className="block font-medium mb-1">Edificios</label>
+          <select multiple value={selectedBuildings} onChange={e => setSelectedBuildings(Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-1 w-full min-h-[180px]">
+            {buildings.map(b => <option key={b.id} value={b.id}>{b.name} - {b.address}</option>)}
           </select>
         </div>
       </div>
@@ -194,30 +206,38 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
                 <th className="border px-2 py-1">Técnicos</th>
                 <th className="border px-2 py-1">Día</th>
                 <th className="border px-2 py-1">Duración</th>
+                <th className="border px-2 py-1">Inamovible</th>
                 <th className="border px-2 py-1">Estado</th>
               </tr>
             </thead>
             <tbody>
-              {drafts.flatMap(draft =>
-                draft.days.map(day =>
-                  draft.technicians.map(tech => (
-                    <tr key={draft.building.id + '-' + tech.id + '-' + day.date} className={draft.status !== 'ok' ? 'bg-red-50' : ''}>
-                      <td className="border px-2 py-1">{draft.building.name}</td>
-                      <td className="border px-2 py-1">{tech.full_name}</td>
-                      <td className="border px-2 py-1">{day.date}</td>
-                      <td className="border px-2 py-1">
-                        <select value={day.duration} onChange={e => handleDayChange(draft.building.id, day.date, Number(e.target.value) as 0.5 | 1)} className="border rounded px-1 py-0.5">
-                          <option value={1}>Día completo</option>
-                          <option value={0.5}>Medio día</option>
-                        </select>
-                      </td>
-                      <td className="border px-2 py-1">
-                        {draft.status === 'ok' ? <span className="text-green-700">OK</span> : <span className="text-red-700">{draft.conflictMsg}</span>}
-                      </td>
-                    </tr>
-                  ))
-                )
-              )}
+              {drafts.map(draft => (
+                <tr key={draft.building.id} className={draft.status !== 'ok' ? 'bg-red-50' : ''}>
+                  <td className="border px-2 py-1 font-semibold">{draft.building.name}</td>
+                  <td className="border px-2 py-1">
+                    <select multiple value={draft.technicians.map(t => t.id)} onChange={e => handleTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-1 py-0.5 min-w-[120px] min-h-[60px]">
+                      {technicians.map(t => <option key={t.id} value={t.id} disabled={t.is_on_leave}>{t.full_name}{t.is_on_leave ? ' (ausente)' : ''}</option>)}
+                    </select>
+                  </td>
+                  <td className="border px-2 py-1">
+                    <select value={draft.days[0].date} onChange={e => handleDayChange(draft.building.id, e.target.value)} className="border rounded px-1 py-0.5">
+                      {getWeekdays().map(d => <option key={d.date} value={d.date}>{d.label}</option>)}
+                    </select>
+                  </td>
+                  <td className="border px-2 py-1">
+                    <select value={draft.days[0].duration} onChange={e => handleDurationChange(draft.building.id, Number(e.target.value) as 0.5 | 1)} className="border rounded px-1 py-0.5">
+                      <option value={1}>Día completo</option>
+                      <option value={0.5}>Medio día</option>
+                    </select>
+                  </td>
+                  <td className="border px-2 py-1 text-center">
+                    <input type="checkbox" checked={!!draft.days[0].is_fixed} onChange={e => handleFixedChange(draft.building.id, e.target.checked)} />
+                  </td>
+                  <td className="border px-2 py-1">
+                    {draft.status === 'ok' ? <span className="text-green-700">OK</span> : <span className="text-red-700">{draft.conflictMsg}</span>}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
