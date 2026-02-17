@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Calendar, Building, User, Users, Check, AlertCircle } from 'lucide-react';
+import { Calendar, Building, User, Users, Check, AlertCircle, UserPlus } from 'lucide-react';
 
 interface Technician {
   id: string;
   full_name: string;
   is_on_leave?: boolean;
+  is_external?: boolean;
 }
 
 interface Building {
@@ -16,8 +17,10 @@ interface Building {
 
 interface AssignmentDraft {
   building: Building;
-  technicians: Technician[];
-  days: { date: string; duration: 0.5 | 1 }[];
+  internalTechnicians: Technician[];
+  externalTechnicians: Technician[];
+  externalNames: string[];
+  days: { date: string; duration: 0.5 | 1; is_fixed?: boolean }[];
   status: 'ok' | 'conflict' | 'blocked';
   conflictMsg?: string;
 }
@@ -27,6 +30,8 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([]);
   const [selectedTechnicians, setSelectedTechnicians] = useState<string[]>([]);
+  const [externalNameInput, setExternalNameInput] = useState('');
+  const [externalTechnicians, setExternalTechnicians] = useState<Technician[]>([]);
   const [drafts, setDrafts] = useState<AssignmentDraft[]>([]);
   const [month, setMonth] = useState(() => new Date().getMonth());
   const [year, setYear] = useState(() => new Date().getFullYear());
@@ -37,6 +42,9 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
   useEffect(() => {
     supabase.from('buildings').select('id, name, address').then(({ data }) => setBuildings(data || []));
     supabase.from('profiles').select('id, full_name, is_on_leave').eq('role', 'technician').then(({ data }) => setTechnicians(data || []));
+    // Cargar técnicos externos guardados en localStorage
+    const ext = localStorage.getItem('external_technicians');
+    if (ext) setExternalTechnicians(JSON.parse(ext));
   }, []);
 
   // Genera los días hábiles del mes
@@ -55,23 +63,24 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
 
   // Crea borradores de asignación para cada edificio seleccionado
   useEffect(() => {
-    if (selectedBuildings.length === 0 || selectedTechnicians.length === 0) {
+    if (selectedBuildings.length === 0) {
       setDrafts([]);
       return;
     }
     const days = getWeekdays();
     const drafts: AssignmentDraft[] = selectedBuildings.map(bid => {
       const building = buildings.find(b => b.id === bid)!;
-      // Por defecto, solo un día (el primero hábil), duración 1 día, sin técnicos, no inamovible
       return {
         building,
-        technicians: [],
+        internalTechnicians: [],
+        externalTechnicians: [],
+        externalNames: [],
         days: [{ date: days[0]?.date || '', duration: 1, is_fixed: false }],
         status: 'ok',
       };
     });
     setDrafts(drafts);
-  }, [selectedBuildings, selectedTechnicians, buildings, technicians, month, year]);
+  }, [selectedBuildings, buildings, month, year]);
 
   // Validación de conflictos (edificio ya asignado, técnico en vacaciones, etc)
   const validateDrafts = async () => {
@@ -119,20 +128,45 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       days: [{ ...d.days[0], duration }]
     } : d));
   };
-  // (Eliminada declaración duplicada de handleTechnicianChange)
   const handleFixedChange = (bid: string, is_fixed: boolean) => {
     setDrafts(ds => ds.map(d => d.building.id === bid ? {
       ...d,
       days: [{ ...d.days[0], is_fixed }]
     } : d));
   };
-
-  // Maneja la asignación de técnicos (uno o dos)
-  const handleTechnicianChange = (bid: string, tids: string[]) => {
+  // Técnicos internos
+  const handleInternalTechnicianChange = (bid: string, tids: string[]) => {
     setDrafts(ds => ds.map(d => d.building.id === bid ? {
       ...d,
-      technicians: tids.map(tid => technicians.find(t => t.id === tid)!).filter(Boolean)
+      internalTechnicians: tids.map(tid => technicians.find(t => t.id === tid)!).filter(Boolean)
     } : d));
+  };
+  // Técnicos externos (de la lista)
+  const handleExternalTechnicianChange = (bid: string, tids: string[]) => {
+    setDrafts(ds => ds.map(d => d.building.id === bid ? {
+      ...d,
+      externalTechnicians: tids.map(tid => externalTechnicians.find(t => t.id === tid)!).filter(Boolean)
+    } : d));
+  };
+  // Nombres externos manuales
+  const handleExternalNamesChange = (bid: string, names: string[]) => {
+    setDrafts(ds => ds.map(d => d.building.id === bid ? {
+      ...d,
+      externalNames: names
+    } : d));
+  };
+  // Agregar técnico externo global
+  const handleAddExternalTechnician = () => {
+    if (!externalNameInput.trim()) return;
+    const newTech: Technician = {
+      id: 'ext-' + Date.now(),
+      full_name: externalNameInput.trim(),
+      is_external: true
+    };
+    const updated = [...externalTechnicians, newTech];
+    setExternalTechnicians(updated);
+    localStorage.setItem('external_technicians', JSON.stringify(updated));
+    setExternalNameInput('');
   };
 
   // Guardar todas las asignaciones válidas
@@ -146,9 +180,9 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       setLoading(false);
       return;
     }
-    // Crea asignaciones para cada edificio, día y técnico
-    const assignments = toSave.flatMap(draft =>
-      draft.technicians.map(tech => ({
+    // Crea asignaciones para cada edificio, día y técnico (interno y externo)
+    const assignments = toSave.flatMap(draft => [
+      ...draft.internalTechnicians.map(tech => ({
         building_id: draft.building.id,
         assigned_technician_id: tech.id,
         scheduled_date: draft.days[0].date,
@@ -157,8 +191,30 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
         is_external: false,
         status: 'scheduled',
         is_fixed: draft.days[0].is_fixed || false,
-      }))
-    );
+      })),
+      ...draft.externalTechnicians.map(tech => ({
+        building_id: draft.building.id,
+        assigned_technician_id: null,
+        scheduled_date: draft.days[0].date,
+        duration: draft.days[0].duration,
+        assignment_type: 'mantenimiento',
+        is_external: true,
+        external_personnel_name: tech.full_name,
+        status: 'scheduled',
+        is_fixed: draft.days[0].is_fixed || false,
+      })),
+      ...draft.externalNames.filter(n => n.trim()).map(name => ({
+        building_id: draft.building.id,
+        assigned_technician_id: null,
+        scheduled_date: draft.days[0].date,
+        duration: draft.days[0].duration,
+        assignment_type: 'mantenimiento',
+        is_external: true,
+        external_personnel_name: name.trim(),
+        status: 'scheduled',
+        is_fixed: draft.days[0].is_fixed || false,
+      })),
+    ]);
     const { error: insertError } = await supabase.from('maintenance_assignments').insert(assignments);
     setLoading(false);
     if (insertError) {
@@ -191,6 +247,14 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
             {buildings.map(b => <option key={b.id} value={b.id}>{b.name} - {b.address}</option>)}
           </select>
         </div>
+        <div className="min-w-[320px]">
+          <label className="block font-medium mb-1">Técnico externo (nuevo)</label>
+          <div className="flex gap-2">
+            <input type="text" value={externalNameInput} onChange={e => setExternalNameInput(e.target.value)} className="border rounded px-2 py-1 flex-1" placeholder="Nombre técnico externo" />
+            <button type="button" onClick={handleAddExternalTechnician} className="bg-green-600 text-white px-3 py-1 rounded flex items-center gap-1"><UserPlus className="w-4 h-4" /> Agregar</button>
+          </div>
+          <div className="text-xs text-gray-500 mt-1">Técnicos externos agregados estarán disponibles en la tabla.</div>
+        </div>
       </div>
       {drafts.length > 0 && (
         <div className="overflow-x-auto">
@@ -198,7 +262,9 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
             <thead>
               <tr className="bg-gray-100">
                 <th className="border px-4 py-2">Edificio</th>
-                <th className="border px-4 py-2">Técnicos</th>
+                <th className="border px-4 py-2">Técnicos internos</th>
+                <th className="border px-4 py-2">Técnicos externos</th>
+                <th className="border px-4 py-2">Nombres externos manuales</th>
                 <th className="border px-4 py-2">Día</th>
                 <th className="border px-4 py-2">Duración</th>
                 <th className="border px-4 py-2">Inamovible</th>
@@ -210,9 +276,17 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
                 <tr key={draft.building.id} className={draft.status !== 'ok' ? 'bg-red-50' : ''}>
                   <td className="border px-4 py-2 font-semibold text-lg">{draft.building.name}</td>
                   <td className="border px-4 py-2">
-                    <select multiple value={draft.technicians.map(t => t.id)} onChange={e => handleTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[90px] text-base">
+                    <select multiple value={draft.internalTechnicians.map(t => t.id)} onChange={e => handleInternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[90px] text-base">
                       {technicians.map(t => <option key={t.id} value={t.id} disabled={t.is_on_leave}>{t.full_name}{t.is_on_leave ? ' (ausente)' : ''}</option>)}
                     </select>
+                  </td>
+                  <td className="border px-4 py-2">
+                    <select multiple value={draft.externalTechnicians.map(t => t.id)} onChange={e => handleExternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[60px] text-base">
+                      {externalTechnicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                    </select>
+                  </td>
+                  <td className="border px-4 py-2">
+                    <input type="text" value={draft.externalNames.join(', ')} onChange={e => handleExternalNamesChange(draft.building.id, e.target.value.split(',').map(s => s.trim()))} className="border rounded px-2 py-2 w-full text-base" placeholder="Nombres separados por coma" />
                   </td>
                   <td className="border px-4 py-2">
                     <select value={draft.days[0].date} onChange={e => handleDayChange(draft.building.id, e.target.value)} className="border rounded px-2 py-2 text-base">
