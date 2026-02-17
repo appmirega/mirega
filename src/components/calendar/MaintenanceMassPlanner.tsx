@@ -172,9 +172,9 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
 
   // UI
   return (
-    <div className="max-w-6xl mx-auto bg-white rounded shadow p-10 mt-8">
+    <div className="w-full h-full bg-white rounded-2xl shadow-xl p-8 flex flex-col overflow-y-auto">
       <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Calendar className="w-6 h-6" /> Planificación Masiva de Mantenimiento</h2>
-      <div className="flex gap-6 mb-6 flex-wrap items-end">
+      <div className="flex gap-10 mb-8 flex-wrap items-end">
         <div>
           <label className="block font-medium mb-1">Año</label>
           <input type="number" value={year} onChange={e => setYear(Number(e.target.value))} className="border rounded px-2 py-1 w-28" />
@@ -185,51 +185,51 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
             {[...Array(12)].map((_, i) => <option key={i} value={i}>{new Date(2000, i, 1).toLocaleString('es-CL', { month: 'long' })}</option>)}
           </select>
         </div>
-        <div className="flex-1 min-w-[260px]">
+        <div className="flex-1 min-w-[350px]">
           <label className="block font-medium mb-1">Edificios</label>
-          <select multiple value={selectedBuildings} onChange={e => setSelectedBuildings(Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-1 w-full min-h-[180px]">
+          <select multiple value={selectedBuildings} onChange={e => setSelectedBuildings(Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 w-full min-h-[320px] text-lg">
             {buildings.map(b => <option key={b.id} value={b.id}>{b.name} - {b.address}</option>)}
           </select>
         </div>
       </div>
       {drafts.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="min-w-full border text-sm mb-4">
+          <table className="min-w-full border text-base mb-4">
             <thead>
               <tr className="bg-gray-100">
-                <th className="border px-2 py-1">Edificio</th>
-                <th className="border px-2 py-1">Técnicos</th>
-                <th className="border px-2 py-1">Día</th>
-                <th className="border px-2 py-1">Duración</th>
-                <th className="border px-2 py-1">Inamovible</th>
-                <th className="border px-2 py-1">Estado</th>
+                <th className="border px-4 py-2">Edificio</th>
+                <th className="border px-4 py-2">Técnicos</th>
+                <th className="border px-4 py-2">Día</th>
+                <th className="border px-4 py-2">Duración</th>
+                <th className="border px-4 py-2">Inamovible</th>
+                <th className="border px-4 py-2">Estado</th>
               </tr>
             </thead>
             <tbody>
               {drafts.map(draft => (
                 <tr key={draft.building.id} className={draft.status !== 'ok' ? 'bg-red-50' : ''}>
-                  <td className="border px-2 py-1 font-semibold">{draft.building.name}</td>
-                  <td className="border px-2 py-1">
-                    <select multiple value={draft.technicians.map(t => t.id)} onChange={e => handleTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-1 py-0.5 min-w-[120px] min-h-[60px]">
+                  <td className="border px-4 py-2 font-semibold text-lg">{draft.building.name}</td>
+                  <td className="border px-4 py-2">
+                    <select multiple value={draft.technicians.map(t => t.id)} onChange={e => handleTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[90px] text-base">
                       {technicians.map(t => <option key={t.id} value={t.id} disabled={t.is_on_leave}>{t.full_name}{t.is_on_leave ? ' (ausente)' : ''}</option>)}
                     </select>
                   </td>
-                  <td className="border px-2 py-1">
-                    <select value={draft.days[0].date} onChange={e => handleDayChange(draft.building.id, e.target.value)} className="border rounded px-1 py-0.5">
+                  <td className="border px-4 py-2">
+                    <select value={draft.days[0].date} onChange={e => handleDayChange(draft.building.id, e.target.value)} className="border rounded px-2 py-2 text-base">
                       {getWeekdays().map(d => <option key={d.date} value={d.date}>{d.label}</option>)}
                     </select>
                   </td>
-                  <td className="border px-2 py-1">
-                    <select value={draft.days[0].duration} onChange={e => handleDurationChange(draft.building.id, Number(e.target.value) as 0.5 | 1)} className="border rounded px-1 py-0.5">
+                  <td className="border px-4 py-2">
+                    <select value={draft.days[0].duration} onChange={e => handleDurationChange(draft.building.id, Number(e.target.value) as 0.5 | 1)} className="border rounded px-2 py-2 text-base">
                       <option value={1}>Día completo</option>
                       <option value={0.5}>Medio día</option>
                     </select>
                   </td>
-                  <td className="border px-2 py-1 text-center">
-                    <input type="checkbox" checked={!!draft.days[0].is_fixed} onChange={e => handleFixedChange(draft.building.id, e.target.checked)} />
+                  <td className="border px-4 py-2 text-center">
+                    <input type="checkbox" checked={!!draft.days[0].is_fixed} onChange={e => handleFixedChange(draft.building.id, e.target.checked)} className="w-6 h-6" />
                   </td>
-                  <td className="border px-2 py-1">
-                    {draft.status === 'ok' ? <span className="text-green-700">OK</span> : <span className="text-red-700">{draft.conflictMsg}</span>}
+                  <td className="border px-4 py-2">
+                    {draft.status === 'ok' ? <span className="text-green-700 font-semibold">OK</span> : <span className="text-red-700 font-semibold">{draft.conflictMsg}</span>}
                   </td>
                 </tr>
               ))}

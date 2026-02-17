@@ -220,9 +220,11 @@ export function AdminCalendarDashboard() {
             {/* Modal Planificador Masivo de Mantenimiento */}
             {showMaintenanceMassPlanner && (
               <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 overflow-auto">
-                <div className="bg-white rounded-lg shadow-lg p-6 max-w-5xl w-full relative max-h-[90vh] overflow-y-auto">
-                  <button onClick={() => setShowMaintenanceMassPlanner(false)} className="absolute top-2 right-2 text-gray-500 hover:text-red-600 text-2xl">✕</button>
-                  <MaintenanceMassPlanner onClose={() => setShowMaintenanceMassPlanner(false)} onSuccess={fetchEventos} />
+                <div className="bg-white rounded-2xl shadow-2xl p-10 w-[90vw] h-[90vh] max-w-[1800px] max-h-[98vh] flex flex-col relative overflow-y-auto">
+                  <button onClick={() => setShowMaintenanceMassPlanner(false)} className="absolute top-4 right-6 text-gray-500 hover:text-red-600 text-3xl">✕</button>
+                  <div className="flex-1 flex flex-col overflow-y-auto">
+                    <MaintenanceMassPlanner onClose={() => setShowMaintenanceMassPlanner(false)} onSuccess={fetchEventos} />
+                  </div>
                 </div>
               </div>
             )}
