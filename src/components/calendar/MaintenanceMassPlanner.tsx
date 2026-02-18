@@ -45,7 +45,20 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       // Si solo hay un edificio, seleccionarlo automáticamente
       if (data && data.length === 1) setSelectedBuildings([data[0].id]);
     });
-    supabase.from('profiles').select('id, full_name, is_on_leave').eq('role', 'technician').then(({ data }) => setTechnicians(data || []));
+    supabase
+      .from('profiles')
+      .select('id, full_name, is_on_leave, is_active')
+      .eq('role', 'technician')
+      .eq('is_active', true)
+      .then(({ data }) => {
+        // Mapear igual que MaintenanceAssignmentModal
+        setTechnicians((data || []).map(t => ({
+          id: t.id,
+          full_name: t.full_name,
+          is_on_leave: !!t.is_on_leave,
+          is_active: !!t.is_active
+        })));
+      });
     // Cargar técnicos externos guardados en localStorage
     const ext = localStorage.getItem('external_technicians');
     if (ext) setExternalTechnicians(JSON.parse(ext));
