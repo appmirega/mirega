@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Calendar, Building, User, Users, Check, AlertCircle, UserPlus } from 'lucide-react';
+import { Calendar, Building, Check, AlertCircle, UserPlus } from 'lucide-react';
 
 interface Technician {
   id: string;
@@ -20,7 +20,7 @@ interface AssignmentDraft {
   internalTechnicians: Technician[];
   externalTechnicians: Technician[];
   externalNames: string[];
-  days: { date: string; duration: 0.5 | 1; is_fixed?: boolean }[];
+  days: { date: string; duration: number; is_fixed?: boolean }[]; // duration: número de días (0.5, 1, 2, 3...)
   status: 'ok' | 'conflict' | 'blocked';
   conflictMsg?: string;
 }
@@ -29,7 +29,7 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([]);
-  const [selectedTechnicians, setSelectedTechnicians] = useState<string[]>([]);
+  // const [selectedTechnicians, setSelectedTechnicians] = useState<string[]>([]); // No se usa
   const [externalNameInput, setExternalNameInput] = useState('');
   const [externalTechnicians, setExternalTechnicians] = useState<Technician[]>([]);
   const [drafts, setDrafts] = useState<AssignmentDraft[]>([]);
@@ -78,6 +78,21 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
     return days;
   };
 
+  // Genera un rango de fechas a partir de una fecha inicial y duración (en días)
+  const getDateRange = (start: string, duration: number) => {
+    const result: string[] = [];
+    const d = new Date(start);
+    for (let i = 0; i < duration; i++) {
+      const day = new Date(d);
+      day.setDate(d.getDate() + i);
+      // Solo días hábiles
+      if (day.getDay() !== 0 && day.getDay() !== 6) {
+        result.push(day.toISOString().slice(0, 10));
+      }
+    }
+    return result;
+  };
+
   // Crea borradores de asignación para cada edificio seleccionado
   useEffect(() => {
     if (selectedBuildings.length === 0) {
@@ -102,7 +117,7 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
   // Validación de conflictos (edificio ya asignado, técnico en vacaciones, etc)
   const validateDrafts = async () => {
     setLoading(true);
-    const newDrafts = await Promise.all(drafts.map(async draft => {
+    const newDrafts: AssignmentDraft[] = await Promise.all(drafts.map(async draft => {
       // 1. Verificar si el edificio ya tiene asignación ese mes
       const { data: existing, error } = await supabase
         .from('maintenance_assignments')
@@ -114,8 +129,8 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       if (existing && existing.length > 0) {
         return { ...draft, status: 'blocked', conflictMsg: 'Ya existe mantenimiento asignado este mes.' };
       }
-      // 2. Verificar técnicos en vacaciones/permiso
-      const techsOnLeave = draft.technicians.filter(t => t.is_on_leave);
+      // 2. Verificar técnicos en vacaciones/permiso (solo internos)
+      const techsOnLeave = draft.internalTechnicians.filter((t) => t.is_on_leave);
       if (techsOnLeave.length > 0) {
         return { ...draft, status: 'blocked', conflictMsg: 'Técnico(s) en vacaciones o permiso.' };
       }
@@ -139,7 +154,7 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       days: [{ ...d.days[0], date: newDate }]
     } : d));
   };
-  const handleDurationChange = (bid: string, duration: 0.5 | 1) => {
+  const handleDurationChange = (bid: string, duration: number) => {
     setDrafts(ds => ds.map(d => d.building.id === bid ? {
       ...d,
       days: [{ ...d.days[0], duration }]
@@ -197,41 +212,48 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       setLoading(false);
       return;
     }
-    // Crea asignaciones para cada edificio, día y técnico (interno y externo)
-    const assignments = toSave.flatMap(draft => [
-      ...draft.internalTechnicians.map(tech => ({
-        building_id: draft.building.id,
-        assigned_technician_id: tech.id,
-        scheduled_date: draft.days[0].date,
-        duration: draft.days[0].duration,
-        assignment_type: 'mantenimiento',
-        is_external: false,
-        status: 'scheduled',
-        is_fixed: draft.days[0].is_fixed || false,
-      })),
-      ...draft.externalTechnicians.map(tech => ({
-        building_id: draft.building.id,
-        assigned_technician_id: null,
-        scheduled_date: draft.days[0].date,
-        duration: draft.days[0].duration,
-        assignment_type: 'mantenimiento',
-        is_external: true,
-        external_personnel_name: tech.full_name,
-        status: 'scheduled',
-        is_fixed: draft.days[0].is_fixed || false,
-      })),
-      ...draft.externalNames.filter(n => n.trim()).map(name => ({
-        building_id: draft.building.id,
-        assigned_technician_id: null,
-        scheduled_date: draft.days[0].date,
-        duration: draft.days[0].duration,
-        assignment_type: 'mantenimiento',
-        is_external: true,
-        external_personnel_name: name.trim(),
-        status: 'scheduled',
-        is_fixed: draft.days[0].is_fixed || false,
-      })),
-    ]);
+    // Crea asignaciones para cada edificio, técnico y rango de días
+    const assignments = toSave.flatMap(draft => {
+      const { days } = draft;
+      const startDate = days[0].date;
+      const duration = days[0].duration;
+      const is_fixed = days[0].is_fixed || false;
+      const fechas = getDateRange(startDate, duration);
+      return [
+        ...draft.internalTechnicians.flatMap(tech => fechas.map(date => ({
+          building_id: draft.building.id,
+          assigned_technician_id: tech.id,
+          scheduled_date: date,
+          duration: 1, // cada día es una asignación de 1 día
+          assignment_type: 'mantenimiento',
+          is_external: false,
+          status: 'scheduled',
+          is_fixed,
+        }))),
+        ...draft.externalTechnicians.flatMap(tech => fechas.map(date => ({
+          building_id: draft.building.id,
+          assigned_technician_id: null,
+          scheduled_date: date,
+          duration: 1,
+          assignment_type: 'mantenimiento',
+          is_external: true,
+          external_personnel_name: tech.full_name,
+          status: 'scheduled',
+          is_fixed,
+        }))),
+        ...draft.externalNames.filter(n => n.trim()).flatMap(name => fechas.map(date => ({
+          building_id: draft.building.id,
+          assigned_technician_id: null,
+          scheduled_date: date,
+          duration: 1,
+          assignment_type: 'mantenimiento',
+          is_external: true,
+          external_personnel_name: name.trim(),
+          status: 'scheduled',
+          is_fixed,
+        }))),
+      ];
+    });
     const { error: insertError } = await supabase.from('maintenance_assignments').insert(assignments);
     setLoading(false);
     if (insertError) {
@@ -322,9 +344,12 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
                     </select>
                   </td>
                   <td className="border px-4 py-2">
-                    <select value={draft.days[0].duration} onChange={e => handleDurationChange(draft.building.id, Number(e.target.value) as 0.5 | 1)} className="border rounded px-2 py-2 text-base">
-                      <option value={1}>Día completo</option>
+                    <select value={draft.days[0].duration} onChange={e => handleDurationChange(draft.building.id, Number(e.target.value))} className="border rounded px-2 py-2 text-base">
                       <option value={0.5}>Medio día</option>
+                      <option value={1}>Día completo</option>
+                      <option value={2}>2 días</option>
+                      <option value={3}>3 días</option>
+                      <option value={5}>5 días</option>
                     </select>
                   </td>
                   <td className="border px-4 py-2 text-center">
