@@ -47,7 +47,7 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
         name: e.company_name,
         address: e.address
       })));
-      if (data && data.length === 1) setSelectedBuildings([data[0].id]);
+      // No seleccionar automáticamente si hay más de un edificio
     });
     // Consulta técnicos igual que modal de nuevo evento
     supabase
@@ -288,7 +288,7 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
             <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">No hay edificios disponibles en la base de datos.</div>
           ) : (
             <select multiple value={selectedBuildings} onChange={e => setSelectedBuildings(Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 w-full min-h-[320px] text-lg">
-              {buildings.map(b => <option key={b.id} value={b.id}>{b.name} - {b.address}</option>)}
+              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           )}
         </div>
