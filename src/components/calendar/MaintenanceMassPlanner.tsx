@@ -40,23 +40,25 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    supabase.from('buildings').select('id, name, address').then(({ data }) => {
-      setBuildings(data || []);
-      // Si solo hay un edificio, seleccionarlo automáticamente
+    // Consulta edificios igual que modal de nuevo evento
+    supabase.from('clients').select('id, company_name, address').then(({ data }) => {
+      setBuildings((data || []).map(e => ({
+        id: e.id,
+        name: e.company_name,
+        address: e.address
+      })));
       if (data && data.length === 1) setSelectedBuildings([data[0].id]);
     });
+    // Consulta técnicos igual que modal de nuevo evento
     supabase
       .from('profiles')
-      .select('id, full_name, is_on_leave, is_active')
+      .select('id, full_name, is_on_leave')
       .eq('role', 'technician')
-      .eq('is_active', true)
       .then(({ data }) => {
-        // Mapear igual que MaintenanceAssignmentModal
         setTechnicians((data || []).map(t => ({
           id: t.id,
           full_name: t.full_name,
-          is_on_leave: !!t.is_on_leave,
-          is_active: !!t.is_active
+          is_on_leave: !!t.is_on_leave
         })));
       });
     // Cargar técnicos externos guardados en localStorage
