@@ -26,6 +26,149 @@ interface AssignmentDraft {
 }
 
 export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => void, onSuccess: () => void }) {
+      // Handler para técnicos internos
+      const handleInternalTechnicianChange = (buildingId: string, technicianIds: string[]) => {
+        setDrafts(drafts => drafts.map(draft =>
+          draft.building.id === buildingId
+            ? { ...draft, internalTechnicians: technicians.filter(t => technicianIds.includes(t.id)) }
+            : draft
+        ));
+      };
+
+      // Handler para técnicos externos
+      const handleExternalTechnicianChange = (buildingId: string, technicianIds: string[]) => {
+        setDrafts(drafts => drafts.map(draft =>
+          draft.building.id === buildingId
+            ? { ...draft, externalTechnicians: externalTechnicians.filter(t => technicianIds.includes(t.id)) }
+            : draft
+        ));
+      };
+
+      // Handler para nombres externos manuales
+      const handleExternalNamesChange = (buildingId: string, names: string[]) => {
+        setDrafts(drafts => drafts.map(draft =>
+          draft.building.id === buildingId
+            ? { ...draft, externalNames: names }
+            : draft
+        ));
+      };
+
+      // Handler para cambio de día
+      const handleDayChange = (buildingId: string, date: string) => {
+        setDrafts(drafts => drafts.map(draft =>
+          draft.building.id === buildingId
+            ? { ...draft, days: [{ ...draft.days[0], date }] }
+            : draft
+        ));
+      };
+
+      // Handler para cambio de duración
+      const handleDurationChange = (buildingId: string, duration: number) => {
+        setDrafts(drafts => drafts.map(draft =>
+          draft.building.id === buildingId
+            ? { ...draft, days: [{ ...draft.days[0], duration }] }
+            : draft
+        ));
+      };
+
+      // Handler para cambio de inamovible
+      const handleFixedChange = (buildingId: string, isFixed: boolean) => {
+        setDrafts(drafts => drafts.map(draft =>
+          draft.building.id === buildingId
+            ? { ...draft, days: [{ ...draft.days[0], is_fixed: isFixed }] }
+            : draft
+        ));
+      };
+
+      // Handler para agregar técnico externo
+      const handleAddExternalTechnician = () => {
+        const name = externalNameInput.trim();
+        if (!name) return;
+        // Evitar duplicados
+        if (externalTechnicians.some(t => t.full_name.toLowerCase() === name.toLowerCase())) {
+          setExternalNameInput("");
+          return;
+        }
+        const newTech = { id: Date.now().toString(), full_name: name, is_external: true };
+        const updated = [...externalTechnicians, newTech];
+        setExternalTechnicians(updated);
+        localStorage.setItem('external_technicians', JSON.stringify(updated));
+        setExternalNameInput("");
+      };
+    // Guardar asignaciones masivas
+    const handleSave = async () => {
+      setError("");
+      setSuccess("");
+      setLoading(true);
+      try {
+        // Filtrar solo los drafts válidos para guardar
+        const toSave = drafts.filter(d => d.status === "ok");
+        if (toSave.length === 0) {
+          setError("No hay asignaciones válidas para guardar.");
+          setLoading(false);
+          return;
+        }
+
+        // Construir payloads para cada draft
+        const assignments = toSave.flatMap(draft => {
+          const day = draft.days[0];
+          const base = {
+            building_id: draft.building.id,
+            scheduled_date: day.date,
+            duration: day.duration,
+            is_fixed: !!day.is_fixed,
+            status: "scheduled",
+          };
+          // Asignaciones para técnicos internos
+          const internals = draft.internalTechnicians.map(t => ({
+            ...base,
+            assigned_technician_id: t.id,
+            is_external: false,
+            external_personnel_name: null,
+          }));
+          // Asignaciones para técnicos externos (de la lista)
+          const externals = draft.externalTechnicians.map(t => ({
+            ...base,
+            assigned_technician_id: t.id,
+            is_external: true,
+            external_personnel_name: t.full_name,
+          }));
+          // Asignaciones para nombres externos manuales
+          const manualExternals = draft.externalNames
+            .filter(name => name.trim() !== "")
+            .map(name => ({
+              ...base,
+              assigned_technician_id: null,
+              is_external: true,
+              external_personnel_name: name,
+            }));
+          return [...internals, ...externals, ...manualExternals];
+        });
+
+        if (assignments.length === 0) {
+          setError("No hay asignaciones para guardar. Selecciona al menos un técnico o nombre externo por edificio.");
+          setLoading(false);
+          return;
+        }
+
+        // Guardar en Supabase
+        const { error: insertError } = await supabase
+          .from("maintenance_assignments")
+          .insert(assignments);
+        if (insertError) throw insertError;
+
+        setSuccess("Asignaciones guardadas correctamente.");
+        if (onSuccess) onSuccess();
+        setTimeout(() => {
+          setSuccess("");
+          onClose();
+        }, 1200);
+      } catch (err: any) {
+        setError(err.message || "Error al guardar asignaciones.");
+      } finally {
+        setLoading(false);
+      }
+    };
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([]);
@@ -79,20 +222,6 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
     return days;
   };
 
-  // Genera un rango de fechas a partir de una fecha inicial y duración (en días)
-  const getDateRange = (start: string, duration: number) => {
-    const result: string[] = [];
-    const d = new Date(start);
-    for (let i = 0; i < duration; i++) {
-      const day = new Date(d);
-      day.setDate(d.getDate() + i);
-      // Solo días hábiles
-      if (day.getDay() !== 0 && day.getDay() !== 6) {
-        result.push(day.toISOString().slice(0, 10));
-      }
-    }
-    return result;
-  };
 
   // Crea borradores de asignación para cada edificio seleccionado
   useEffect(() => {
@@ -146,68 +275,7 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
   useEffect(() => {
     if (drafts.length > 0) validateDrafts();
     // eslint-disable-next-line
-      {selectedBuildings.length === 0 ? (
-        <div className="text-center text-gray-500 text-lg my-10">Selecciona uno o más edificios para planificar mantenimientos.</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full border text-base mb-4">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="border px-4 py-2">Edificio</th>
-                <th className="border px-4 py-2">Técnicos internos</th>
-                <th className="border px-4 py-2">Técnicos externos</th>
-                <th className="border px-4 py-2">Nombres externos manuales</th>
-                <th className="border px-4 py-2">Día</th>
-                <th className="border px-4 py-2">Duración</th>
-                <th className="border px-4 py-2">Inamovible</th>
-                <th className="border px-4 py-2">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {drafts.length === 0 ? (
-                <tr><td colSpan={8} className="text-center text-gray-400 py-8">No hay datos para mostrar.</td></tr>
-              ) : drafts.map(draft => (
-                <tr key={draft.building.id} className={draft.status !== 'ok' ? 'bg-red-50' : ''}>
-                  <td className="border px-4 py-2 font-semibold text-lg">{draft.building.name}</td>
-                  <td className="border px-4 py-2">
-                    <select multiple value={draft.internalTechnicians.map(t => t.id)} onChange={e => handleInternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[90px] text-base">
-                      {technicians.length === 0 ? <option disabled>No hay técnicos internos</option> : technicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                    </select>
-                  </td>
-                  <td className="border px-4 py-2">
-                    <select multiple value={draft.externalTechnicians.map(t => t.id)} onChange={e => handleExternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[60px] text-base">
-                      {externalTechnicians.length === 0 ? <option disabled>No hay técnicos externos</option> : externalTechnicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                    </select>
-                  </td>
-                  <td className="border px-4 py-2">
-                    <input type="text" value={draft.externalNames.join(', ')} onChange={e => handleExternalNamesChange(draft.building.id, e.target.value.split(',').map(s => s.trim()))} className="border rounded px-2 py-2 w-full text-base" placeholder="Nombres separados por coma" />
-                  </td>
-                  <td className="border px-4 py-2">
-                    <select value={draft.days[0].date} onChange={e => handleDayChange(draft.building.id, e.target.value)} className="border rounded px-2 py-2 text-base">
-                      {getWeekdays().length === 0 ? <option disabled>No hay días hábiles</option> : getWeekdays().map(d => <option key={d.date} value={d.date}>{d.label}</option>)}
-                    </select>
-                  </td>
-                  <td className="border px-4 py-2">
-                    <select value={draft.days[0].duration} onChange={e => handleDurationChange(draft.building.id, Number(e.target.value))} className="border rounded px-2 py-2 text-base">
-                      <option value={0.5}>Medio día</option>
-                      <option value={1}>Día completo</option>
-                      <option value={2}>2 días</option>
-                      <option value={3}>3 días</option>
-                      <option value={5}>5 días</option>
-                    </select>
-                  </td>
-                  <td className="border px-4 py-2 text-center">
-                    <input type="checkbox" checked={!!draft.days[0].is_fixed} onChange={e => handleFixedChange(draft.building.id, e.target.checked)} className="w-6 h-6" />
-                  </td>
-                  <td className="border px-4 py-2">
-                    {draft.status === 'ok' ? <span className="text-green-700 font-semibold">OK</span> : <span className="text-red-700 font-semibold">{draft.conflictMsg}</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+  }, [drafts]);
 
   // UI
   return (
@@ -313,7 +381,7 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       <div className="flex gap-3 justify-end">
         <button type="button" onClick={onClose} className="px-6 py-2 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition">Cancelar</button>
         <button type="button" onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" disabled={loading || drafts.length === 0}>Guardar Asignaciones</button>
-      </div>
+	  </div>
     </div>
   );
 }
