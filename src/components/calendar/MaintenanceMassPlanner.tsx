@@ -49,16 +49,15 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       })));
       // No seleccionar automáticamente si hay más de un edificio
     });
-    // Consulta técnicos igual que modal de nuevo evento
+    // Consulta técnicos igual que modal de nuevo evento (sin campos extra ni filtros innecesarios)
     supabase
       .from('profiles')
-      .select('id, full_name, is_on_leave')
+      .select('id, full_name')
       .eq('role', 'technician')
       .then(({ data }) => {
         setTechnicians((data || []).map(t => ({
           id: t.id,
-          full_name: t.full_name,
-          is_on_leave: !!t.is_on_leave
+          full_name: t.full_name
         })));
       });
     // Cargar técnicos externos guardados en localStorage
@@ -147,71 +146,68 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
   useEffect(() => {
     if (drafts.length > 0) validateDrafts();
     // eslint-disable-next-line
-  }, [drafts.length]);
-
-  // Maneja la edición de día, duración, técnicos y bloqueo por edificio
-  const handleDayChange = (bid: string, newDate: string) => {
-    setDrafts(ds => ds.map(d => d.building.id === bid ? {
-      ...d,
-      days: [{ ...d.days[0], date: newDate }]
-    } : d));
-  };
-  const handleDurationChange = (bid: string, duration: number) => {
-    setDrafts(ds => ds.map(d => d.building.id === bid ? {
-      ...d,
-      days: [{ ...d.days[0], duration }]
-    } : d));
-  };
-  const handleFixedChange = (bid: string, is_fixed: boolean) => {
-    setDrafts(ds => ds.map(d => d.building.id === bid ? {
-      ...d,
-      days: [{ ...d.days[0], is_fixed }]
-    } : d));
-  };
-  // Técnicos internos
-  const handleInternalTechnicianChange = (bid: string, tids: string[]) => {
-    setDrafts(ds => ds.map(d => d.building.id === bid ? {
-      ...d,
-      internalTechnicians: tids.map(tid => technicians.find(t => t.id === tid)!).filter(Boolean)
-    } : d));
-  };
-  // Técnicos externos (de la lista)
-  const handleExternalTechnicianChange = (bid: string, tids: string[]) => {
-    setDrafts(ds => ds.map(d => d.building.id === bid ? {
-      ...d,
-      externalTechnicians: tids.map(tid => externalTechnicians.find(t => t.id === tid)!).filter(Boolean)
-    } : d));
-  };
-  // Nombres externos manuales
-  const handleExternalNamesChange = (bid: string, names: string[]) => {
-    setDrafts(ds => ds.map(d => d.building.id === bid ? {
-      ...d,
-      externalNames: names
-    } : d));
-  };
-  // Agregar técnico externo global
-  const handleAddExternalTechnician = () => {
-    if (!externalNameInput.trim()) return;
-    const newTech: Technician = {
-      id: 'ext-' + Date.now(),
-      full_name: externalNameInput.trim(),
-      is_external: true
-    };
-    const updated = [...externalTechnicians, newTech];
-    setExternalTechnicians(updated);
-    localStorage.setItem('external_technicians', JSON.stringify(updated));
-    setExternalNameInput('');
-  };
-
-  // Guardar todas las asignaciones válidas
-  const handleSave = async () => {
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    const toSave = drafts.filter(d => d.status === 'ok');
-    if (toSave.length === 0) {
-      setError('No hay asignaciones válidas para guardar.');
-      setLoading(false);
+      {selectedBuildings.length === 0 ? (
+        <div className="text-center text-gray-500 text-lg my-10">Selecciona uno o más edificios para planificar mantenimientos.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full border text-base mb-4">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border px-4 py-2">Edificio</th>
+                <th className="border px-4 py-2">Técnicos internos</th>
+                <th className="border px-4 py-2">Técnicos externos</th>
+                <th className="border px-4 py-2">Nombres externos manuales</th>
+                <th className="border px-4 py-2">Día</th>
+                <th className="border px-4 py-2">Duración</th>
+                <th className="border px-4 py-2">Inamovible</th>
+                <th className="border px-4 py-2">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {drafts.length === 0 ? (
+                <tr><td colSpan={8} className="text-center text-gray-400 py-8">No hay datos para mostrar.</td></tr>
+              ) : drafts.map(draft => (
+                <tr key={draft.building.id} className={draft.status !== 'ok' ? 'bg-red-50' : ''}>
+                  <td className="border px-4 py-2 font-semibold text-lg">{draft.building.name}</td>
+                  <td className="border px-4 py-2">
+                    <select multiple value={draft.internalTechnicians.map(t => t.id)} onChange={e => handleInternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[90px] text-base">
+                      {technicians.length === 0 ? <option disabled>No hay técnicos internos</option> : technicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                    </select>
+                  </td>
+                  <td className="border px-4 py-2">
+                    <select multiple value={draft.externalTechnicians.map(t => t.id)} onChange={e => handleExternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[60px] text-base">
+                      {externalTechnicians.length === 0 ? <option disabled>No hay técnicos externos</option> : externalTechnicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                    </select>
+                  </td>
+                  <td className="border px-4 py-2">
+                    <input type="text" value={draft.externalNames.join(', ')} onChange={e => handleExternalNamesChange(draft.building.id, e.target.value.split(',').map(s => s.trim()))} className="border rounded px-2 py-2 w-full text-base" placeholder="Nombres separados por coma" />
+                  </td>
+                  <td className="border px-4 py-2">
+                    <select value={draft.days[0].date} onChange={e => handleDayChange(draft.building.id, e.target.value)} className="border rounded px-2 py-2 text-base">
+                      {getWeekdays().length === 0 ? <option disabled>No hay días hábiles</option> : getWeekdays().map(d => <option key={d.date} value={d.date}>{d.label}</option>)}
+                    </select>
+                  </td>
+                  <td className="border px-4 py-2">
+                    <select value={draft.days[0].duration} onChange={e => handleDurationChange(draft.building.id, Number(e.target.value))} className="border rounded px-2 py-2 text-base">
+                      <option value={0.5}>Medio día</option>
+                      <option value={1}>Día completo</option>
+                      <option value={2}>2 días</option>
+                      <option value={3}>3 días</option>
+                      <option value={5}>5 días</option>
+                    </select>
+                  </td>
+                  <td className="border px-4 py-2 text-center">
+                    <input type="checkbox" checked={!!draft.days[0].is_fixed} onChange={e => handleFixedChange(draft.building.id, e.target.checked)} className="w-6 h-6" />
+                  </td>
+                  <td className="border px-4 py-2">
+                    {draft.status === 'ok' ? <span className="text-green-700 font-semibold">OK</span> : <span className="text-red-700 font-semibold">{draft.conflictMsg}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       return;
     }
     // Crea asignaciones para cada edificio, técnico y rango de días
