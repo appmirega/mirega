@@ -41,8 +41,13 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    supabase.from('clients').select('id, company_name, address').then(({ data }) => {
-      setBuildings((data || []).map(e => ({ id: e.id, name: e.company_name, address: e.address })));
+    supabase.from('clients').select('id, company_name, address, internal_name').then(({ data }) => {
+      setBuildings((data || []).map(e => ({
+        id: e.id,
+        name: e.company_name,
+        address: e.address,
+        internalName: e.internal_name || '',
+      })));
     });
     supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => {
       setTechnicians((data || []).map(t => ({ id: t.id, full_name: t.full_name })));
@@ -209,9 +214,25 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
           {buildings.length === 0 ? (
             <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">No hay edificios disponibles en la base de datos.</div>
           ) : (
-            <select multiple value={selectedBuildings} onChange={e => setSelectedBuildings(Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 w-full min-h-[320px] text-lg">
-              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            <div className="border rounded px-2 py-2 w-full min-h-[320px] bg-white max-h-[320px] overflow-y-auto">
+              {buildings.map(b => (
+                <label key={b.id} className="flex items-center gap-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedBuildings.includes(b.id)}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        setSelectedBuildings([...selectedBuildings, b.id]);
+                      } else {
+                        setSelectedBuildings(selectedBuildings.filter(id => id !== b.id));
+                      }
+                    }}
+                  />
+                  <span className="font-semibold">{b.internalName ? `${b.internalName}` : b.name}</span>
+                  <span className="text-xs text-gray-500">({b.name})</span>
+                </label>
+              ))}
+            </div>
           )}
         </div>
         <div className="min-w-[320px]">
