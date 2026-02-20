@@ -208,7 +208,6 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
           </table>
         </div>
       )}
-      return;
     }
     // Crea asignaciones para cada edificio, técnico y rango de días
     const assignments = toSave.flatMap(draft => {
