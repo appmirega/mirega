@@ -208,60 +208,6 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
           </table>
         </div>
       )}
-    } else {
-      // Crea asignaciones para cada edificio, técnico y rango de días
-      const assignments = toSave.flatMap(draft => {
-        const { days } = draft;
-        const startDate = days[0].date;
-        const duration = days[0].duration;
-        const is_fixed = days[0].is_fixed || false;
-        const fechas = getDateRange(startDate, duration);
-        return [
-          ...draft.internalTechnicians.flatMap(tech => fechas.map(date => ({
-            building_id: draft.building.id,
-            assigned_technician_id: tech.id,
-            scheduled_date: date,
-            duration: 1, // cada día es una asignación de 1 día
-            assignment_type: 'mantenimiento',
-            is_external: false,
-            status: 'scheduled',
-            is_fixed,
-          }))),
-          ...draft.externalTechnicians.flatMap(tech => fechas.map(date => ({
-            building_id: draft.building.id,
-            assigned_technician_id: null,
-            scheduled_date: date,
-            duration: 1,
-            assignment_type: 'mantenimiento',
-            is_external: true,
-            external_personnel_name: tech.full_name,
-            status: 'scheduled',
-            is_fixed,
-          }))),
-          ...draft.externalNames.filter(n => n.trim()).flatMap(name => fechas.map(date => ({
-            building_id: draft.building.id,
-            assigned_technician_id: null,
-            scheduled_date: date,
-            duration: 1,
-            assignment_type: 'mantenimiento',
-            is_external: true,
-            external_personnel_name: name.trim(),
-            status: 'scheduled',
-            is_fixed,
-          }))),
-        ];
-      });
-      const { error: insertError } = await supabase.from('maintenance_assignments').insert(assignments);
-      setLoading(false);
-      if (insertError) {
-        setError('Error al guardar asignaciones: ' + insertError.message);
-      } else {
-        setSuccess('Asignaciones guardadas correctamente.');
-        onSuccess();
-        onClose();
-      }
-    }
-  };
 
   // UI
   return (
