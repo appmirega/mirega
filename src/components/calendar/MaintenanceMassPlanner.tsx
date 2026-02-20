@@ -255,14 +255,19 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
   // Validación de conflictos (edificio ya asignado, técnico en vacaciones, etc)
   const validateDrafts = async () => {
     setLoading(true);
+    // Calcular último día del mes correctamente
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const monthStr = String(month + 1).padStart(2, '0');
+    const startDate = `${year}-${monthStr}-01`;
+    const endDate = `${year}-${monthStr}-${lastDay}`;
     const newDrafts: AssignmentDraft[] = await Promise.all(drafts.map(async draft => {
       // 1. Verificar si el edificio ya tiene asignación ese mes
       const { data: existing, error } = await supabase
         .from('maintenance_assignments')
         .select('id, scheduled_date, assigned_technician_id')
         .eq('building_id', draft.building.id)
-        .gte('scheduled_date', `${year}-${String(month+1).padStart(2,'0')}-01`)
-        .lte('scheduled_date', `${year}-${String(month+1).padStart(2,'0')}-31`);
+        .gte('scheduled_date', startDate)
+        .lte('scheduled_date', endDate);
       if (error) return { ...draft, status: 'conflict', conflictMsg: 'Error al consultar asignaciones previas.' };
       if (existing && existing.length > 0) {
         return { ...draft, status: 'blocked', conflictMsg: 'Ya existe mantenimiento asignado este mes.' };
