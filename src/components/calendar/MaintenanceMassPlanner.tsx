@@ -230,18 +230,26 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       return;
     }
     const days = getWeekdays();
-    const drafts: AssignmentDraft[] = selectedBuildings.map(bid => {
-      const building = buildings.find(b => b.id === bid)!;
-      return {
-        building,
-        internalTechnicians: [],
-        externalTechnicians: [],
-        externalNames: [],
-        days: [{ date: days[0]?.date || '', duration: 1, is_fixed: false }],
-        status: 'ok',
-      };
+    // Mantener drafts previos si existen, para no perder selección al cambiar edificios
+    setDrafts(prevDrafts => {
+      return selectedBuildings.map(bid => {
+        const building = buildings.find(b => b.id === bid)!;
+        // Buscar draft previo
+        const prev = prevDrafts.find(d => d.building.id === bid);
+        return prev ? {
+          ...prev,
+          building,
+          days: prev.days.length > 0 ? prev.days : [{ date: days[0]?.date || '', duration: 1, is_fixed: false }],
+        } : {
+          building,
+          internalTechnicians: [],
+          externalTechnicians: [],
+          externalNames: [],
+          days: [{ date: days[0]?.date || '', duration: 1, is_fixed: false }],
+          status: 'ok',
+        };
+      });
     });
-    setDrafts(drafts);
   }, [selectedBuildings, buildings, month, year]);
 
   // Validación de conflictos (edificio ya asignado, técnico en vacaciones, etc)
