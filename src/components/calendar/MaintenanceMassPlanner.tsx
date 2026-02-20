@@ -230,17 +230,28 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
       return;
     }
     const days = getWeekdays();
-    // Mantener drafts previos si existen, para no perder selección al cambiar edificios
     setDrafts(prevDrafts => {
+      // Sincronizar drafts con edificios y técnicos cargados
       return selectedBuildings.map(bid => {
-        const building = buildings.find(b => b.id === bid)!;
+        const building = buildings.find(b => b.id === bid);
+        if (!building) return null;
         // Buscar draft previo
         const prev = prevDrafts.find(d => d.building.id === bid);
-        return prev ? {
-          ...prev,
-          building,
-          days: prev.days.length > 0 ? prev.days : [{ date: days[0]?.date || '', duration: 1, is_fixed: false }],
-        } : {
+        // Si hay draft previo, mantener selección y atributos
+        if (prev) {
+          // Si han cambiado los técnicos, actualizar lista disponible
+          const updatedInternals = prev.internalTechnicians.filter(t => technicians.some(tech => tech.id === t.id));
+          const updatedExternals = prev.externalTechnicians.filter(t => externalTechnicians.some(ext => ext.id === t.id));
+          return {
+            ...prev,
+            building,
+            internalTechnicians: updatedInternals,
+            externalTechnicians: updatedExternals,
+            days: prev.days.length > 0 ? prev.days : [{ date: days[0]?.date || '', duration: 1, is_fixed: false }],
+          };
+        }
+        // Si no hay draft previo, inicializar con todos los atributos
+        return {
           building,
           internalTechnicians: [],
           externalTechnicians: [],
@@ -248,9 +259,9 @@ export function MaintenanceMassPlanner({ onClose, onSuccess }: { onClose: () => 
           days: [{ date: days[0]?.date || '', duration: 1, is_fixed: false }],
           status: 'ok',
         };
-      });
+      }).filter(Boolean);
     });
-  }, [selectedBuildings, buildings, month, year]);
+  }, [selectedBuildings, buildings, technicians, externalTechnicians, month, year]);
 
   // Validación de conflictos (edificio ya asignado, técnico en vacaciones, etc)
   const validateDrafts = async () => {
