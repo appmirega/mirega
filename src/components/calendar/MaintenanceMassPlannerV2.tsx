@@ -44,9 +44,9 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
     supabase.from('clients').select('id, company_name, address, internal_name').then(({ data }) => {
       setBuildings((data || []).map(e => ({
         id: e.id,
-        name: e.company_name,
+        name: e.internal_name && e.internal_name.trim() !== '' ? e.internal_name : e.company_name,
         address: e.address,
-        internalName: e.internal_name || '',
+        publicName: e.company_name,
       })));
     });
     supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => {
