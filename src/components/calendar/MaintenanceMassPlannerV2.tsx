@@ -12,7 +12,6 @@ interface Technician {
 interface Building {
   id: string;
   name: string;
-  address: string;
 }
 
 interface AssignmentDraft {
@@ -41,12 +40,10 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    supabase.from('clients').select('id, company_name, address, internal_name').then(({ data }) => {
+    supabase.from('clients').select('id, internal_name').then(({ data }) => {
       setBuildings((data || []).map(e => ({
         id: e.id,
-        name: e.internal_name && e.internal_name.trim() !== '' ? e.internal_name : e.company_name,
-        address: e.address,
-        publicName: e.company_name,
+        name: e.internal_name || '',
       })));
     });
     supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => {
@@ -228,8 +225,7 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
                       }
                     }}
                   />
-                  <span className="font-semibold">{b.internalName ? `${b.internalName}` : b.name}</span>
-                  <span className="text-xs text-gray-500">({b.name})</span>
+                  <span className="font-semibold">{b.name}</span>
                 </label>
               ))}
             </div>
