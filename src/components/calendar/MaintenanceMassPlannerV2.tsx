@@ -214,22 +214,24 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
             <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">No hay edificios disponibles en la base de datos.</div>
           ) : (
             <div className="border rounded px-2 py-2 w-full min-h-[320px] bg-white max-h-[320px] overflow-y-auto">
-              {buildings.map(b => (
-                <label key={b.id} className="flex items-center gap-2 py-1">
-                  <input
-                    type="checkbox"
-                    checked={selectedBuildings.includes(b.id)}
-                    onChange={e => {
-                      if (e.target.checked) {
-                        setSelectedBuildings([...selectedBuildings, b.id]);
-                      } else {
-                        setSelectedBuildings(selectedBuildings.filter(id => id !== b.id));
-                      }
-                    }}
-                  />
-                  <span className="font-semibold">{b.name}</span>
-                </label>
-              ))}
+              <div style={{maxHeight: 180, overflowY: 'auto'}}>
+                {buildings.map(b => (
+                  <label key={b.id} className="flex items-center gap-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedBuildings.includes(b.id)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setSelectedBuildings([...selectedBuildings, b.id]);
+                        } else {
+                          setSelectedBuildings(selectedBuildings.filter(id => id !== b.id));
+                        }
+                      }}
+                    />
+                    <span className="font-semibold">{b.name}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
         </div>
