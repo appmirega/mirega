@@ -21,9 +21,8 @@ interface AssignmentDraft {
   building: Building;
   internalTechnicians: Technician[];
   externalTechnicians: ExternalTech[];
-  externalNames: string[]; // externos manuales (no recurrentes)
   day: string;
-  duration: number;
+  duration: number; // permite 0.5
   is_fixed: boolean;
   status: "ok" | "conflict" | "blocked";
   conflictMsg?: string;
@@ -48,10 +47,15 @@ export function MaintenanceMassPlannerV2({
   const [leftExternalSearch, setLeftExternalSearch] = useState("");
   const [newExternalName, setNewExternalName] = useState("");
 
-  // per-row search inputs
+  // per-row search inputs & dropdown visibility
   const [internalSearchByBuilding, setInternalSearchByBuilding] = useState<Record<string, string>>({});
   const [externalSearchByBuilding, setExternalSearchByBuilding] = useState<Record<string, string>>({});
-  const [manualExternalByBuilding, setManualExternalByBuilding] = useState<Record<string, string>>({});
+  const [showInternalDrop, setShowInternalDrop] = useState<Record<string, boolean>>({});
+  const [showExternalDrop, setShowExternalDrop] = useState<Record<string, boolean>>({});
+
+  // duration UI (select: preset/custom) + custom value
+  const [durationModeByBuilding, setDurationModeByBuilding] = useState<Record<string, "preset" | "custom">>({});
+  const [customDurationByBuilding, setCustomDurationByBuilding] = useState<Record<string, string>>({});
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -87,8 +91,7 @@ export function MaintenanceMassPlannerV2({
       .order("name", { ascending: true });
 
     if (error) {
-      console.error(error);
-      // Si no existe la tabla o hay RLS, muéstralo para que sepas qué pasa
+      console.error("external_technicians load error:", error);
       setError(error.message || "No se pudo cargar catálogo de técnicos externos.");
       return;
     }
@@ -101,25 +104,37 @@ export function MaintenanceMassPlannerV2({
       setLoading(true);
       setError("");
 
-      const [clientsRes, techsRes] = await Promise.all([
-        supabase.from("clients").select("id, internal_alias"),
-        supabase.from("profiles").select("id, full_name").eq("role", "technician"),
-      ]);
+      try {
+        const [clientsRes, techsRes] = await Promise.all([
+          supabase.from("clients").select("id, internal_alias"),
+          supabase
+            .from("profiles")
+            .select("id, full_name")
+            .eq("role", "technician")
+            .order("full_name", { ascending: true }),
+        ]);
 
-      const clients = clientsRes.data || [];
-      const techs = techsRes.data || [];
+        if (clientsRes.error) throw clientsRes.error;
+        if (techsRes.error) throw techsRes.error;
 
-      setBuildings(
-        clients
-          .filter((e: any) => e.internal_alias && e.internal_alias.trim() !== "")
-          .map((e: any) => ({ id: e.id, name: e.internal_alias }))
-      );
+        const clients = clientsRes.data || [];
+        const techs = techsRes.data || [];
 
-      setTechnicians(techs.map((t: any) => ({ id: t.id, full_name: t.full_name })));
+        setBuildings(
+          clients
+            .filter((e: any) => e.internal_alias && e.internal_alias.trim() !== "")
+            .map((e: any) => ({ id: e.id, name: e.internal_alias }))
+        );
 
-      await refreshExternalCatalog();
+        setTechnicians(techs.map((t: any) => ({ id: t.id, full_name: t.full_name })));
 
-      setLoading(false);
+        await refreshExternalCatalog();
+      } catch (e: any) {
+        console.error("initial load error:", e);
+        setError(e?.message || "Error cargando datos.");
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
@@ -131,20 +146,30 @@ export function MaintenanceMassPlannerV2({
     }
 
     setDrafts(
-      selectedBuildings.map((bid) => {
-        const building = buildings.find((b) => b.id === bid);
-        return {
+      selectedBuildings
+        .map((bid) => buildings.find((b) => b.id === bid))
+        .filter(Boolean)
+        .map((building) => ({
           building: building!,
           internalTechnicians: [],
           externalTechnicians: [],
-          externalNames: [],
           day: weekdays[0]?.date || "",
           duration: 1,
           is_fixed: false,
           status: "ok",
-        } as AssignmentDraft;
-      })
+        }))
     );
+
+    // Inicializa duration modes
+    const initModes: Record<string, "preset" | "custom"> = {};
+    const initCustom: Record<string, string> = {};
+    selectedBuildings.forEach((bid) => {
+      initModes[bid] = "preset";
+      initCustom[bid] = "";
+    });
+    setDurationModeByBuilding(initModes);
+    setCustomDurationByBuilding(initCustom);
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBuildings, buildings, month, year]);
 
@@ -189,39 +214,16 @@ export function MaintenanceMassPlannerV2({
     );
   };
 
-  const addExternalManual = (buildingId: string, name: string) => {
-    const clean = name.trim();
-    if (!clean) return;
-
-    setDrafts((prev) =>
-      prev.map((d) => {
-        if (d.building.id !== buildingId) return d;
-        if (d.externalNames.some((n) => normalize(n) === normalize(clean))) return d;
-        return { ...d, externalNames: [...d.externalNames, clean] };
-      })
-    );
-  };
-
-  const removeExternalManual = (buildingId: string, name: string) => {
-    setDrafts((prev) =>
-      prev.map((d) =>
-        d.building.id === buildingId
-          ? { ...d, externalNames: d.externalNames.filter((n) => normalize(n) !== normalize(name)) }
-          : d
-      )
-    );
-  };
-
   const handleDayChange = (buildingId: string, date: string) => {
     setDrafts((prev) => prev.map((d) => (d.building.id === buildingId ? { ...d, day: date } : d)));
   };
 
-  const handleDurationChange = (buildingId: string, duration: number) => {
-    setDrafts((prev) => prev.map((d) => (d.building.id === buildingId ? { ...d, duration } : d)));
-  };
-
   const handleFixedChange = (buildingId: string, isFixed: boolean) => {
     setDrafts((prev) => prev.map((d) => (d.building.id === buildingId ? { ...d, is_fixed: isFixed } : d)));
+  };
+
+  const setDuration = (buildingId: string, duration: number) => {
+    setDrafts((prev) => prev.map((d) => (d.building.id === buildingId ? { ...d, duration } : d)));
   };
 
   // ---------- External catalog actions ----------
@@ -231,7 +233,6 @@ export function MaintenanceMassPlannerV2({
 
     setError("");
     try {
-      // evita duplicados por nombre (case insensitive)
       if (externalCatalog.some((x) => normalize(x.name) === normalize(name))) {
         setNewExternalName("");
         return;
@@ -253,7 +254,6 @@ export function MaintenanceMassPlannerV2({
       const { error } = await supabase.from("external_technicians").delete().eq("id", id);
       if (error) throw error;
 
-      // también lo removemos de drafts si estaba seleccionado
       setDrafts((prev) =>
         prev.map((d) => ({
           ...d,
@@ -273,7 +273,7 @@ export function MaintenanceMassPlannerV2({
     return externalCatalog.filter((e) => normalize(e.name).includes(q));
   }, [externalCatalog, leftExternalSearch]);
 
-  // ---------- Save (mantiene tu lógica, pero usando el nuevo shape) ----------
+  // ---------- Save ----------
   const handleSave = async () => {
     setError("");
     setSuccess("");
@@ -287,11 +287,19 @@ export function MaintenanceMassPlannerV2({
         return;
       }
 
+      // Validación simple: al menos 1 interno o 1 externo por edificio
+      const hasAny = toSave.every((d) => d.internalTechnicians.length > 0 || d.externalTechnicians.length > 0);
+      if (!hasAny) {
+        setError("Cada edificio debe tener al menos 1 técnico interno o externo.");
+        setSaving(false);
+        return;
+      }
+
       const assignments = toSave.flatMap((draft) => {
         const base = {
           building_id: draft.building.id,
           scheduled_date: draft.day,
-          duration: draft.duration,
+          duration: draft.duration, // 0.5 permitido si DB es numeric
           is_fixed: draft.is_fixed,
           status: "scheduled",
         };
@@ -303,9 +311,7 @@ export function MaintenanceMassPlannerV2({
           external_personnel_name: null,
         }));
 
-        // externos recurrentes: guardamos su nombre y (si tu tabla lo permite) un id de “assigned_technician_id”.
-        // OJO: aquí dejo assigned_technician_id en null para externos, porque en tu caso los externos no son profiles.
-        // Si tu DB exige assigned_technician_id NOT NULL, hay que ajustarlo (lo vemos después).
+        // Externos recurrentes: guardamos solo nombre
         const externals = draft.externalTechnicians.map((t) => ({
           ...base,
           assigned_technician_id: null,
@@ -313,23 +319,8 @@ export function MaintenanceMassPlannerV2({
           external_personnel_name: t.name,
         }));
 
-        const manualExternals = draft.externalNames
-          .filter((name) => name.trim() !== "")
-          .map((name) => ({
-            ...base,
-            assigned_technician_id: null,
-            is_external: true,
-            external_personnel_name: name,
-          }));
-
-        return [...internals, ...externals, ...manualExternals];
+        return [...internals, ...externals];
       });
-
-      if (assignments.length === 0) {
-        setError("No hay asignaciones para guardar. Selecciona al menos un técnico o externo por edificio.");
-        setSaving(false);
-        return;
-      }
 
       const { error: insertError } = await supabase.from("maintenance_assignments").insert(assignments);
       if (insertError) throw insertError;
@@ -355,31 +346,17 @@ export function MaintenanceMassPlannerV2({
         <Calendar className="w-7 h-7" /> Planificación Masiva de Mantenimiento
       </h2>
 
-      {(loading || saving) && (
-        <div className="mb-3 text-sm text-gray-600">
-          {loading ? "Cargando..." : "Guardando..."}
-        </div>
-      )}
+      {(loading || saving) && <div className="mb-3 text-sm text-gray-600">{loading ? "Cargando..." : "Guardando..."}</div>}
 
-      {error && (
-        <div className="mb-4 text-red-700 bg-red-50 border border-red-200 rounded p-2">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="mb-4 text-green-700 bg-green-50 border border-green-200 rounded p-2">
-          {success}
-        </div>
-      )}
+      {error && <div className="mb-4 text-red-700 bg-red-50 border border-red-200 rounded p-2">{error}</div>}
+      {success && <div className="mb-4 text-green-700 bg-green-50 border border-green-200 rounded p-2">{success}</div>}
 
       <div className="flex gap-6">
         {/* LEFT */}
         <div className="w-72 flex-shrink-0">
           <label className="block font-medium mb-1">Edificios</label>
           {buildings.length === 0 ? (
-            <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">
-              No hay edificios disponibles en la base de datos.
-            </div>
+            <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">No hay edificios disponibles.</div>
           ) : (
             <div className="border rounded px-2 py-2 bg-white" style={{ maxHeight: 220, overflowY: "auto" }}>
               {buildings.map((b) => (
@@ -388,11 +365,8 @@ export function MaintenanceMassPlannerV2({
                     type="checkbox"
                     checked={selectedBuildings.includes(b.id)}
                     onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedBuildings([...selectedBuildings, b.id]);
-                      } else {
-                        setSelectedBuildings(selectedBuildings.filter((id) => id !== b.id));
-                      }
+                      if (e.target.checked) setSelectedBuildings([...selectedBuildings, b.id]);
+                      else setSelectedBuildings(selectedBuildings.filter((id) => id !== b.id));
                     }}
                   />
                   <span className="font-semibold">{b.name}</span>
@@ -453,9 +427,7 @@ export function MaintenanceMassPlannerV2({
               )}
             </div>
 
-            <div className="text-xs text-gray-500 mt-1">
-              Estos externos quedan guardados para futuras asignaciones.
-            </div>
+            <div className="text-xs text-gray-500 mt-1">Estos externos quedan guardados para futuras asignaciones.</div>
           </div>
         </div>
 
@@ -464,20 +436,11 @@ export function MaintenanceMassPlannerV2({
           <div className="flex gap-4 mb-4">
             <div>
               <label className="block font-medium mb-1">Año</label>
-              <input
-                type="number"
-                value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
-                className="border rounded px-2 py-1 w-24"
-              />
+              <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className="border rounded px-2 py-1 w-24" />
             </div>
             <div>
               <label className="block font-medium mb-1">Mes</label>
-              <select
-                value={month}
-                onChange={(e) => setMonth(Number(e.target.value))}
-                className="border rounded px-2 py-1 w-32"
-              >
+              <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="border rounded px-2 py-1 w-32">
                 {Array.from({ length: 12 }).map((_, i) => (
                   <option key={i} value={i}>
                     {new Date(2000, i, 1).toLocaleString("es-CL", { month: "long" })}
@@ -487,10 +450,14 @@ export function MaintenanceMassPlannerV2({
             </div>
           </div>
 
-          {selectedBuildings.length === 0 ? (
-            <div className="text-center text-gray-500 text-lg my-10">
-              Selecciona uno o más edificios para planificar mantenimientos.
+          {technicians.length === 0 && (
+            <div className="mb-4 text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+              No se encontraron técnicos internos. Revisa que en <b>profiles</b> exista <b>role = "technician"</b>.
             </div>
+          )}
+
+          {selectedBuildings.length === 0 ? (
+            <div className="text-center text-gray-500 text-lg my-10">Selecciona uno o más edificios para planificar mantenimientos.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full border text-base mb-4">
@@ -499,7 +466,6 @@ export function MaintenanceMassPlannerV2({
                     <th className="border px-4 py-2">Edificio</th>
                     <th className="border px-4 py-2">Internos</th>
                     <th className="border px-4 py-2">Externos recurrentes</th>
-                    <th className="border px-4 py-2">Externo manual</th>
                     <th className="border px-4 py-2">Día</th>
                     <th className="border px-4 py-2">Duración</th>
                     <th className="border px-4 py-2">Inamovible</th>
@@ -512,28 +478,27 @@ export function MaintenanceMassPlannerV2({
 
                     const internalQuery = internalSearchByBuilding[buildingId] || "";
                     const externalQuery = externalSearchByBuilding[buildingId] || "";
-                    const manualQuery = manualExternalByBuilding[buildingId] || "";
 
                     const internalSuggestions = technicians
                       .filter((t) => normalize(t.full_name).includes(normalize(internalQuery)))
-                      .slice(0, 8);
+                      .slice(0, 10);
 
                     const externalSuggestions = externalCatalog
                       .filter((t) => normalize(t.name).includes(normalize(externalQuery)))
-                      .slice(0, 8);
+                      .slice(0, 10);
+
+                    const durationMode = durationModeByBuilding[buildingId] || "preset";
+                    const customDurStr = customDurationByBuilding[buildingId] || "";
 
                     return (
                       <tr key={buildingId}>
                         <td className="border px-4 py-2 font-semibold text-lg">{draft.building.name}</td>
 
-                        {/* Internos: chips + búsqueda */}
+                        {/* Internos: chips + búsqueda (muestra sugerencias al enfocar) */}
                         <td className="border px-4 py-2 align-top">
                           <div className="flex flex-wrap gap-2 mb-2">
                             {draft.internalTechnicians.map((t) => (
-                              <span
-                                key={t.id}
-                                className="inline-flex items-center gap-1 bg-gray-100 border rounded-full px-2 py-1 text-sm"
-                              >
+                              <span key={t.id} className="inline-flex items-center gap-1 bg-gray-100 border rounded-full px-2 py-1 text-sm">
                                 {t.full_name}
                                 <button
                                   type="button"
@@ -549,15 +514,15 @@ export function MaintenanceMassPlannerV2({
 
                           <input
                             value={internalQuery}
-                            onChange={(e) =>
-                              setInternalSearchByBuilding((p) => ({ ...p, [buildingId]: e.target.value }))
-                            }
+                            onChange={(e) => setInternalSearchByBuilding((p) => ({ ...p, [buildingId]: e.target.value }))}
+                            onFocus={() => setShowInternalDrop((p) => ({ ...p, [buildingId]: true }))}
+                            onBlur={() => setTimeout(() => setShowInternalDrop((p) => ({ ...p, [buildingId]: false })), 150)}
                             className="border rounded px-2 py-2 w-full"
                             placeholder="Buscar técnico interno..."
                           />
 
-                          {internalQuery.trim() !== "" && (
-                            <div className="mt-2 border rounded bg-white max-h-40 overflow-auto">
+                          {showInternalDrop[buildingId] && (
+                            <div className="mt-2 border rounded bg-white max-h-44 overflow-auto">
                               {internalSuggestions.length === 0 ? (
                                 <div className="text-sm text-gray-500 p-2">Sin resultados</div>
                               ) : (
@@ -579,7 +544,7 @@ export function MaintenanceMassPlannerV2({
                           )}
                         </td>
 
-                        {/* Externos recurrentes: chips + búsqueda */}
+                        {/* Externos recurrentes: chips + búsqueda (sin manual) */}
                         <td className="border px-4 py-2 align-top">
                           <div className="flex flex-wrap gap-2 mb-2">
                             {draft.externalTechnicians.map((t) => (
@@ -602,15 +567,15 @@ export function MaintenanceMassPlannerV2({
 
                           <input
                             value={externalQuery}
-                            onChange={(e) =>
-                              setExternalSearchByBuilding((p) => ({ ...p, [buildingId]: e.target.value }))
-                            }
+                            onChange={(e) => setExternalSearchByBuilding((p) => ({ ...p, [buildingId]: e.target.value }))}
+                            onFocus={() => setShowExternalDrop((p) => ({ ...p, [buildingId]: true }))}
+                            onBlur={() => setTimeout(() => setShowExternalDrop((p) => ({ ...p, [buildingId]: false })), 150)}
                             className="border rounded px-2 py-2 w-full"
                             placeholder="Buscar externo recurrente..."
                           />
 
-                          {externalQuery.trim() !== "" && (
-                            <div className="mt-2 border rounded bg-white max-h-40 overflow-auto">
+                          {showExternalDrop[buildingId] && (
+                            <div className="mt-2 border rounded bg-white max-h-44 overflow-auto">
                               {externalSuggestions.length === 0 ? (
                                 <div className="text-sm text-gray-500 p-2">Sin resultados</div>
                               ) : (
@@ -632,60 +597,6 @@ export function MaintenanceMassPlannerV2({
                           )}
                         </td>
 
-                        {/* Externo manual: input + chips */}
-                        <td className="border px-4 py-2 align-top">
-                          <div className="flex flex-wrap gap-2 mb-2">
-                            {draft.externalNames.map((n) => (
-                              <span
-                                key={n}
-                                className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 rounded-full px-2 py-1 text-sm"
-                              >
-                                {n}
-                                <button
-                                  type="button"
-                                  onClick={() => removeExternalManual(buildingId, n)}
-                                  className="hover:bg-blue-100 rounded-full p-0.5"
-                                  title="Quitar"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-
-                          <div className="flex gap-2">
-                            <input
-                              value={manualQuery}
-                              onChange={(e) =>
-                                setManualExternalByBuilding((p) => ({ ...p, [buildingId]: e.target.value }))
-                              }
-                              className="border rounded px-2 py-2 w-full"
-                              placeholder="Nombre externo manual..."
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  addExternalManual(buildingId, manualQuery);
-                                  setManualExternalByBuilding((p) => ({ ...p, [buildingId]: "" }));
-                                }
-                              }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                addExternalManual(buildingId, manualQuery);
-                                setManualExternalByBuilding((p) => ({ ...p, [buildingId]: "" }));
-                              }}
-                              className="px-3 py-2 rounded bg-gray-900 text-white"
-                              title="Agregar"
-                            >
-                              +
-                            </button>
-                          </div>
-
-                          <div className="text-xs text-gray-500 mt-2">
-                            (Manual) Si lo usas seguido, guárdalo en “recurrentes”.
-                          </div>
-                        </td>
-
                         {/* Día */}
                         <td className="border px-4 py-2 align-top">
                           <select
@@ -705,19 +616,60 @@ export function MaintenanceMassPlannerV2({
                           </select>
                         </td>
 
-                        {/* Duración */}
+                        {/* Duración: 0.5,1,2,3 o personalizado */}
                         <td className="border px-4 py-2 align-top">
-                          <select
-                            value={draft.duration}
-                            onChange={(e) => handleDurationChange(buildingId, Number(e.target.value))}
-                            className="border rounded px-2 py-2 text-base w-full"
-                          >
-                            {/* OJO: si tu DB es integer, evita 0.5. Si tu DB es numeric, puedes reactivar 0.5 */}
-                            <option value={1}>Día completo</option>
-                            <option value={2}>2 días</option>
-                            <option value={3}>3 días</option>
-                            <option value={5}>5 días</option>
-                          </select>
+                          <div className="flex flex-col gap-2">
+                            <select
+                              value={durationMode === "custom" ? "custom" : String(draft.duration)}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === "custom") {
+                                  setDurationModeByBuilding((p) => ({ ...p, [buildingId]: "custom" }));
+                                  // setea un default si está vacío
+                                  setCustomDurationByBuilding((p) => ({
+                                    ...p,
+                                    [buildingId]: p[buildingId] || (draft.duration > 3 ? String(draft.duration) : "4"),
+                                  }));
+                                  // setDuration no se cambia hasta que el usuario escriba (o dejamos 4 por defecto)
+                                  setDuration(buildingId, 4);
+                                } else {
+                                  setDurationModeByBuilding((p) => ({ ...p, [buildingId]: "preset" }));
+                                  const num = Number(v);
+                                  setDuration(buildingId, num);
+                                }
+                              }}
+                              className="border rounded px-2 py-2 text-base w-full"
+                            >
+                              <option value="0.5">Medio día</option>
+                              <option value="1">1 día</option>
+                              <option value="2">2 días</option>
+                              <option value="3">3 días</option>
+                              <option value="custom">Personalizado (&gt; 3)</option>
+                            </select>
+
+                            {durationMode === "custom" && (
+                              <div className="flex gap-2 items-center">
+                                <input
+                                  type="number"
+                                  min={0.5}
+                                  step={0.5}
+                                  value={customDurStr}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setCustomDurationByBuilding((p) => ({ ...p, [buildingId]: val }));
+
+                                    const n = Number(val);
+                                    if (!Number.isFinite(n)) return;
+                                    // Si pide personalizado, normalmente es >3, pero dejamos que sea cualquiera.
+                                    setDuration(buildingId, n);
+                                  }}
+                                  className="border rounded px-2 py-2 w-full"
+                                  placeholder="Ej: 4, 6, 10..."
+                                />
+                                <span className="text-sm text-gray-600 whitespace-nowrap">días</span>
+                              </div>
+                            )}
+                          </div>
                         </td>
 
                         {/* Inamovible */}
