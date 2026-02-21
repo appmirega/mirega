@@ -199,115 +199,129 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
       <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Calendar className="w-6 h-6" /> Planificación Masiva de Mantenimiento</h2>
       <div className="flex gap-10 mb-8 flex-wrap items-end">
         <div>
-          <label className="block font-medium mb-1">Año</label>
-          <input type="number" value={year} onChange={e => setYear(Number(e.target.value))} className="border rounded px-2 py-1 w-28" />
-        </div>
-        <div>
-          <label className="block font-medium mb-1">Mes</label>
-          <select value={month} onChange={e => setMonth(Number(e.target.value))} className="border rounded px-2 py-1 w-44">
-            {[...Array(12)].map((_, i) => <option key={i} value={i}>{new Date(2000, i, 1).toLocaleString('es-CL', { month: 'long' })}</option>)}
-          </select>
-        </div>
-        <div className="flex-1 min-w-[350px]">
-          <label className="block font-medium mb-1">Edificios</label>
-          {buildings.length === 0 ? (
-            <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">No hay edificios disponibles en la base de datos.</div>
-          ) : (
-            <div className="border rounded px-2 py-2 w-full min-h-[320px] bg-white max-h-[320px] overflow-y-auto">
-              <div style={{maxHeight: 180, overflowY: 'auto'}}>
-                {buildings.map(b => (
-                  <label key={b.id} className="flex items-center gap-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={selectedBuildings.includes(b.id)}
-                      onChange={e => {
-                        if (e.target.checked) {
-                          setSelectedBuildings([...selectedBuildings, b.id]);
-                        } else {
-                          setSelectedBuildings(selectedBuildings.filter(id => id !== b.id));
-                        }
-                      }}
-                    />
-                    <span className="font-semibold">{b.name}</span>
-                  </label>
-                ))}
+          <div className="p-6">
+            <h2 className="text-2xl font-bold flex items-center gap-2 mb-6"><Calendar className="w-7 h-7" /> Planificación Masiva de Mantenimiento</h2>
+            <div className="flex gap-6">
+              {/* Columna izquierda: Edificios y técnico externo */}
+              <div className="w-64 flex-shrink-0">
+                <label className="block font-medium mb-1">Edificios</label>
+                {buildings.length === 0 ? (
+                  <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">No hay edificios disponibles en la base de datos.</div>
+                ) : (
+                  <div className="border rounded px-2 py-2 bg-white" style={{maxHeight: 220, overflowY: 'auto'}}>
+                    {buildings.map(b => (
+                      <label key={b.id} className="flex items-center gap-2 py-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedBuildings.includes(b.id)}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setSelectedBuildings([...selectedBuildings, b.id]);
+                            } else {
+                              setSelectedBuildings(selectedBuildings.filter(id => id !== b.id));
+                            }
+                          }}
+                        />
+                        <span className="font-semibold">{b.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-6">
+                  <label className="block font-medium mb-1">Técnico externo (nuevo)</label>
+                  <div className="flex gap-2">
+                    <input type="text" value={externalNameInput} onChange={e => setExternalNameInput(e.target.value)} className="border rounded px-2 py-1 flex-1" placeholder="Nombre técnico externo" />
+                    <button type="button" onClick={handleAddExternalTechnician} className="bg-green-600 text-white px-3 py-1 rounded flex items-center gap-1"><UserPlus className="w-4 h-4" /> Agregar</button>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">Técnicos externos agregados estarán disponibles en la tabla.</div>
+                </div>
+              </div>
+              {/* Columna derecha: Tabla editable y controles */}
+              <div className="flex-1 min-w-0">
+                <div className="flex gap-4 mb-4">
+                  <div>
+                    <label className="block font-medium mb-1">Año</label>
+                    <input type="number" value={year} onChange={e => setYear(Number(e.target.value))} className="border rounded px-2 py-1 w-24" />
+                  </div>
+                  <div>
+                    <label className="block font-medium mb-1">Mes</label>
+                    <select value={month} onChange={e => setMonth(Number(e.target.value))} className="border rounded px-2 py-1 w-32">
+                      {Array.from({length: 12}).map((_, i) => <option key={i} value={i}>{new Date(2000, i, 1).toLocaleString('es-CL', { month: 'long' })}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {technicians.length === 0 && (
+                  <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mb-4">No hay técnicos internos disponibles en la base de datos.</div>
+                )}
+                {selectedBuildings.length === 0 ? (
+                  <div className="text-center text-gray-500 text-lg my-10">Selecciona uno o más edificios para planificar mantenimientos.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border text-base mb-4">
+                      <thead>
+                        <tr className="bg-gray-100">
+                          <th className="border px-4 py-2">Edificio</th>
+                          <th className="border px-4 py-2">Técnicos internos</th>
+                          <th className="border px-4 py-2">Técnicos externos</th>
+                          <th className="border px-4 py-2">Nombres externos manuales</th>
+                          <th className="border px-4 py-2">Día</th>
+                          <th className="border px-4 py-2">Duración</th>
+                          <th className="border px-4 py-2">Inamovible</th>
+                          <th className="border px-4 py-2">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drafts.length === 0 ? (
+                          <tr><td colSpan={8} className="text-center text-gray-400 py-8">No hay datos para mostrar.</td></tr>
+                        ) : drafts.map(draft => (
+                          <tr key={draft.building.id} className={draft.status !== 'ok' ? 'bg-red-50' : ''}>
+                            <td className="border px-4 py-2 font-semibold text-lg">{draft.building.name}</td>
+                            <td className="border px-4 py-2">
+                              <select multiple value={draft.internalTechnicians.map(t => t.id)} onChange={e => handleInternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[90px] text-base">
+                                {technicians.length === 0 ? <option disabled>No hay técnicos internos</option> : technicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                              </select>
+                            </td>
+                            <td className="border px-4 py-2">
+                              <select multiple value={draft.externalTechnicians.map(t => t.id)} onChange={e => handleExternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[60px] text-base">
+                                {externalTechnicians.length === 0 ? <option disabled>No hay técnicos externos</option> : externalTechnicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                              </select>
+                            </td>
+                            <td className="border px-4 py-2">
+                              <input type="text" value={draft.externalNames.join(', ')} onChange={e => handleExternalNamesChange(draft.building.id, e.target.value.split(',').map(s => s.trim()))} className="border rounded px-2 py-2 w-full text-base" placeholder="Nombres separados por coma" />
+                            </td>
+                            <td className="border px-4 py-2">
+                              <select value={draft.day} onChange={e => handleDayChange(draft.building.id, e.target.value)} className="border rounded px-2 py-2 text-base">
+                                {getWeekdays().length === 0 ? <option disabled>No hay días hábiles</option> : getWeekdays().map(d => <option key={d.date} value={d.date}>{d.label}</option>)}
+                              </select>
+                            </td>
+                            <td className="border px-4 py-2">
+                              <select value={draft.duration} onChange={e => handleDurationChange(draft.building.id, Number(e.target.value))} className="border rounded px-2 py-2 text-base">
+                                <option value={0.5}>Medio día</option>
+                                <option value={1}>Día completo</option>
+                                <option value={2}>2 días</option>
+                                <option value={3}>3 días</option>
+                                <option value={5}>5 días</option>
+                              </select>
+                            </td>
+                            <td className="border px-4 py-2 text-center">
+                              <input type="checkbox" checked={!!draft.is_fixed} onChange={e => handleFixedChange(draft.building.id, e.target.checked)} className="w-6 h-6" />
+                            </td>
+                            <td className="border px-4 py-2">
+                              {draft.status === 'ok' ? <span className="text-green-700 font-semibold">OK</span> : <span className="text-red-700 font-semibold">{draft.conflictMsg}</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <div className="flex justify-end gap-4 mt-8">
+                  <button type="button" onClick={onClose} className="px-6 py-2 rounded border border-gray-300 bg-white hover:bg-gray-50">Cancelar</button>
+                  <button type="button" onClick={handleSave} className="px-6 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700">Guardar Asignaciones</button>
+                </div>
               </div>
             </div>
-          )}
-        </div>
-        <div className="min-w-[320px]">
-          <label className="block font-medium mb-1">Técnico externo (nuevo)</label>
-          <div className="flex gap-2">
-            <input type="text" value={externalNameInput} onChange={e => setExternalNameInput(e.target.value)} className="border rounded px-2 py-1 flex-1" placeholder="Nombre técnico externo" />
-            <button type="button" onClick={handleAddExternalTechnician} className="bg-green-600 text-white px-3 py-1 rounded flex items-center gap-1"><UserPlus className="w-4 h-4" /> Agregar</button>
           </div>
-          <div className="text-xs text-gray-500 mt-1">Técnicos externos agregados estarán disponibles en la tabla.</div>
-        </div>
-      </div>
-      {technicians.length === 0 && (
-        <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mb-4">No hay técnicos internos disponibles en la base de datos.</div>
-      )}
-      {selectedBuildings.length === 0 ? (
-        <div className="text-center text-gray-500 text-lg my-10">Selecciona uno o más edificios para planificar mantenimientos.</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full border text-base mb-4">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="border px-4 py-2">Edificio</th>
-                <th className="border px-4 py-2">Técnicos internos</th>
-                <th className="border px-4 py-2">Técnicos externos</th>
-                <th className="border px-4 py-2">Nombres externos manuales</th>
-                <th className="border px-4 py-2">Día</th>
-                <th className="border px-4 py-2">Duración</th>
-                <th className="border px-4 py-2">Inamovible</th>
-                <th className="border px-4 py-2">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {drafts.length === 0 ? (
-                <tr><td colSpan={8} className="text-center text-gray-400 py-8">No hay datos para mostrar.</td></tr>
-              ) : drafts.map(draft => (
-                <tr key={draft.building.id} className={draft.status !== 'ok' ? 'bg-red-50' : ''}>
-                  <td className="border px-4 py-2 font-semibold text-lg">{draft.building.name}</td>
-                  <td className="border px-4 py-2">
-                    <select multiple value={draft.internalTechnicians.map(t => t.id)} onChange={e => handleInternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[90px] text-base">
-                      {technicians.length === 0 ? <option disabled>No hay técnicos internos</option> : technicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                    </select>
-                  </td>
-                  <td className="border px-4 py-2">
-                    <select multiple value={draft.externalTechnicians.map(t => t.id)} onChange={e => handleExternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, o => o.value))} className="border rounded px-2 py-2 min-w-[180px] min-h-[60px] text-base">
-                      {externalTechnicians.length === 0 ? <option disabled>No hay técnicos externos</option> : externalTechnicians.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
-                    </select>
-                  </td>
-                  <td className="border px-4 py-2">
-                    <input type="text" value={draft.externalNames.join(', ')} onChange={e => handleExternalNamesChange(draft.building.id, e.target.value.split(',').map(s => s.trim()))} className="border rounded px-2 py-2 w-full text-base" placeholder="Nombres separados por coma" />
-                  </td>
-                  <td className="border px-4 py-2">
-                    <select value={draft.day} onChange={e => handleDayChange(draft.building.id, e.target.value)} className="border rounded px-2 py-2 text-base">
-                      {getWeekdays().length === 0 ? <option disabled>No hay días hábiles</option> : getWeekdays().map(d => <option key={d.date} value={d.date}>{d.label}</option>)}
-                    </select>
-                  </td>
-                  <td className="border px-4 py-2">
-                    <select value={draft.duration} onChange={e => handleDurationChange(draft.building.id, Number(e.target.value))} className="border rounded px-2 py-2 text-base">
-                      <option value={0.5}>Medio día</option>
-                      <option value={1}>Día completo</option>
-                      <option value={2}>2 días</option>
-                      <option value={3}>3 días</option>
-                      <option value={5}>5 días</option>
-                    </select>
-                  </td>
-                  <td className="border px-4 py-2 text-center">
-                    <input type="checkbox" checked={!!draft.is_fixed} onChange={e => handleFixedChange(draft.building.id, e.target.checked)} className="w-6 h-6" />
-                  </td>
-                  <td className="border px-4 py-2">
-                    {draft.status === 'ok' ? <span className="text-green-700 font-semibold">OK</span> : <span className="text-red-700 font-semibold">{draft.conflictMsg}</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       )}
       {error && <div className="bg-red-100 text-red-700 rounded p-2 flex items-center gap-2 mb-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
       {success && <div className="bg-green-100 text-green-700 rounded p-2 flex items-center gap-2 mb-2"><Check className="w-4 h-4" /> {success}</div>}
