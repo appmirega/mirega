@@ -319,5 +319,4 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
             </div>
           </div>
         )}
-      </div>
     );
