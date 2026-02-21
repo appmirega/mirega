@@ -195,13 +195,9 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
 
   // UI
   return (
-    <div className="w-full h-full bg-white rounded-2xl shadow-xl p-8 flex flex-col overflow-y-auto">
-      <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Calendar className="w-6 h-6" /> Planificación Masiva de Mantenimiento</h2>
-      <div className="flex gap-10 mb-8 flex-wrap items-end">
-        <div>
-          <div className="p-6">
-            <h2 className="text-2xl font-bold flex items-center gap-2 mb-6"><Calendar className="w-7 h-7" /> Planificación Masiva de Mantenimiento</h2>
-            <div className="flex gap-6">
+    <div className="p-6">
+      <h2 className="text-2xl font-bold flex items-center gap-2 mb-6"><Calendar className="w-7 h-7" /> Planificación Masiva de Mantenimiento</h2>
+      <div className="flex gap-6">
               {/* Columna izquierda: Edificios y técnico externo */}
               <div className="w-64 flex-shrink-0">
                 <label className="block font-medium mb-1">Edificios</label>
