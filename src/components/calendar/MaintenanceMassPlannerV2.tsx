@@ -1,12 +1,15 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { Calendar, UserPlus } from "lucide-react";
+import { Calendar, UserPlus, X, Trash2 } from "lucide-react";
 
 interface Technician {
   id: string;
   full_name: string;
-  is_on_leave?: boolean;
-  is_external?: boolean;
+}
+
+interface ExternalTech {
+  id: string;
+  name: string;
 }
 
 interface Building {
@@ -17,8 +20,8 @@ interface Building {
 interface AssignmentDraft {
   building: Building;
   internalTechnicians: Technician[];
-  externalTechnicians: Technician[];
-  externalNames: string[];
+  externalTechnicians: ExternalTech[];
+  externalNames: string[]; // externos manuales (no recurrentes)
   day: string;
   duration: number;
   is_fixed: boolean;
@@ -35,44 +38,29 @@ export function MaintenanceMassPlannerV2({
 }) {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
-  const [externalTechnicians, setExternalTechnicians] = useState<Technician[]>([]);
+  const [externalCatalog, setExternalCatalog] = useState<ExternalTech[]>([]);
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([]);
-  const [externalNameInput, setExternalNameInput] = useState("");
   const [drafts, setDrafts] = useState<AssignmentDraft[]>([]);
   const [month, setMonth] = useState(() => new Date().getMonth());
   const [year, setYear] = useState(() => new Date().getFullYear());
+
+  // UX state
+  const [leftExternalSearch, setLeftExternalSearch] = useState("");
+  const [newExternalName, setNewExternalName] = useState("");
+
+  // per-row search inputs
+  const [internalSearchByBuilding, setInternalSearchByBuilding] = useState<Record<string, string>>({});
+  const [externalSearchByBuilding, setExternalSearchByBuilding] = useState<Record<string, string>>({});
+  const [manualExternalByBuilding, setManualExternalByBuilding] = useState<Record<string, string>>({});
+
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  useEffect(() => {
-    supabase
-      .from("clients")
-      .select("id, internal_alias")
-      .then(({ data }) => {
-        setBuildings(
-          (data || [])
-            .filter((e: any) => e.internal_alias && e.internal_alias.trim() !== "")
-            .map((e: any) => ({
-              id: e.id,
-              name: e.internal_alias,
-            }))
-        );
-      });
+  // ---------- Helpers ----------
+  const normalize = (s: string) => s.trim().toLowerCase();
 
-    supabase
-      .from("profiles")
-      .select("id, full_name")
-      .eq("role", "technician")
-      .then(({ data }) => {
-        setTechnicians((data || []).map((t: any) => ({ id: t.id, full_name: t.full_name })));
-      });
-
-    const ext = localStorage.getItem("external_technicians");
-    if (ext) setExternalTechnicians(JSON.parse(ext));
-  }, []);
-
-  // Genera días hábiles del mes
   const getWeekdays = () => {
     const days: { date: string; label: string }[] = [];
     const d = new Date(year, month, 1);
@@ -90,100 +78,212 @@ export function MaintenanceMassPlannerV2({
     return days;
   };
 
-  // Inicializa drafts al seleccionar edificios
+  const weekdays = useMemo(() => getWeekdays(), [month, year]);
+
+  const refreshExternalCatalog = async () => {
+    const { data, error } = await supabase
+      .from("external_technicians")
+      .select("id, name")
+      .order("name", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      // Si no existe la tabla o hay RLS, muéstralo para que sepas qué pasa
+      setError(error.message || "No se pudo cargar catálogo de técnicos externos.");
+      return;
+    }
+    setExternalCatalog((data || []).map((r: any) => ({ id: r.id, name: r.name })));
+  };
+
+  // ---------- Initial load ----------
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      setError("");
+
+      const [clientsRes, techsRes] = await Promise.all([
+        supabase.from("clients").select("id, internal_alias"),
+        supabase.from("profiles").select("id, full_name").eq("role", "technician"),
+      ]);
+
+      const clients = clientsRes.data || [];
+      const techs = techsRes.data || [];
+
+      setBuildings(
+        clients
+          .filter((e: any) => e.internal_alias && e.internal_alias.trim() !== "")
+          .map((e: any) => ({ id: e.id, name: e.internal_alias }))
+      );
+
+      setTechnicians(techs.map((t: any) => ({ id: t.id, full_name: t.full_name })));
+
+      await refreshExternalCatalog();
+
+      setLoading(false);
+    })();
+  }, []);
+
+  // ---------- Draft init ----------
   useEffect(() => {
     if (selectedBuildings.length === 0) {
       setDrafts([]);
       return;
     }
-    const days = getWeekdays();
+
     setDrafts(
       selectedBuildings.map((bid) => {
-        const building = buildings.find((b) => b.id === bid)!;
+        const building = buildings.find((b) => b.id === bid);
         return {
-          building,
+          building: building!,
           internalTechnicians: [],
           externalTechnicians: [],
           externalNames: [],
-          day: days[0]?.date || "",
+          day: weekdays[0]?.date || "",
           duration: 1,
           is_fixed: false,
           status: "ok",
-        };
+        } as AssignmentDraft;
       })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBuildings, buildings, month, year]);
 
-  // Handlers
-  const handleInternalTechnicianChange = (buildingId: string, technicianIds: string[]) => {
-    setDrafts((drafts) =>
-      drafts.map((draft) =>
-        draft.building.id === buildingId
-          ? { ...draft, internalTechnicians: technicians.filter((t) => technicianIds.includes(t.id)) }
-          : draft
+  // ---------- Draft operations (chips) ----------
+  const addInternal = (buildingId: string, tech: Technician) => {
+    setDrafts((prev) =>
+      prev.map((d) => {
+        if (d.building.id !== buildingId) return d;
+        if (d.internalTechnicians.some((t) => t.id === tech.id)) return d;
+        return { ...d, internalTechnicians: [...d.internalTechnicians, tech] };
+      })
+    );
+  };
+
+  const removeInternal = (buildingId: string, techId: string) => {
+    setDrafts((prev) =>
+      prev.map((d) =>
+        d.building.id === buildingId
+          ? { ...d, internalTechnicians: d.internalTechnicians.filter((t) => t.id !== techId) }
+          : d
       )
     );
   };
 
-  const handleExternalTechnicianChange = (buildingId: string, technicianIds: string[]) => {
-    setDrafts((drafts) =>
-      drafts.map((draft) =>
-        draft.building.id === buildingId
-          ? { ...draft, externalTechnicians: externalTechnicians.filter((t) => technicianIds.includes(t.id)) }
-          : draft
+  const addExternalRecurrent = (buildingId: string, ext: ExternalTech) => {
+    setDrafts((prev) =>
+      prev.map((d) => {
+        if (d.building.id !== buildingId) return d;
+        if (d.externalTechnicians.some((t) => t.id === ext.id)) return d;
+        return { ...d, externalTechnicians: [...d.externalTechnicians, ext] };
+      })
+    );
+  };
+
+  const removeExternalRecurrent = (buildingId: string, extId: string) => {
+    setDrafts((prev) =>
+      prev.map((d) =>
+        d.building.id === buildingId
+          ? { ...d, externalTechnicians: d.externalTechnicians.filter((t) => t.id !== extId) }
+          : d
       )
     );
   };
 
-  const handleExternalNamesChange = (buildingId: string, names: string[]) => {
-    setDrafts((drafts) =>
-      drafts.map((draft) => (draft.building.id === buildingId ? { ...draft, externalNames: names } : draft))
+  const addExternalManual = (buildingId: string, name: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+
+    setDrafts((prev) =>
+      prev.map((d) => {
+        if (d.building.id !== buildingId) return d;
+        if (d.externalNames.some((n) => normalize(n) === normalize(clean))) return d;
+        return { ...d, externalNames: [...d.externalNames, clean] };
+      })
+    );
+  };
+
+  const removeExternalManual = (buildingId: string, name: string) => {
+    setDrafts((prev) =>
+      prev.map((d) =>
+        d.building.id === buildingId
+          ? { ...d, externalNames: d.externalNames.filter((n) => normalize(n) !== normalize(name)) }
+          : d
+      )
     );
   };
 
   const handleDayChange = (buildingId: string, date: string) => {
-    setDrafts((drafts) =>
-      drafts.map((draft) => (draft.building.id === buildingId ? { ...draft, day: date } : draft))
-    );
+    setDrafts((prev) => prev.map((d) => (d.building.id === buildingId ? { ...d, day: date } : d)));
   };
 
   const handleDurationChange = (buildingId: string, duration: number) => {
-    setDrafts((drafts) =>
-      drafts.map((draft) => (draft.building.id === buildingId ? { ...draft, duration } : draft))
-    );
+    setDrafts((prev) => prev.map((d) => (d.building.id === buildingId ? { ...d, duration } : d)));
   };
 
   const handleFixedChange = (buildingId: string, isFixed: boolean) => {
-    setDrafts((drafts) =>
-      drafts.map((draft) => (draft.building.id === buildingId ? { ...draft, is_fixed: isFixed } : draft))
-    );
+    setDrafts((prev) => prev.map((d) => (d.building.id === buildingId ? { ...d, is_fixed: isFixed } : d)));
   };
 
-  const handleAddExternalTechnician = () => {
-    const name = externalNameInput.trim();
+  // ---------- External catalog actions ----------
+  const handleCreateExternal = async () => {
+    const name = newExternalName.trim();
     if (!name) return;
-    if (externalTechnicians.some((t) => t.full_name.toLowerCase() === name.toLowerCase())) {
-      setExternalNameInput("");
-      return;
+
+    setError("");
+    try {
+      // evita duplicados por nombre (case insensitive)
+      if (externalCatalog.some((x) => normalize(x.name) === normalize(name))) {
+        setNewExternalName("");
+        return;
+      }
+
+      const { error } = await supabase.from("external_technicians").insert({ name });
+      if (error) throw error;
+
+      setNewExternalName("");
+      await refreshExternalCatalog();
+    } catch (e: any) {
+      setError(e.message || "No se pudo guardar técnico externo.");
     }
-    const newTech = { id: Date.now().toString(), full_name: name, is_external: true };
-    const updated = [...externalTechnicians, newTech];
-    setExternalTechnicians(updated);
-    localStorage.setItem("external_technicians", JSON.stringify(updated));
-    setExternalNameInput("");
   };
 
-  // Guardar asignaciones masivas
+  const handleDeleteExternal = async (id: string) => {
+    setError("");
+    try {
+      const { error } = await supabase.from("external_technicians").delete().eq("id", id);
+      if (error) throw error;
+
+      // también lo removemos de drafts si estaba seleccionado
+      setDrafts((prev) =>
+        prev.map((d) => ({
+          ...d,
+          externalTechnicians: d.externalTechnicians.filter((t) => t.id !== id),
+        }))
+      );
+
+      await refreshExternalCatalog();
+    } catch (e: any) {
+      setError(e.message || "No se pudo eliminar técnico externo.");
+    }
+  };
+
+  const filteredExternalCatalog = useMemo(() => {
+    const q = normalize(leftExternalSearch);
+    if (!q) return externalCatalog;
+    return externalCatalog.filter((e) => normalize(e.name).includes(q));
+  }, [externalCatalog, leftExternalSearch]);
+
+  // ---------- Save (mantiene tu lógica, pero usando el nuevo shape) ----------
   const handleSave = async () => {
     setError("");
     setSuccess("");
-    setLoading(true);
+    setSaving(true);
+
     try {
       const toSave = drafts.filter((d) => d.status === "ok");
       if (toSave.length === 0) {
         setError("No hay asignaciones válidas para guardar.");
-        setLoading(false);
+        setSaving(false);
         return;
       }
 
@@ -203,11 +303,14 @@ export function MaintenanceMassPlannerV2({
           external_personnel_name: null,
         }));
 
+        // externos recurrentes: guardamos su nombre y (si tu tabla lo permite) un id de “assigned_technician_id”.
+        // OJO: aquí dejo assigned_technician_id en null para externos, porque en tu caso los externos no son profiles.
+        // Si tu DB exige assigned_technician_id NOT NULL, hay que ajustarlo (lo vemos después).
         const externals = draft.externalTechnicians.map((t) => ({
           ...base,
-          assigned_technician_id: t.id,
+          assigned_technician_id: null,
           is_external: true,
-          external_personnel_name: t.full_name,
+          external_personnel_name: t.name,
         }));
 
         const manualExternals = draft.externalNames
@@ -223,8 +326,8 @@ export function MaintenanceMassPlannerV2({
       });
 
       if (assignments.length === 0) {
-        setError("No hay asignaciones para guardar. Selecciona al menos un técnico o nombre externo por edificio.");
-        setLoading(false);
+        setError("No hay asignaciones para guardar. Selecciona al menos un técnico o externo por edificio.");
+        setSaving(false);
         return;
       }
 
@@ -232,29 +335,46 @@ export function MaintenanceMassPlannerV2({
       if (insertError) throw insertError;
 
       setSuccess("Asignaciones guardadas correctamente.");
-      if (onSuccess) onSuccess();
+      onSuccess?.();
 
       setTimeout(() => {
         setSuccess("");
         onClose();
       }, 1200);
-    } catch (err: any) {
-      setError(err.message || "Error al guardar asignaciones.");
+    } catch (e: any) {
+      setError(e.message || "Error al guardar asignaciones.");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  // UI
+  // ---------- UI ----------
   return (
     <div className="p-6">
       <h2 className="text-2xl font-bold flex items-center gap-2 mb-6">
         <Calendar className="w-7 h-7" /> Planificación Masiva de Mantenimiento
       </h2>
 
+      {(loading || saving) && (
+        <div className="mb-3 text-sm text-gray-600">
+          {loading ? "Cargando..." : "Guardando..."}
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-4 text-red-700 bg-red-50 border border-red-200 rounded p-2">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="mb-4 text-green-700 bg-green-50 border border-green-200 rounded p-2">
+          {success}
+        </div>
+      )}
+
       <div className="flex gap-6">
-        {/* Columna izquierda: Edificios y técnico externo */}
-        <div className="w-64 flex-shrink-0">
+        {/* LEFT */}
+        <div className="w-72 flex-shrink-0">
           <label className="block font-medium mb-1">Edificios</label>
           {buildings.length === 0 ? (
             <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">
@@ -281,33 +401,65 @@ export function MaintenanceMassPlannerV2({
             </div>
           )}
 
+          {/* External catalog */}
           <div className="mt-6">
-            <label className="block font-medium mb-1">Técnico externo (nuevo)</label>
+            <label className="block font-medium mb-1">Técnicos externos recurrentes</label>
 
-            {/* ✅ FIX UI: evita que el botón se monte sobre la tabla */}
             <div className="flex flex-wrap gap-2">
               <input
                 type="text"
-                value={externalNameInput}
-                onChange={(e) => setExternalNameInput(e.target.value)}
+                value={newExternalName}
+                onChange={(e) => setNewExternalName(e.target.value)}
                 className="border rounded px-2 py-2 flex-1 min-w-[200px]"
-                placeholder="Nombre técnico externo"
+                placeholder="Agregar nuevo externo"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreateExternal();
+                }}
               />
-
               <button
                 type="button"
-                onClick={handleAddExternalTechnician}
+                onClick={handleCreateExternal}
                 className="bg-green-600 text-white px-3 py-2 rounded flex items-center justify-center gap-1 w-full sm:w-auto"
               >
-                <UserPlus className="w-4 h-4" /> Agregar
+                <UserPlus className="w-4 h-4" /> Guardar
               </button>
             </div>
 
-            <div className="text-xs text-gray-500 mt-1">Técnicos externos agregados estarán disponibles en la tabla.</div>
+            <input
+              type="text"
+              value={leftExternalSearch}
+              onChange={(e) => setLeftExternalSearch(e.target.value)}
+              className="border rounded px-2 py-2 w-full mt-3"
+              placeholder="Buscar externo..."
+            />
+
+            <div className="border rounded px-2 py-2 bg-white mt-2" style={{ maxHeight: 220, overflowY: "auto" }}>
+              {filteredExternalCatalog.length === 0 ? (
+                <div className="text-sm text-gray-500 py-2">No hay externos recurrentes.</div>
+              ) : (
+                filteredExternalCatalog.map((e) => (
+                  <div key={e.id} className="flex items-center justify-between gap-2 py-1">
+                    <span className="text-sm">{e.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteExternal(e.id)}
+                      className="text-red-600 hover:bg-red-50 rounded p-1"
+                      title="Eliminar"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="text-xs text-gray-500 mt-1">
+              Estos externos quedan guardados para futuras asignaciones.
+            </div>
           </div>
         </div>
 
-        {/* Columna derecha: Tabla editable y controles */}
+        {/* RIGHT */}
         <div className="flex-1 min-w-0">
           <div className="flex gap-4 mb-4">
             <div>
@@ -335,12 +487,6 @@ export function MaintenanceMassPlannerV2({
             </div>
           </div>
 
-          {technicians.length === 0 && (
-            <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mb-4">
-              No hay técnicos internos disponibles en la base de datos.
-            </div>
-          )}
-
           {selectedBuildings.length === 0 ? (
             <div className="text-center text-gray-500 text-lg my-10">
               Selecciona uno o más edificios para planificar mantenimientos.
@@ -351,101 +497,206 @@ export function MaintenanceMassPlannerV2({
                 <thead>
                   <tr className="bg-gray-100">
                     <th className="border px-4 py-2">Edificio</th>
-                    <th className="border px-4 py-2">Técnicos internos</th>
-                    <th className="border px-4 py-2">Técnicos externos</th>
-                    <th className="border px-4 py-2">Nombres externos manuales</th>
+                    <th className="border px-4 py-2">Internos</th>
+                    <th className="border px-4 py-2">Externos recurrentes</th>
+                    <th className="border px-4 py-2">Externo manual</th>
                     <th className="border px-4 py-2">Día</th>
                     <th className="border px-4 py-2">Duración</th>
                     <th className="border px-4 py-2">Inamovible</th>
-                    <th className="border px-4 py-2">Estado</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {drafts.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="text-center text-gray-400 py-8">
-                        No hay datos para mostrar.
-                      </td>
-                    </tr>
-                  ) : (
-                    drafts.map((draft) => (
-                      <tr key={draft.building.id} className={draft.status !== "ok" ? "bg-red-50" : ""}>
+                  {drafts.map((draft) => {
+                    const buildingId = draft.building.id;
+
+                    const internalQuery = internalSearchByBuilding[buildingId] || "";
+                    const externalQuery = externalSearchByBuilding[buildingId] || "";
+                    const manualQuery = manualExternalByBuilding[buildingId] || "";
+
+                    const internalSuggestions = technicians
+                      .filter((t) => normalize(t.full_name).includes(normalize(internalQuery)))
+                      .slice(0, 8);
+
+                    const externalSuggestions = externalCatalog
+                      .filter((t) => normalize(t.name).includes(normalize(externalQuery)))
+                      .slice(0, 8);
+
+                    return (
+                      <tr key={buildingId}>
                         <td className="border px-4 py-2 font-semibold text-lg">{draft.building.name}</td>
 
-                        <td className="border px-4 py-2">
-                          <select
-                            multiple
-                            value={draft.internalTechnicians.map((t) => t.id)}
-                            onChange={(e) =>
-                              handleInternalTechnicianChange(
-                                draft.building.id,
-                                Array.from(e.target.selectedOptions, (o) => o.value)
-                              )
-                            }
-                            className="border rounded px-2 py-2 min-w-[180px] min-h-[90px] text-base"
-                          >
-                            {technicians.length === 0 ? (
-                              <option disabled>No hay técnicos internos</option>
-                            ) : (
-                              technicians.map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.full_name}
-                                </option>
-                              ))
-                            )}
-                          </select>
-                        </td>
+                        {/* Internos: chips + búsqueda */}
+                        <td className="border px-4 py-2 align-top">
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {draft.internalTechnicians.map((t) => (
+                              <span
+                                key={t.id}
+                                className="inline-flex items-center gap-1 bg-gray-100 border rounded-full px-2 py-1 text-sm"
+                              >
+                                {t.full_name}
+                                <button
+                                  type="button"
+                                  onClick={() => removeInternal(buildingId, t.id)}
+                                  className="hover:bg-gray-200 rounded-full p-0.5"
+                                  title="Quitar"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
 
-                        <td className="border px-4 py-2">
-                          <select
-                            multiple
-                            value={draft.externalTechnicians.map((t) => t.id)}
-                            onChange={(e) =>
-                              handleExternalTechnicianChange(
-                                draft.building.id,
-                                Array.from(e.target.selectedOptions, (o) => o.value)
-                              )
-                            }
-                            className="border rounded px-2 py-2 min-w-[180px] min-h-[60px] text-base"
-                          >
-                            {externalTechnicians.length === 0 ? (
-                              <option disabled>No hay técnicos externos</option>
-                            ) : (
-                              externalTechnicians.map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.full_name}
-                                </option>
-                              ))
-                            )}
-                          </select>
-                        </td>
-
-                        <td className="border px-4 py-2">
                           <input
-                            type="text"
-                            value={draft.externalNames.join(", ")}
+                            value={internalQuery}
                             onChange={(e) =>
-                              handleExternalNamesChange(
-                                draft.building.id,
-                                e.target.value.split(",").map((s) => s.trim())
-                              )
+                              setInternalSearchByBuilding((p) => ({ ...p, [buildingId]: e.target.value }))
                             }
-                            className="border rounded px-2 py-2 w-full text-base"
-                            placeholder="Nombres separados por coma"
+                            className="border rounded px-2 py-2 w-full"
+                            placeholder="Buscar técnico interno..."
                           />
+
+                          {internalQuery.trim() !== "" && (
+                            <div className="mt-2 border rounded bg-white max-h-40 overflow-auto">
+                              {internalSuggestions.length === 0 ? (
+                                <div className="text-sm text-gray-500 p-2">Sin resultados</div>
+                              ) : (
+                                internalSuggestions.map((t) => (
+                                  <button
+                                    key={t.id}
+                                    type="button"
+                                    onClick={() => {
+                                      addInternal(buildingId, t);
+                                      setInternalSearchByBuilding((p) => ({ ...p, [buildingId]: "" }));
+                                    }}
+                                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                                  >
+                                    {t.full_name}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
                         </td>
 
-                        <td className="border px-4 py-2">
+                        {/* Externos recurrentes: chips + búsqueda */}
+                        <td className="border px-4 py-2 align-top">
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {draft.externalTechnicians.map((t) => (
+                              <span
+                                key={t.id}
+                                className="inline-flex items-center gap-1 bg-green-50 border border-green-200 rounded-full px-2 py-1 text-sm"
+                              >
+                                {t.name}
+                                <button
+                                  type="button"
+                                  onClick={() => removeExternalRecurrent(buildingId, t.id)}
+                                  className="hover:bg-green-100 rounded-full p-0.5"
+                                  title="Quitar"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+
+                          <input
+                            value={externalQuery}
+                            onChange={(e) =>
+                              setExternalSearchByBuilding((p) => ({ ...p, [buildingId]: e.target.value }))
+                            }
+                            className="border rounded px-2 py-2 w-full"
+                            placeholder="Buscar externo recurrente..."
+                          />
+
+                          {externalQuery.trim() !== "" && (
+                            <div className="mt-2 border rounded bg-white max-h-40 overflow-auto">
+                              {externalSuggestions.length === 0 ? (
+                                <div className="text-sm text-gray-500 p-2">Sin resultados</div>
+                              ) : (
+                                externalSuggestions.map((t) => (
+                                  <button
+                                    key={t.id}
+                                    type="button"
+                                    onClick={() => {
+                                      addExternalRecurrent(buildingId, t);
+                                      setExternalSearchByBuilding((p) => ({ ...p, [buildingId]: "" }));
+                                    }}
+                                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                                  >
+                                    {t.name}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Externo manual: input + chips */}
+                        <td className="border px-4 py-2 align-top">
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {draft.externalNames.map((n) => (
+                              <span
+                                key={n}
+                                className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 rounded-full px-2 py-1 text-sm"
+                              >
+                                {n}
+                                <button
+                                  type="button"
+                                  onClick={() => removeExternalManual(buildingId, n)}
+                                  className="hover:bg-blue-100 rounded-full p-0.5"
+                                  title="Quitar"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+
+                          <div className="flex gap-2">
+                            <input
+                              value={manualQuery}
+                              onChange={(e) =>
+                                setManualExternalByBuilding((p) => ({ ...p, [buildingId]: e.target.value }))
+                              }
+                              className="border rounded px-2 py-2 w-full"
+                              placeholder="Nombre externo manual..."
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  addExternalManual(buildingId, manualQuery);
+                                  setManualExternalByBuilding((p) => ({ ...p, [buildingId]: "" }));
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                addExternalManual(buildingId, manualQuery);
+                                setManualExternalByBuilding((p) => ({ ...p, [buildingId]: "" }));
+                              }}
+                              className="px-3 py-2 rounded bg-gray-900 text-white"
+                              title="Agregar"
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          <div className="text-xs text-gray-500 mt-2">
+                            (Manual) Si lo usas seguido, guárdalo en “recurrentes”.
+                          </div>
+                        </td>
+
+                        {/* Día */}
+                        <td className="border px-4 py-2 align-top">
                           <select
                             value={draft.day}
-                            onChange={(e) => handleDayChange(draft.building.id, e.target.value)}
-                            className="border rounded px-2 py-2 text-base"
+                            onChange={(e) => handleDayChange(buildingId, e.target.value)}
+                            className="border rounded px-2 py-2 text-base w-full"
                           >
-                            {getWeekdays().length === 0 ? (
+                            {weekdays.length === 0 ? (
                               <option disabled>No hay días hábiles</option>
                             ) : (
-                              getWeekdays().map((d) => (
+                              weekdays.map((d) => (
                                 <option key={d.date} value={d.date}>
                                   {d.label}
                                 </option>
@@ -454,15 +705,14 @@ export function MaintenanceMassPlannerV2({
                           </select>
                         </td>
 
-                        <td className="border px-4 py-2">
+                        {/* Duración */}
+                        <td className="border px-4 py-2 align-top">
                           <select
                             value={draft.duration}
-                            onChange={(e) =>
-                              handleDurationChange(draft.building.id, Number(e.target.value))
-                            }
-                            className="border rounded px-2 py-2 text-base"
+                            onChange={(e) => handleDurationChange(buildingId, Number(e.target.value))}
+                            className="border rounded px-2 py-2 text-base w-full"
                           >
-                            <option value={0.5}>Medio día</option>
+                            {/* OJO: si tu DB es integer, evita 0.5. Si tu DB es numeric, puedes reactivar 0.5 */}
                             <option value={1}>Día completo</option>
                             <option value={2}>2 días</option>
                             <option value={3}>3 días</option>
@@ -470,27 +720,18 @@ export function MaintenanceMassPlannerV2({
                           </select>
                         </td>
 
-                        <td className="border px-4 py-2 text-center">
+                        {/* Inamovible */}
+                        <td className="border px-4 py-2 text-center align-top">
                           <input
                             type="checkbox"
                             checked={!!draft.is_fixed}
-                            onChange={(e) =>
-                              handleFixedChange(draft.building.id, e.target.checked)
-                            }
+                            onChange={(e) => handleFixedChange(buildingId, e.target.checked)}
                             className="w-6 h-6"
                           />
                         </td>
-
-                        <td className="border px-4 py-2">
-                          {draft.status === "ok" ? (
-                            <span className="text-green-700 font-semibold">OK</span>
-                          ) : (
-                            <span className="text-red-700 font-semibold">{draft.conflictMsg}</span>
-                          )}
-                        </td>
                       </tr>
-                    ))
-                  )}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -501,13 +742,15 @@ export function MaintenanceMassPlannerV2({
               type="button"
               onClick={onClose}
               className="px-6 py-2 rounded border border-gray-300 bg-white hover:bg-gray-50"
+              disabled={saving}
             >
               Cancelar
             </button>
             <button
               type="button"
               onClick={handleSave}
-              className="px-6 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700"
+              className="px-6 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-60"
+              disabled={saving}
             >
               Guardar Asignaciones
             </button>
