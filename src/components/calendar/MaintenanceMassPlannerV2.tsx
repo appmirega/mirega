@@ -325,10 +325,6 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
       )}
       {error && <div className="bg-red-100 text-red-700 rounded p-2 flex items-center gap-2 mb-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
       {success && <div className="bg-green-100 text-green-700 rounded p-2 flex items-center gap-2 mb-2"><Check className="w-4 h-4" /> {success}</div>}
-      <div className="flex gap-3 justify-end">
-        <button type="button" onClick={onClose} className="px-6 py-2 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition">Cancelar</button>
-        <button type="button" onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" disabled={loading || drafts.length === 0}>Guardar Asignaciones</button>
-      </div>
     </div>
   );
 }
