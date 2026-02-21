@@ -41,10 +41,12 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
 
   useEffect(() => {
     supabase.from('clients').select('id, internal_name').then(({ data }) => {
-      setBuildings((data || []).map(e => ({
-        id: e.id,
-        name: e.internal_name || '',
-      })));
+      setBuildings((data || [])
+        .filter(e => e.internal_name && e.internal_name.trim() !== '')
+        .map(e => ({
+          id: e.id,
+          name: e.internal_name,
+        })));
     });
     supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => {
       setTechnicians((data || []).map(t => ({ id: t.id, full_name: t.full_name })));
