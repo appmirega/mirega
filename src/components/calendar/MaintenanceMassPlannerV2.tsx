@@ -22,7 +22,7 @@ interface AssignmentDraft {
   internalTechnicians: Technician[];
   externalTechnicians: ExternalTech[];
   day: string;
-  duration: number; // permite 0.5
+  duration: number; // UI solamente (tu BD no tiene duration)
   is_fixed: boolean;
   status: "ok" | "conflict" | "blocked";
   conflictMsg?: string;
@@ -160,7 +160,6 @@ export function MaintenanceMassPlannerV2({
         }))
     );
 
-    // Inicializa duration modes
     const initModes: Record<string, "preset" | "custom"> = {};
     const initCustom: Record<string, string> = {};
     selectedBuildings.forEach((bid) => {
@@ -173,7 +172,7 @@ export function MaintenanceMassPlannerV2({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBuildings, buildings, month, year]);
 
-  // ---------- Draft operations (chips) ----------
+  // ---------- Draft operations ----------
   const addInternal = (buildingId: string, tech: Technician) => {
     setDrafts((prev) =>
       prev.map((d) => {
@@ -273,7 +272,7 @@ export function MaintenanceMassPlannerV2({
     return externalCatalog.filter((e) => normalize(e.name).includes(q));
   }, [externalCatalog, leftExternalSearch]);
 
-  // ---------- Save ----------
+  // ✅✅✅ SAVE CORREGIDO PARA TU ESQUEMA REAL ✅✅✅
   const handleSave = async () => {
     setError("");
     setSuccess("");
@@ -281,14 +280,17 @@ export function MaintenanceMassPlannerV2({
 
     try {
       const toSave = drafts.filter((d) => d.status === "ok");
+
       if (toSave.length === 0) {
         setError("No hay asignaciones válidas para guardar.");
         setSaving(false);
         return;
       }
 
-      // Validación simple: al menos 1 interno o 1 externo por edificio
-      const hasAny = toSave.every((d) => d.internalTechnicians.length > 0 || d.externalTechnicians.length > 0);
+      const hasAny = toSave.every(
+        (d) => d.internalTechnicians.length > 0 || d.externalTechnicians.length > 0
+      );
+
       if (!hasAny) {
         setError("Cada edificio debe tener al menos 1 técnico interno o externo.");
         setSaving(false);
@@ -297,32 +299,36 @@ export function MaintenanceMassPlannerV2({
 
       const assignments = toSave.flatMap((draft) => {
         const base = {
-          building_id: draft.building.id,
-          scheduled_date: draft.day,
-          duration: draft.duration, // 0.5 permitido si DB es numeric
-          is_fixed: draft.is_fixed,
+          client_id: draft.building.id,         // ✅ columna real
+          building_name: draft.building.name,   // ✅ NOT NULL en tu tabla
+          scheduled_date: draft.day,            // ✅ columna real
           status: "scheduled",
+          is_fixed: draft.is_fixed,
+          // opcional (tu tabla lo tiene): "2026-2" etc
+          calendar_month: `${year}-${String(month + 1).padStart(2, "0")}`,
         };
 
         const internals = draft.internalTechnicians.map((t) => ({
           ...base,
-          assigned_technician_id: t.id,
+          assigned_technician_id: t.id,     // ✅ columna real
           is_external: false,
           external_personnel_name: null,
         }));
 
-        // Externos recurrentes: guardamos solo nombre
         const externals = draft.externalTechnicians.map((t) => ({
           ...base,
           assigned_technician_id: null,
           is_external: true,
-          external_personnel_name: t.name,
+          external_personnel_name: t.name,  // ✅ columna real
         }));
 
         return [...internals, ...externals];
       });
 
-      const { error: insertError } = await supabase.from("maintenance_assignments").insert(assignments);
+      const { error: insertError } = await supabase
+        .from("maintenance_assignments")
+        .insert(assignments);
+
       if (insertError) throw insertError;
 
       setSuccess("Asignaciones guardadas correctamente.");
@@ -494,18 +500,13 @@ export function MaintenanceMassPlannerV2({
                       <tr key={buildingId}>
                         <td className="border px-4 py-2 font-semibold text-lg">{draft.building.name}</td>
 
-                        {/* Internos: chips + búsqueda (muestra sugerencias al enfocar) */}
+                        {/* Internos */}
                         <td className="border px-4 py-2 align-top">
                           <div className="flex flex-wrap gap-2 mb-2">
                             {draft.internalTechnicians.map((t) => (
                               <span key={t.id} className="inline-flex items-center gap-1 bg-gray-100 border rounded-full px-2 py-1 text-sm">
                                 {t.full_name}
-                                <button
-                                  type="button"
-                                  onClick={() => removeInternal(buildingId, t.id)}
-                                  className="hover:bg-gray-200 rounded-full p-0.5"
-                                  title="Quitar"
-                                >
+                                <button type="button" onClick={() => removeInternal(buildingId, t.id)} className="hover:bg-gray-200 rounded-full p-0.5" title="Quitar">
                                   <X className="w-3 h-3" />
                                 </button>
                               </span>
@@ -544,21 +545,13 @@ export function MaintenanceMassPlannerV2({
                           )}
                         </td>
 
-                        {/* Externos recurrentes: chips + búsqueda (sin manual) */}
+                        {/* Externos recurrentes */}
                         <td className="border px-4 py-2 align-top">
                           <div className="flex flex-wrap gap-2 mb-2">
                             {draft.externalTechnicians.map((t) => (
-                              <span
-                                key={t.id}
-                                className="inline-flex items-center gap-1 bg-green-50 border border-green-200 rounded-full px-2 py-1 text-sm"
-                              >
+                              <span key={t.id} className="inline-flex items-center gap-1 bg-green-50 border border-green-200 rounded-full px-2 py-1 text-sm">
                                 {t.name}
-                                <button
-                                  type="button"
-                                  onClick={() => removeExternalRecurrent(buildingId, t.id)}
-                                  className="hover:bg-green-100 rounded-full p-0.5"
-                                  title="Quitar"
-                                >
+                                <button type="button" onClick={() => removeExternalRecurrent(buildingId, t.id)} className="hover:bg-green-100 rounded-full p-0.5" title="Quitar">
                                   <X className="w-3 h-3" />
                                 </button>
                               </span>
@@ -599,11 +592,7 @@ export function MaintenanceMassPlannerV2({
 
                         {/* Día */}
                         <td className="border px-4 py-2 align-top">
-                          <select
-                            value={draft.day}
-                            onChange={(e) => handleDayChange(buildingId, e.target.value)}
-                            className="border rounded px-2 py-2 text-base w-full"
-                          >
+                          <select value={draft.day} onChange={(e) => handleDayChange(buildingId, e.target.value)} className="border rounded px-2 py-2 text-base w-full">
                             {weekdays.length === 0 ? (
                               <option disabled>No hay días hábiles</option>
                             ) : (
@@ -616,7 +605,7 @@ export function MaintenanceMassPlannerV2({
                           </select>
                         </td>
 
-                        {/* Duración: 0.5,1,2,3 o personalizado */}
+                        {/* Duración (solo UI) */}
                         <td className="border px-4 py-2 align-top">
                           <div className="flex flex-col gap-2">
                             <select
@@ -625,17 +614,14 @@ export function MaintenanceMassPlannerV2({
                                 const v = e.target.value;
                                 if (v === "custom") {
                                   setDurationModeByBuilding((p) => ({ ...p, [buildingId]: "custom" }));
-                                  // setea un default si está vacío
                                   setCustomDurationByBuilding((p) => ({
                                     ...p,
                                     [buildingId]: p[buildingId] || (draft.duration > 3 ? String(draft.duration) : "4"),
                                   }));
-                                  // setDuration no se cambia hasta que el usuario escriba (o dejamos 4 por defecto)
                                   setDuration(buildingId, 4);
                                 } else {
                                   setDurationModeByBuilding((p) => ({ ...p, [buildingId]: "preset" }));
-                                  const num = Number(v);
-                                  setDuration(buildingId, num);
+                                  setDuration(buildingId, Number(v));
                                 }
                               }}
                               className="border rounded px-2 py-2 text-base w-full"
@@ -657,10 +643,8 @@ export function MaintenanceMassPlannerV2({
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     setCustomDurationByBuilding((p) => ({ ...p, [buildingId]: val }));
-
                                     const n = Number(val);
                                     if (!Number.isFinite(n)) return;
-                                    // Si pide personalizado, normalmente es >3, pero dejamos que sea cualquiera.
                                     setDuration(buildingId, n);
                                   }}
                                   className="border rounded px-2 py-2 w-full"
@@ -674,12 +658,7 @@ export function MaintenanceMassPlannerV2({
 
                         {/* Inamovible */}
                         <td className="border px-4 py-2 text-center align-top">
-                          <input
-                            type="checkbox"
-                            checked={!!draft.is_fixed}
-                            onChange={(e) => handleFixedChange(buildingId, e.target.checked)}
-                            className="w-6 h-6"
-                          />
+                          <input type="checkbox" checked={!!draft.is_fixed} onChange={(e) => handleFixedChange(buildingId, e.target.checked)} className="w-6 h-6" />
                         </td>
                       </tr>
                     );
@@ -690,20 +669,10 @@ export function MaintenanceMassPlannerV2({
           )}
 
           <div className="flex justify-end gap-4 mt-8">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-6 py-2 rounded border border-gray-300 bg-white hover:bg-gray-50"
-              disabled={saving}
-            >
+            <button type="button" onClick={onClose} className="px-6 py-2 rounded border border-gray-300 bg-white hover:bg-gray-50" disabled={saving}>
               Cancelar
             </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              className="px-6 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-60"
-              disabled={saving}
-            >
+            <button type="button" onClick={handleSave} className="px-6 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-60" disabled={saving}>
               Guardar Asignaciones
             </button>
           </div>
