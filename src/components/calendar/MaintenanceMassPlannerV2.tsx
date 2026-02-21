@@ -40,12 +40,12 @@ export function MaintenanceMassPlannerV2({ onClose, onSuccess }: { onClose: () =
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    supabase.from('clients').select('id, internal_name').then(({ data }) => {
+    supabase.from('clients').select('id, internal_alias').then(({ data }) => {
       setBuildings((data || [])
-        .filter(e => e.internal_name && e.internal_name.trim() !== '')
+        .filter(e => e.internal_alias && e.internal_alias.trim() !== '')
         .map(e => ({
           id: e.id,
-          name: e.internal_name,
+          name: e.internal_alias,
         })));
     });
     supabase.from('profiles').select('id, full_name').eq('role', 'technician').then(({ data }) => {
