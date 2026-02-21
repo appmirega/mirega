@@ -283,22 +283,26 @@ export function MaintenanceMassPlannerV2({
 
           <div className="mt-6">
             <label className="block font-medium mb-1">Técnico externo (nuevo)</label>
-            <div className="flex gap-2">
+
+            {/* ✅ FIX UI: evita que el botón se monte sobre la tabla */}
+            <div className="flex flex-wrap gap-2">
               <input
                 type="text"
                 value={externalNameInput}
                 onChange={(e) => setExternalNameInput(e.target.value)}
-                className="border rounded px-2 py-1 flex-1"
+                className="border rounded px-2 py-2 flex-1 min-w-[200px]"
                 placeholder="Nombre técnico externo"
               />
+
               <button
                 type="button"
                 onClick={handleAddExternalTechnician}
-                className="bg-green-600 text-white px-3 py-1 rounded flex items-center gap-1"
+                className="bg-green-600 text-white px-3 py-2 rounded flex items-center justify-center gap-1 w-full sm:w-auto"
               >
                 <UserPlus className="w-4 h-4" /> Agregar
               </button>
             </div>
+
             <div className="text-xs text-gray-500 mt-1">Técnicos externos agregados estarán disponibles en la tabla.</div>
           </div>
         </div>
@@ -308,11 +312,20 @@ export function MaintenanceMassPlannerV2({
           <div className="flex gap-4 mb-4">
             <div>
               <label className="block font-medium mb-1">Año</label>
-              <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className="border rounded px-2 py-1 w-24" />
+              <input
+                type="number"
+                value={year}
+                onChange={(e) => setYear(Number(e.target.value))}
+                className="border rounded px-2 py-1 w-24"
+              />
             </div>
             <div>
               <label className="block font-medium mb-1">Mes</label>
-              <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="border rounded px-2 py-1 w-32">
+              <select
+                value={month}
+                onChange={(e) => setMonth(Number(e.target.value))}
+                className="border rounded px-2 py-1 w-32"
+              >
                 {Array.from({ length: 12 }).map((_, i) => (
                   <option key={i} value={i}>
                     {new Date(2000, i, 1).toLocaleString("es-CL", { month: "long" })}
@@ -365,7 +378,10 @@ export function MaintenanceMassPlannerV2({
                             multiple
                             value={draft.internalTechnicians.map((t) => t.id)}
                             onChange={(e) =>
-                              handleInternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, (o) => o.value))
+                              handleInternalTechnicianChange(
+                                draft.building.id,
+                                Array.from(e.target.selectedOptions, (o) => o.value)
+                              )
                             }
                             className="border rounded px-2 py-2 min-w-[180px] min-h-[90px] text-base"
                           >
@@ -386,7 +402,10 @@ export function MaintenanceMassPlannerV2({
                             multiple
                             value={draft.externalTechnicians.map((t) => t.id)}
                             onChange={(e) =>
-                              handleExternalTechnicianChange(draft.building.id, Array.from(e.target.selectedOptions, (o) => o.value))
+                              handleExternalTechnicianChange(
+                                draft.building.id,
+                                Array.from(e.target.selectedOptions, (o) => o.value)
+                              )
                             }
                             className="border rounded px-2 py-2 min-w-[180px] min-h-[60px] text-base"
                           >
@@ -438,7 +457,9 @@ export function MaintenanceMassPlannerV2({
                         <td className="border px-4 py-2">
                           <select
                             value={draft.duration}
-                            onChange={(e) => handleDurationChange(draft.building.id, Number(e.target.value))}
+                            onChange={(e) =>
+                              handleDurationChange(draft.building.id, Number(e.target.value))
+                            }
                             className="border rounded px-2 py-2 text-base"
                           >
                             <option value={0.5}>Medio día</option>
@@ -453,7 +474,9 @@ export function MaintenanceMassPlannerV2({
                           <input
                             type="checkbox"
                             checked={!!draft.is_fixed}
-                            onChange={(e) => handleFixedChange(draft.building.id, e.target.checked)}
+                            onChange={(e) =>
+                              handleFixedChange(draft.building.id, e.target.checked)
+                            }
                             className="w-6 h-6"
                           />
                         </td>
