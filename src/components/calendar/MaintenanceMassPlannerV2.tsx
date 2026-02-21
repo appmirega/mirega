@@ -53,7 +53,7 @@ function isWeekday(dateStr: string) {
 }
 
 /**
- * Selector “tipo chips” (mejor UX que <select multiple>)
+ * Selector “chips” (mejor UX que <select multiple>)
  */
 function TagPicker<T extends { id: string; full_name: string }>({
   items,
@@ -349,7 +349,7 @@ export function MaintenanceMassPlannerV2({
     setDrafts((prev) => prev.map((d) => (d.building.id === buildingId ? { ...d, ...patch } : d)));
   };
 
-  // --- Save (seguro con tu esquema) ---
+  // --- Save (CORREGIDO: NO envia completion_type) ---
   const handleSave = async () => {
     setError("");
     setSuccess("");
@@ -361,7 +361,6 @@ export function MaintenanceMassPlannerV2({
         return;
       }
 
-      // Validate: each building must have at least 1 tech (internal or external)
       const invalid = drafts.find((d) => d.internalTechnicians.length === 0 && d.externalTechnicians.length === 0);
       if (invalid) {
         setError(`En "${invalid.building.name}": selecciona al menos 1 técnico interno o 1 externo recurrente.`);
@@ -370,16 +369,11 @@ export function MaintenanceMassPlannerV2({
 
       const monthStr = monthKey(year, month);
 
-      // IMPORTANT: assigned_technician_id es UUID => SOLO internos (profiles / view).
-      // Externos recurrentes NO son UUID => assigned_technician_id debe ser null.
       const rows: any[] = [];
 
       for (const d of drafts) {
         const durationDays =
           d.durationOption === "custom" ? Math.max(4, Number(d.customDays || 4)) : Number(d.durationOption);
-
-        const completion_type =
-          durationDays === 0.5 ? "half_day" : durationDays === 1 ? "full_day" : "multi_day";
 
         const base = {
           client_id: d.building.id,
@@ -390,7 +384,10 @@ export function MaintenanceMassPlannerV2({
           is_external: false,
           external_personnel_name: null,
           calendar_month: monthStr,
-          completion_type,
+
+          // OJO: NO enviar completion_type.
+          // Tu CHECK permite SOLO: signed / transferred / cancelled
+          // completion_type queda NULL (permitido según tu esquema)
         };
 
         for (const t of d.internalTechnicians) {
@@ -410,6 +407,11 @@ export function MaintenanceMassPlannerV2({
             external_personnel_name: ex.full_name,
           });
         }
+
+        // Si en el futuro quieres guardar duración en DB:
+        // Lo ideal es crear una columna "duration_days" (numeric) o "scheduled_duration_days"
+        // y guardarla ahí. Hoy no la tenemos en tu esquema.
+        void durationDays;
       }
 
       const { error: insertError } = await supabase.from("maintenance_assignments").insert(rows);
@@ -668,9 +670,7 @@ export function MaintenanceMassPlannerV2({
                                 min={4}
                                 step={1}
                                 value={d.customDays}
-                                onChange={(e) =>
-                                  updateDraft(d.building.id, { customDays: Number(e.target.value || 4) })
-                                }
+                                onChange={(e) => updateDraft(d.building.id, { customDays: Number(e.target.value || 4) })}
                                 className="border rounded-lg px-3 py-2 w-28"
                               />
                               <span className="text-sm text-slate-600">días</span>
