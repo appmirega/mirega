@@ -1,5 +1,5 @@
 import { AdminMaintenancesDashboard } from './components/views/AdminMaintenancesDashboard';
-import { AdminCalendarDashboard } from './components/views/AdminCalendarDashboard';
+import AdminCalendarDashboard from './components/views/AdminCalendarDashboard';
 import { TechnicianCalendarView } from './components/views/TechnicianCalendarView';
 import { TechnicianMaintenanceChecklistView } from './components/views/TechnicianMaintenanceChecklistView';
 import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard';
