@@ -21,3 +21,4 @@ dist-ssr
 *.sln
 *.sw?
 .env
+src/components/maintenance/MaintenancePlanner.tsx
