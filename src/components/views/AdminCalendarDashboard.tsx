@@ -1,15 +1,17 @@
-// Commit de prueba para forzar build limpio en Vercel
-import { useState, useEffect } from 'react';
-import { getExternalTechnicians, addExternalTechnician } from '../../lib/external_technicians';
+import { useEffect, useMemo, useState } from 'react';
 import { Calendar, Plus, Shield } from 'lucide-react';
+
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
+
+import { getExternalTechnicians, addExternalTechnician } from '../../lib/external_technicians';
+
 import { MaintenanceMassPlannerV2 } from '../calendar/MaintenanceMassPlannerV2';
 import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
-import { ProfessionalBreakdown } from './ProfessionalBreakdown';
 import { EmergencyShiftsMonthlyView } from '../calendar/EmergencyShiftsMonthlyView';
 import { MaintenanceCalendarView } from '../calendar/MaintenanceCalendarView';
 import { CoordinationRequestsPanel } from '../calendar/CoordinationRequestsPanel';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../contexts/AuthContext';
+import { ProfessionalBreakdown } from './ProfessionalBreakdown';
 
 type CalendarViewMode = 'monthly' | 'weekly';
 
@@ -29,45 +31,46 @@ export default function AdminCalendarDashboard() {
   const { user } = useAuth();
 
   const [viewMode, setViewMode] = useState<CalendarViewMode>('monthly');
-  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth());
-  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth()); // 0-11
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
-
   const [events, setEvents] = useState<CalendarEvent[]>([]);
 
-  const [openNewEventModal, setOpenNewEventModal] = useState(false);
-  const [openMassPlanner, setOpenMassPlanner] = useState(false);
-  const [openEmergencyScheduler, setOpenEmergencyScheduler] = useState(false);
+  const [openNewEventModal, setOpenNewEventModal] = useState<boolean>(false);
+  const [openMassPlanner, setOpenMassPlanner] = useState<boolean>(false);
+  const [openEmergencyScheduler, setOpenEmergencyScheduler] = useState<boolean>(false);
 
+  // Externos recurrentes (solo para el planner)
   const [externalTechnicians, setExternalTechnicians] = useState<{ id: string; full_name: string }[]>([]);
-  const [newExternalTechName, setNewExternalTechName] = useState('');
+  const [newExternalTechName, setNewExternalTechName] = useState<string>('');
 
-  // =========================
-  // Helpers
-  // =========================
-  const monthStartISO = () => {
+  // -------------------------
+  // Helpers fechas
+  // -------------------------
+  const monthStartISO = useMemo(() => {
     const start = new Date(selectedYear, selectedMonth, 1);
     return start.toISOString().slice(0, 10);
-  };
+  }, [selectedYear, selectedMonth]);
 
-  const monthEndISO = () => {
+  const monthEndISO = useMemo(() => {
     const end = new Date(selectedYear, selectedMonth + 1, 0);
     return end.toISOString().slice(0, 10);
-  };
+  }, [selectedYear, selectedMonth]);
 
-  // =========================
+  // -------------------------
   // Fetch principales
-  // =========================
+  // -------------------------
   const fetchEventos = async () => {
     setLoading(true);
     setError('');
-    try {
-      const start = monthStartISO();
-      const end = monthEndISO();
 
-      // 1) maintenance_schedules (lo “antiguo” del calendario)
+    try {
+      const start = monthStartISO;
+      const end = monthEndISO;
+
+      // 1) maintenance_schedules (fuente “histórica” que ya usa tu calendario)
       const { data: schedules, error: schErr } = await supabase
         .from('maintenance_schedules')
         .select(
@@ -195,9 +198,9 @@ export default function AdminCalendarDashboard() {
     }
   };
 
-  // =========================
+  // -------------------------
   // Load inicial
-  // =========================
+  // -------------------------
   useEffect(() => {
     fetchEventos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -208,29 +211,33 @@ export default function AdminCalendarDashboard() {
     setExternalTechnicians(ext);
   }, []);
 
-  // =========================
-  // UI External technicians (solo para el planner)
-  // =========================
+  // -------------------------
+  // UI Externos recurrentes
+  // -------------------------
   const handleSaveExternalTech = () => {
     const name = newExternalTechName.trim();
     if (!name) return;
+
     addExternalTechnician(name);
     setExternalTechnicians(getExternalTechnicians());
     setNewExternalTechName('');
   };
 
+  // -------------------------
+  // Render
+  // -------------------------
   return (
     <div className="p-6">
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Calendar className="w-7 h-7" />
-            Calendario mensual
-          </h1>
-          <div className="text-sm text-gray-500 mt-1">Gestión de eventos, turnos y asignaciones</div>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Calendar className="w-6 h-6 text-gray-700" />
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Calendario mensual</h1>
+            <p className="text-sm text-gray-500">Gestión de eventos, turnos y asignaciones</p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <select
             value={viewMode}
             onChange={(e) => setViewMode(e.target.value as CalendarViewMode)}
@@ -240,64 +247,70 @@ export default function AdminCalendarDashboard() {
             <option value="weekly">Semanal</option>
           </select>
 
+          {/* NOTA: lo dejo “desactivado” si no tienes el modal armado en este archivo */}
           <button
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2"
-            onClick={() => setOpenNewEventModal(true)}
             type="button"
+            onClick={() => setOpenNewEventModal(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+            title="Nuevo evento (sin mantenimiento)"
           >
             <Plus className="w-4 h-4" />
             Nuevo Evento
           </button>
 
           <button
-            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2"
-            onClick={() => setOpenMassPlanner(true)}
             type="button"
+            onClick={() => setOpenMassPlanner(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700"
+            title="Crear mantenimientos del mes"
           >
-            <Calendar className="w-4 h-4" />
-            Planificación Masiva
+            <Shield className="w-4 h-4" />
+            Calendario de Mantenimiento
           </button>
 
           <button
-            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded flex items-center gap-2"
-            onClick={() => setOpenEmergencyScheduler(true)}
             type="button"
+            onClick={() => setOpenEmergencyScheduler(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+            title="Gestión turnos"
           >
-            <Shield className="w-4 h-4" />
             Turnos de Emergencia
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="mb-4 rounded border border-red-200 bg-red-50 text-red-700 px-4 py-2">{error}</div>
+        <div className="mt-4 border border-red-200 bg-red-50 text-red-700 rounded px-4 py-3">
+          {error}
+        </div>
       )}
 
       {loading ? (
-        <div className="text-gray-500">Cargando calendario...</div>
+        <div className="mt-6 text-gray-600">Cargando calendario...</div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <div className="lg:col-span-3">
+        <div className="mt-6 grid grid-cols-1 xl:grid-cols-12 gap-6">
+          <div className="xl:col-span-8">
+            {/* Vista principal del calendario (tu componente) */}
             <MaintenanceCalendarView
               month={selectedMonth}
               year={selectedYear}
-              viewMode={viewMode}
               events={events}
-              onMonthChange={setSelectedMonth}
-              onYearChange={setSelectedYear}
-              onRefresh={fetchEventos}
+              onMonthChange={(m: number) => setSelectedMonth(m)}
+              onYearChange={(y: number) => setSelectedYear(y)}
+              viewMode={viewMode}
             />
           </div>
 
-          <div className="space-y-6">
-            <ProfessionalBreakdown />
+          <div className="xl:col-span-4 space-y-6">
+            {/* Paneles auxiliares */}
+            <ProfessionalBreakdown month={selectedMonth} year={selectedYear} />
+            <EmergencyShiftsMonthlyView month={selectedMonth} year={selectedYear} />
+            <CoordinationRequestsPanel month={selectedMonth} year={selectedYear} />
 
-            <EmergencyShiftsMonthlyView month={selectedMonth} year={selectedYear} onRefresh={fetchEventos} />
+            {/* Externos recurrentes (para tu planner masivo) */}
+            <div className="border rounded-lg bg-white p-4">
+              <h3 className="font-semibold text-gray-900 mb-3">Técnicos externos recurrentes</h3>
 
-            <CoordinationRequestsPanel month={selectedMonth} year={selectedYear} onRefresh={fetchEventos} />
-
-            <div className="rounded border bg-white p-4">
-              <div className="font-semibold mb-2">Técnicos externos recurrentes</div>
               <div className="flex gap-2">
                 <input
                   value={newExternalTechName}
@@ -308,17 +321,17 @@ export default function AdminCalendarDashboard() {
                 <button
                   type="button"
                   onClick={handleSaveExternalTech}
-                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded"
+                  className="px-3 py-2 rounded bg-gray-900 text-white hover:bg-black"
                 >
                   Guardar
                 </button>
               </div>
 
-              <div className="mt-3 text-sm text-gray-600">
+              <div className="mt-3 text-sm text-gray-700">
                 {externalTechnicians.length === 0 ? (
-                  <div>No hay externos guardados.</div>
+                  <div className="text-gray-500">No hay externos guardados.</div>
                 ) : (
-                  <ul className="list-disc pl-5">
+                  <ul className="list-disc pl-5 space-y-1">
                     {externalTechnicians.map((t) => (
                       <li key={t.id}>{t.full_name}</li>
                     ))}
@@ -326,15 +339,21 @@ export default function AdminCalendarDashboard() {
                 )}
               </div>
             </div>
+
+            {/* Nota: si quieres, acá también podemos poner un mini-resumen “por día” más adelante */}
           </div>
         </div>
       )}
 
-      {/* MODALES */}
+      {/* =========================
+          MODALES
+         ========================= */}
+
       {openMassPlanner && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-[95vw] max-w-6xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-end p-2">
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="font-semibold">Calendario de Mantenimiento</div>
               <button
                 type="button"
                 onClick={() => setOpenMassPlanner(false)}
@@ -344,20 +363,25 @@ export default function AdminCalendarDashboard() {
               </button>
             </div>
 
-            <MaintenanceMassPlannerV2
-              onClose={() => setOpenMassPlanner(false)}
-              onSuccess={() => {
-                fetchEventos();
-              }}
-            />
+            <div className="p-4">
+              <MaintenanceMassPlannerV2
+                user={user}
+                onClose={() => setOpenMassPlanner(false)}
+                onSuccess={() => {
+                  // refresca el calendario
+                  fetchEventos();
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
 
       {openEmergencyScheduler && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-[95vw] max-w-5xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-end p-2">
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="font-semibold">Turnos de Emergencia</div>
               <button
                 type="button"
                 onClick={() => setOpenEmergencyScheduler(false)}
@@ -367,22 +391,45 @@ export default function AdminCalendarDashboard() {
               </button>
             </div>
 
-            <EmergencyShiftScheduler
-              onClose={() => setOpenEmergencyScheduler(false)}
-              onSuccess={() => {
-                fetchEventos();
-              }}
-            />
+            <div className="p-4">
+              <EmergencyShiftScheduler
+                user={user}
+                onClose={() => setOpenEmergencyScheduler(false)}
+                onSuccess={() => {
+                  fetchEventos();
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
 
-      {/* IMPORTANTE:
-          El modal de "Nuevo Evento" no está incluido aquí porque depende del componente específico que uses.
-          Si quieres, súbeme ese archivo (el que renderiza "Nuevo Evento") y lo dejo listo para:
-          - quitar "mantenimiento" de ahí
-          - mantener solo reparación/certificación/capacitación/etc.
+      {/* Nuevo Evento:
+          ⚠️ Lo dejo intencionalmente sin render aquí, porque depende del componente/modal real.
+          En el próximo paso: me pasas el archivo del modal de “Nuevo Evento”
+          y lo dejo listo para:
+          - eliminar opción “mantenimiento” (porque ahora se crea en Calendario de Mantenimiento)
+          - dejar certificación / reparación / capacitación / etc.
       */}
+      {openNewEventModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-xl">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="font-semibold">Nuevo Evento</div>
+              <button
+                type="button"
+                onClick={() => setOpenNewEventModal(false)}
+                className="text-gray-500 hover:text-gray-800 px-3 py-1"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 text-sm text-gray-700">
+              Falta integrar el modal real de “Nuevo Evento”. Pásame el archivo/componente y lo conecto aquí.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
