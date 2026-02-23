@@ -6,10 +6,7 @@
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
+    // Removed global rewrite to index.html for SPA
   ],
   "headers": [
     {
