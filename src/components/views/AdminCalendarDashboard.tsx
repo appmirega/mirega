@@ -207,8 +207,7 @@ export default function AdminCalendarDashboard() {
   }, [selectedMonth, selectedYear]);
 
   useEffect(() => {
-    const ext = getExternalTechnicians();
-    setExternalTechnicians(ext);
+    setExternalTechnicians(getExternalTechnicians());
   }, []);
 
   // -------------------------
@@ -247,7 +246,6 @@ export default function AdminCalendarDashboard() {
             <option value="weekly">Semanal</option>
           </select>
 
-          {/* NOTA: lo dejo “desactivado” si no tienes el modal armado en este archivo */}
           <button
             type="button"
             onClick={() => setOpenNewEventModal(true)}
@@ -290,7 +288,6 @@ export default function AdminCalendarDashboard() {
       ) : (
         <div className="mt-6 grid grid-cols-1 xl:grid-cols-12 gap-6">
           <div className="xl:col-span-8">
-            {/* Vista principal del calendario (tu componente) */}
             <MaintenanceCalendarView
               month={selectedMonth}
               year={selectedYear}
@@ -302,12 +299,10 @@ export default function AdminCalendarDashboard() {
           </div>
 
           <div className="xl:col-span-4 space-y-6">
-            {/* Paneles auxiliares */}
             <ProfessionalBreakdown month={selectedMonth} year={selectedYear} />
             <EmergencyShiftsMonthlyView month={selectedMonth} year={selectedYear} />
             <CoordinationRequestsPanel month={selectedMonth} year={selectedYear} />
 
-            {/* Externos recurrentes (para tu planner masivo) */}
             <div className="border rounded-lg bg-white p-4">
               <h3 className="font-semibold text-gray-900 mb-3">Técnicos externos recurrentes</h3>
 
@@ -339,15 +334,9 @@ export default function AdminCalendarDashboard() {
                 )}
               </div>
             </div>
-
-            {/* Nota: si quieres, acá también podemos poner un mini-resumen “por día” más adelante */}
           </div>
         </div>
       )}
-
-      {/* =========================
-          MODALES
-         ========================= */}
 
       {openMassPlanner && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
@@ -367,10 +356,7 @@ export default function AdminCalendarDashboard() {
               <MaintenanceMassPlannerV2
                 user={user}
                 onClose={() => setOpenMassPlanner(false)}
-                onSuccess={() => {
-                  // refresca el calendario
-                  fetchEventos();
-                }}
+                onSuccess={() => fetchEventos()}
               />
             </div>
           </div>
@@ -395,22 +381,13 @@ export default function AdminCalendarDashboard() {
               <EmergencyShiftScheduler
                 user={user}
                 onClose={() => setOpenEmergencyScheduler(false)}
-                onSuccess={() => {
-                  fetchEventos();
-                }}
+                onSuccess={() => fetchEventos()}
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* Nuevo Evento:
-          ⚠️ Lo dejo intencionalmente sin render aquí, porque depende del componente/modal real.
-          En el próximo paso: me pasas el archivo del modal de “Nuevo Evento”
-          y lo dejo listo para:
-          - eliminar opción “mantenimiento” (porque ahora se crea en Calendario de Mantenimiento)
-          - dejar certificación / reparación / capacitación / etc.
-      */}
       {openNewEventModal && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-xl">
