@@ -9,7 +9,7 @@ import { ServiceRequestsDashboard } from './components/views/ServiceRequestsDash
 import { UserProfile } from './components/UserProfile';
 import { AdminDashboard } from './components/dashboards/AdminDashboard';
 import { useState } from 'react';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { useAuth } from './contexts/AuthContext';
 import { LoginPage } from './components/LoginPage';
 import { SplashScreen } from './components/SplashScreen';
 import { Layout } from './components/Layout';
@@ -110,10 +110,4 @@ function App() {
   );
 }
 
-export default function AppWrapper() {
-  return (
-    <AuthProvider>
-      <App />
-    </AuthProvider>
-  );
-}
+export default App;
