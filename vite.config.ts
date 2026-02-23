@@ -19,13 +19,6 @@ export default defineConfig({
   },
   build: {
     sourcemap: false,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'supabase-vendor': ['@supabase/supabase-js'],
-        },
-      },
-    },
+    // manualChunks removed to avoid React vendor runtime crash
   },
 });
