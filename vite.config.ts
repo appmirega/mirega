@@ -3,20 +3,22 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [
-    react({
-      jsxRuntime: 'automatic',
-    }),
-  ],
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, './src'),
-        'react': path.resolve(__dirname, 'node_modules/react'),
-        'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
-      },
-      dedupe: ['react', 'react-dom'],
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
     },
+    dedupe: ['react', 'react-dom'],
+  },
   build: {
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        // ✅ fuerza un vendor chunk único para evitar duplicar React entre chunks lazy
+        manualChunks(id) {
+          if (id.includes('node_modules')) return 'vendor'
+        },
+      },
+    },
   },
 })
