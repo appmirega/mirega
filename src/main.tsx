@@ -1,17 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
-import { AuthProvider } from './contexts/AuthContext';
+import App from './App';
 import './index.css';
-
-console.log('[main.tsx] Entrando a main.tsx');
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    <App />
   </StrictMode>
 );
-
-console.log('[main.tsx] Render finalizado');
