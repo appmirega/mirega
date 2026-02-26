@@ -9,8 +9,9 @@ import { getExternalTechnicians, addExternalTechnician } from '../../lib/externa
 import { MaintenanceMassPlannerV2 } from '../calendar/MaintenanceMassPlannerV2';
 import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
 import { EmergencyShiftsMonthlyView } from '../calendar/EmergencyShiftsMonthlyView';
-import { MaintenanceCalendarView } from '../calendar/MaintenanceCalendarView';
 import { CoordinationRequestsPanel } from '../calendar/CoordinationRequestsPanel';
+import { MaintenanceCalendarView } from '../calendar/MaintenanceCalendarView';
+
 import { ProfessionalBreakdown } from './ProfessionalBreakdown';
 
 type CalendarViewMode = 'monthly' | 'weekly';
@@ -35,378 +36,294 @@ export default function AdminCalendarDashboard() {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
   const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
+
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [emergencyShifts, setEmergencyShifts] = useState<any[]>([]);
+  const [emergencyVisits, setEmergencyVisits] = useState<any[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
+  const [maintenanceEvents, setMaintenanceEvents] = useState<any[]>([]);
+  const [workOrders, setWorkOrders] = useState<any[]>([]);
 
-  const [openNewEventModal, setOpenNewEventModal] = useState<boolean>(false);
-  const [openMassPlanner, setOpenMassPlanner] = useState<boolean>(false);
-  const [openEmergencyScheduler, setOpenEmergencyScheduler] = useState<boolean>(false);
+  const [externalTechnicians, setExternalTechnicians] = useState<any[]>([]);
 
-  // Externos recurrentes (solo para el planner)
-  const [externalTechnicians, setExternalTechnicians] = useState<{ id: string; full_name: string }[]>([]);
-  const [newExternalTechName, setNewExternalTechName] = useState<string>('');
-
-  // -------------------------
-  // Helpers fechas
-  // -------------------------
-  const monthStartISO = useMemo(() => {
-    const start = new Date(selectedYear, selectedMonth, 1);
-    return start.toISOString().slice(0, 10);
+  const monthStart = useMemo(() => {
+    const d = new Date(selectedYear, selectedMonth, 1);
+    return d.toISOString().slice(0, 10);
   }, [selectedYear, selectedMonth]);
 
-  const monthEndISO = useMemo(() => {
-    const end = new Date(selectedYear, selectedMonth + 1, 0);
-    return end.toISOString().slice(0, 10);
+  const monthEnd = useMemo(() => {
+    const d = new Date(selectedYear, selectedMonth + 1, 0);
+    return d.toISOString().slice(0, 10);
   }, [selectedYear, selectedMonth]);
 
-  // -------------------------
-  // Fetch principales
-  // -------------------------
-  const fetchEventos = async () => {
+  const loadAll = async () => {
+    if (!user) return;
     setLoading(true);
-    setError('');
 
     try {
-      const start = monthStartISO;
-      const end = monthEndISO;
+      setExternalTechnicians(getExternalTechnicians());
 
-      // 1) maintenance_schedules (fuente “histórica” que ya usa tu calendario)
-      const { data: schedules, error: schErr } = await supabase
-        .from('maintenance_schedules')
-        .select(
-          `
-          id,
-          scheduled_date,
-          client_id,
-          building_name,
-          status,
-          assigned_technician_id,
-          profiles:assigned_technician_id(full_name)
-        `
-        )
-        .gte('scheduled_date', start)
-        .lte('scheduled_date', end);
-
-      if (schErr) throw schErr;
-
-      // 2) emergency_visits
-      const { data: emergencies, error: emErr } = await supabase
-        .from('emergency_visits')
-        .select('id, created_at, client_id, status, failure_description')
-        .gte('created_at', `${start}T00:00:00`)
-        .lte('created_at', `${end}T23:59:59`);
-
-      if (emErr) throw emErr;
-
-      // 3) work_orders
-      const { data: workOrders, error: woErr } = await supabase
-        .from('work_orders')
-        .select('id, created_at, client_id, status, description')
-        .gte('created_at', `${start}T00:00:00`)
-        .lte('created_at', `${end}T23:59:59`);
-
-      if (woErr) throw woErr;
-
-      // 4) emergency_shifts
-      const { data: shifts, error: shErr } = await supabase
+      // 1) Emergency shifts (turnos)
+      const { data: shiftData } = await supabase
         .from('emergency_shifts')
-        .select('id, shift_date, technician_name, status')
-        .gte('shift_date', start)
-        .lte('shift_date', end);
+        .select('*')
+        .gte('shift_date', monthStart)
+        .lte('shift_date', monthEnd);
 
-      if (shErr) throw shErr;
+      setEmergencyShifts(shiftData || []);
 
-      // 5) calendar_events
-      const { data: customEvents, error: ceErr } = await supabase
+      // 2) Emergency visits
+      const { data: visitData } = await supabase
+        .from('emergency_visits')
+        .select('*')
+        .gte('visit_date', monthStart)
+        .lte('visit_date', monthEnd);
+
+      setEmergencyVisits(visitData || []);
+
+      // 3) Calendar events
+      const { data: calData } = await supabase
         .from('calendar_events')
-        .select('id, date, title, description, status')
-        .gte('date', start)
-        .lte('date', end);
+        .select('*')
+        .gte('date', monthStart)
+        .lte('date', monthEnd);
 
-      if (ceErr) throw ceErr;
+      setCalendarEvents(calData || []);
 
+      // 4) Maintenance events
+      const { data: maintData } = await supabase
+        .from('maintenances')
+        .select('*')
+        .gte('scheduled_date', monthStart)
+        .lte('scheduled_date', monthEnd);
+
+      setMaintenanceEvents(maintData || []);
+
+      // 5) Work orders / service requests
+      const { data: woData } = await supabase
+        .from('service_requests')
+        .select('*')
+        .gte('scheduled_date', monthStart)
+        .lte('scheduled_date', monthEnd);
+
+      setWorkOrders(woData || []);
+
+      // Consolidar para el calendario “principal”
       const merged: CalendarEvent[] = [];
 
-      (schedules || []).forEach((s: any) => {
+      // maintenances
+      (maintData || []).forEach((m: any) => {
         merged.push({
-          id: s.id,
-          scheduled_date: s.scheduled_date,
+          id: `m-${m.id}`,
+          scheduled_date: m.scheduled_date,
           type: 'maintenance',
-          title: 'Mantenimiento',
-          description: null,
-          client_id: s.client_id,
-          building_name: s.building_name,
-          assigned_name: s.profiles?.full_name ?? null,
-          status: s.status ?? null,
+          title: m.title || 'Mantenimiento',
+          description: m.description || null,
+          client_id: m.client_id || null,
+          building_name: m.building_name || m.client_name || null,
+          assigned_name: m.assigned_name || m.technician_name || null,
+          status: m.status || null,
         });
       });
 
-      (emergencies || []).forEach((e: any) => {
-        const date = (e.created_at || '').slice(0, 10);
+      // work orders
+      (woData || []).forEach((w: any) => {
         merged.push({
-          id: e.id,
-          scheduled_date: date,
-          type: 'emergency_visit',
-          title: 'Emergencia',
-          description: e.failure_description ?? null,
-          client_id: e.client_id ?? null,
-          status: e.status ?? null,
-        });
-      });
-
-      (workOrders || []).forEach((w: any) => {
-        const date = (w.created_at || '').slice(0, 10);
-        merged.push({
-          id: w.id,
-          scheduled_date: date,
+          id: `w-${w.id}`,
+          scheduled_date: w.scheduled_date,
           type: 'work_order',
-          title: 'Solicitud',
-          description: w.description ?? null,
-          client_id: w.client_id ?? null,
-          status: w.status ?? null,
+          title: w.title || 'Solicitud',
+          description: w.description || null,
+          client_id: w.client_id || null,
+          building_name: w.building_name || w.client_name || null,
+          assigned_name: w.assigned_name || w.technician_name || null,
+          status: w.status || null,
         });
       });
 
-      (shifts || []).forEach((s: any) => {
+      // emergency shifts
+      (shiftData || []).forEach((s: any) => {
         merged.push({
-          id: s.id,
+          id: `es-${s.id}`,
           scheduled_date: s.shift_date,
           type: 'emergency_shift',
-          title: 'Turno emergencia',
-          description: null,
-          assigned_name: s.technician_name ?? null,
-          status: s.status ?? null,
+          title: s.title || 'Turno emergencia',
+          description: s.notes || s.description || null,
+          client_id: null,
+          building_name: s.building_name || null,
+          assigned_name: s.technician_name || s.person || null,
+          status: s.status || null,
         });
       });
 
-      (customEvents || []).forEach((c: any) => {
+      // emergency visits
+      (visitData || []).forEach((v: any) => {
         merged.push({
-          id: c.id,
+          id: `ev-${v.id}`,
+          scheduled_date: v.visit_date,
+          type: 'emergency_visit',
+          title: v.title || 'Emergencia',
+          description: v.notes || v.description || null,
+          client_id: v.client_id || null,
+          building_name: v.building_name || v.client_name || null,
+          assigned_name: v.technician_name || v.person || null,
+          status: v.status || null,
+        });
+      });
+
+      // calendar events table
+      (calData || []).forEach((c: any) => {
+        merged.push({
+          id: `c-${c.id}`,
           scheduled_date: c.date,
           type: 'calendar_event',
-          title: c.title ?? 'Evento',
-          description: c.description ?? null,
-          status: c.status ?? null,
+          title: c.title || 'Evento',
+          description: c.description || null,
+          client_id: c.client_id || null,
+          building_name: c.building_name || null,
+          assigned_name: c.person || null,
+          status: c.status || null,
         });
       });
 
       setEvents(merged);
-    } catch (err: any) {
-      setError(err?.message || 'Error al cargar eventos del calendario.');
+    } catch (e) {
+      console.error('[AdminCalendarDashboard] Error cargando calendario:', e);
     } finally {
       setLoading(false);
     }
   };
 
-  // -------------------------
-  // Load inicial
-  // -------------------------
   useEffect(() => {
-    fetchEventos();
+    loadAll();
+
+    const onRefresh = () => loadAll();
+    window.addEventListener('asignacion-eliminada', onRefresh);
+    return () => window.removeEventListener('asignacion-eliminada', onRefresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMonth, selectedYear]);
+  }, [user, monthStart, monthEnd]);
 
-  useEffect(() => {
-    setExternalTechnicians(getExternalTechnicians());
-  }, []);
-
-  // -------------------------
-  // UI Externos recurrentes
-  // -------------------------
-  const handleSaveExternalTech = () => {
-    const name = newExternalTechName.trim();
+  const handleAddExternalTech = () => {
+    const name = window.prompt('Nombre del técnico externo:');
     if (!name) return;
-
-    addExternalTechnician(name);
+    const phone = window.prompt('Teléfono (opcional):') || '';
+    addExternalTechnician({ name, phone });
     setExternalTechnicians(getExternalTechnicians());
-    setNewExternalTechName('');
   };
 
-  // -------------------------
-  // Render
-  // -------------------------
   return (
-    <div className="p-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <Calendar className="w-6 h-6 text-gray-700" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Calendario mensual</h1>
-            <p className="text-sm text-gray-500">Gestión de eventos, turnos y asignaciones</p>
-          </div>
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-5 h-5 text-blue-600" />
+          <h1 className="text-xl font-bold">Calendario (Admin)</h1>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <select
-            value={viewMode}
-            onChange={(e) => setViewMode(e.target.value as CalendarViewMode)}
-            className="border rounded px-3 py-2 bg-white"
-          >
-            <option value="monthly">Mensual</option>
-            <option value="weekly">Semanal</option>
-          </select>
-
+        <div className="flex items-center gap-2">
           <button
-            type="button"
-            onClick={() => setOpenNewEventModal(true)}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-            title="Nuevo evento (sin mantenimiento)"
+            className="px-3 py-2 rounded bg-slate-100 hover:bg-slate-200 text-sm"
+            onClick={() => setViewMode((v) => (v === 'monthly' ? 'weekly' : 'monthly'))}
           >
-            <Plus className="w-4 h-4" />
-            Nuevo Evento
+            Vista: {viewMode === 'monthly' ? 'Mensual' : 'Semanal'}
           </button>
 
           <button
-            type="button"
-            onClick={() => setOpenMassPlanner(true)}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700"
-            title="Crear mantenimientos del mes"
+            className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm flex items-center gap-2"
+            onClick={handleAddExternalTech}
+            title="Agregar técnico externo"
           >
-            <Shield className="w-4 h-4" />
-            Calendario de Mantenimiento
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setOpenEmergencyScheduler(true)}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-            title="Gestión turnos"
-          >
-            Turnos de Emergencia
+            <Plus className="w-4 h-4" /> Externo
           </button>
         </div>
       </div>
 
-      {error && (
-        <div className="mt-4 border border-red-200 bg-red-50 text-red-700 rounded px-4 py-3">
-          {error}
-        </div>
-      )}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        {/* Columna principal */}
+        <div className="xl:col-span-2 space-y-4">
+          {/* Navegación mes/año */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="text-sm font-semibold">Mes:</label>
+            <select
+              className="border rounded px-2 py-1 text-sm"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(Number(e.target.value))}
+            >
+              {Array.from({ length: 12 }).map((_, i) => (
+                <option key={i} value={i}>
+                  {new Date(2000, i, 1).toLocaleString('es-CL', { month: 'long' })}
+                </option>
+              ))}
+            </select>
 
-      {loading ? (
-        <div className="mt-6 text-gray-600">Cargando calendario...</div>
-      ) : (
-        <div className="mt-6 grid grid-cols-1 xl:grid-cols-12 gap-6">
-          <div className="xl:col-span-8">
+            <label className="text-sm font-semibold">Año:</label>
+            <input
+              type="number"
+              className="border rounded px-2 py-1 text-sm w-24"
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+            />
+
+            <button
+              className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-sm"
+              onClick={loadAll}
+              disabled={loading}
+            >
+              {loading ? 'Cargando...' : 'Recargar'}
+            </button>
+          </div>
+
+          {/* Vista calendario de mantenimientos (visual) */}
+          <div className="border rounded bg-white p-3">
+            <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-slate-700">
+              <Shield className="w-4 h-4" /> Vista de calendario
+            </div>
+
             <MaintenanceCalendarView
+              events={events}
               month={selectedMonth}
               year={selectedYear}
-              events={events}
-              onMonthChange={(m: number) => setSelectedMonth(m)}
-              onYearChange={(y: number) => setSelectedYear(y)}
               viewMode={viewMode}
+              externalTechnicians={externalTechnicians}
             />
           </div>
 
-          <div className="xl:col-span-4 space-y-6">
-            <ProfessionalBreakdown month={selectedMonth} year={selectedYear} />
-            <EmergencyShiftsMonthlyView month={selectedMonth} year={selectedYear} />
-            <CoordinationRequestsPanel month={selectedMonth} year={selectedYear} />
+          {/* Paneles adicionales */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="border rounded bg-white p-3">
+              <EmergencyShiftScheduler month={selectedMonth} year={selectedYear} />
+            </div>
 
-            <div className="border rounded-lg bg-white p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Técnicos externos recurrentes</h3>
+            <div className="border rounded bg-white p-3">
+              <EmergencyShiftsMonthlyView month={selectedMonth} year={selectedYear} />
+            </div>
 
-              <div className="flex gap-2">
-                <input
-                  value={newExternalTechName}
-                  onChange={(e) => setNewExternalTechName(e.target.value)}
-                  className="border rounded px-3 py-2 flex-1"
-                  placeholder="Agregar nuevo externo"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveExternalTech}
-                  className="px-3 py-2 rounded bg-gray-900 text-white hover:bg-black"
-                >
-                  Guardar
-                </button>
-              </div>
-
-              <div className="mt-3 text-sm text-gray-700">
-                {externalTechnicians.length === 0 ? (
-                  <div className="text-gray-500">No hay externos guardados.</div>
-                ) : (
-                  <ul className="list-disc pl-5 space-y-1">
-                    {externalTechnicians.map((t) => (
-                      <li key={t.id}>{t.full_name}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+            <div className="border rounded bg-white p-3 md:col-span-2">
+              <CoordinationRequestsPanel month={selectedMonth} year={selectedYear} />
             </div>
           </div>
-        </div>
-      )}
 
-      {openMassPlanner && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-auto">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div className="font-semibold">Calendario de Mantenimiento</div>
-              <button
-                type="button"
-                onClick={() => setOpenMassPlanner(false)}
-                className="text-gray-500 hover:text-gray-800 px-3 py-1"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-4">
-              <MaintenanceMassPlannerV2
-                user={user}
-                onClose={() => setOpenMassPlanner(false)}
-                onSuccess={() => fetchEventos()}
-              />
-            </div>
+          <div className="border rounded bg-white p-3">
+            <MaintenanceMassPlannerV2 month={selectedMonth} year={selectedYear} />
           </div>
         </div>
-      )}
 
-      {openEmergencyScheduler && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-auto">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div className="font-semibold">Turnos de Emergencia</div>
-              <button
-                type="button"
-                onClick={() => setOpenEmergencyScheduler(false)}
-                className="text-gray-500 hover:text-gray-800 px-3 py-1"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-4">
-              <EmergencyShiftScheduler
-                user={user}
-                onClose={() => setOpenEmergencyScheduler(false)}
-                onSuccess={() => fetchEventos()}
-              />
-            </div>
-          </div>
+        {/* Columna derecha */}
+        <div className="space-y-4">
+          <ProfessionalBreakdown
+            selectedMonth={selectedMonth}
+            selectedYear={selectedYear}
+            events={events.map((e) => ({
+              id: e.id,
+              date: e.scheduled_date,
+              type: e.type,
+              assignee: e.assigned_name || undefined,
+              building_name: e.building_name || undefined,
+              status: e.status || undefined,
+              description: e.description || undefined,
+            }))}
+          />
         </div>
-      )}
-
-      {openNewEventModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-xl">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div className="font-semibold">Nuevo Evento</div>
-              <button
-                type="button"
-                onClick={() => setOpenNewEventModal(false)}
-                className="text-gray-500 hover:text-gray-800 px-3 py-1"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-4 text-sm text-gray-700">
-              Falta integrar el modal real de “Nuevo Evento”. Pásame el archivo/componente y lo conecto aquí.
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
