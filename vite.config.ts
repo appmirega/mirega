@@ -8,17 +8,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    // Esto ayuda cuando alguna dependencia intenta resolver otra copia
     dedupe: ['react', 'react-dom'],
-  },
-  build: {
-    sourcemap: false,
-    rollupOptions: {
-      output: {
-        // ✅ fuerza un vendor chunk único para evitar duplicar React entre chunks lazy
-        manualChunks(id) {
-          if (id.includes('node_modules')) return 'vendor'
-        },
-      },
-    },
   },
 })
