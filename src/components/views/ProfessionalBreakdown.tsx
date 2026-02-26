@@ -1,208 +1,155 @@
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../lib/supabase";
-import { getExternalTechnicians } from "../../lib/external_technicians";
+import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '../../lib/supabase';
+import { getExternalTechnicians } from '../../lib/external_technicians';
 
-type Row = {
-  id: string;
-  date: string; // YYYY-MM-DD
+interface BreakdownEvent {
+  id: string | number;
+  date: string;
   type: string;
-  assignee?: string | null;
-  building_name?: string | null;
-  description?: string | null;
-};
+  assignee?: string;
+  building_name?: string;
+  shift_hours?: string;
+  status?: string;
+  description?: string;
+  is_external?: boolean;
+  is_primary?: boolean;
+}
+
+interface ProfessionalBreakdownProps {
+  events?: BreakdownEvent[];
+  selectedMonth: number;
+  selectedYear: number;
+}
 
 const eventTypeLabels: Record<string, string> = {
-  preventive: "Preventivo",
-  corrective: "Correctivo",
-  emergency: "Emergencia",
-  mantenimiento: "Mantenimiento",
-  reparaciones: "Reparaciones",
-  induccion_rescate: "Inducción de rescate",
-  vista_certificacion: "Vista certificación",
-  otros: "Otros",
-  turno_emergencia: "Turno Emergencia",
-  turno: "Turno",
+  preventive: 'Preventivo',
+  corrective: 'Correctivo',
+  emergency: 'Emergencia',
+  mantenimiento: 'Mantenimiento',
+  reparaciones: 'Reparaciones',
+  induccion_rescate: 'Inducción de rescate',
+  vista_certificacion: 'Vista certificación',
+  otros: 'Otros',
+  turno_emergencia: 'Turno Emergencia',
+  turno: 'Turno',
+
+  // tipos que vienen de tu CalendarEvent
+  maintenance: 'Mantenimiento',
+  work_order: 'Solicitud',
+  emergency_visit: 'Emergencia',
+  emergency_shift: 'Turno emergencia',
+  calendar_event: 'Evento',
 };
 
-export function ProfessionalBreakdown({
-  month,
-  year,
-}: {
-  month: number; // 0-11
-  year: number;
-}) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>("");
-  const [rows, setRows] = useState<Row[]>([]);
+export const ProfessionalBreakdown = ({ events = [], selectedMonth, selectedYear }: ProfessionalBreakdownProps) => {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
-  // Modal edición
-  const [editRow, setEditRow] = useState<Row | null>(null);
-  const [editDesc, setEditDesc] = useState("");
-  const [editBuilding, setEditBuilding] = useState("");
-  const [editPerson, setEditPerson] = useState("");
-  const [editDate, setEditDate] = useState("");
-
+  // Estado para edición
+  const [editEvent, setEditEvent] = useState<BreakdownEvent | null>(null);
+  const [editDesc, setEditDesc] = useState('');
+  const [editBuilding, setEditBuilding] = useState('');
+  const [editPerson, setEditPerson] = useState('');
+  const [editDate, setEditDate] = useState('');
   const [tecnicos, setTecnicos] = useState<any[]>([]);
   const [externalTechnicians, setExternalTechnicians] = useState<any[]>([]);
   const [edificios, setEdificios] = useState<any[]>([]);
 
-  const monthStart = useMemo(() => {
-    const d = new Date(year, month, 1);
-    return d.toISOString().slice(0, 10);
-  }, [year, month]);
-
-  const monthEnd = useMemo(() => {
-    const d = new Date(year, month + 1, 0);
-    return d.toISOString().slice(0, 10);
-  }, [year, month]);
-
-  const load = async () => {
-    setLoading(true);
-    setError("");
-
-    try {
-      // Cargar listas para edición (NO deben romper si fallan)
-      supabase
-        .from("profiles")
-        .select("id, full_name")
-        .eq("role", "technician")
-        .then(({ data }) => setTecnicos(data || []))
-        .catch(() => {});
-
-      supabase
-        .from("clients")
-        .select("id, company_name, address")
-        .then(({ data }) => setEdificios(data || []))
-        .catch(() => {});
-
-      setExternalTechnicians(getExternalTechnicians());
-
-      // ✅ Fuente principal: calendar_events
-      // Ajusta nombres si tu tabla usa otras columnas (date vs event_date, person vs assignee, etc.)
-      const { data, error } = await supabase
-        .from("calendar_events")
-        .select("id, date, title, description, status, building_name, person, type")
-        .gte("date", monthStart)
-        .lte("date", monthEnd);
-
-      if (error) throw error;
-
-      const mapped: Row[] = (data || []).map((x: any) => ({
-        id: String(x.id),
-        date: x.date,
-        type: x.type ?? "otros",
-        assignee: x.person ?? null,
-        building_name: x.building_name ?? null,
-        description: x.description ?? x.title ?? null,
-      }));
-
-      setRows(mapped);
-    } catch (e: any) {
-      setError(e?.message || "Error cargando asignaciones del mes.");
-      setRows([]); // importantísimo: no romper render
-    } finally {
-      setLoading(false);
+  const grouped = useMemo(() => {
+    const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+    const g: Record<string, BreakdownEvent[]> = {};
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      g[dateStr] = [];
     }
-  };
+    for (const ev of events) {
+      if (g[ev.date]) g[ev.date].push(ev);
+    }
+    return g;
+  }, [events, selectedMonth, selectedYear]);
 
   useEffect(() => {
-    load();
+    supabase
+      .from('profiles')
+      .select('id, full_name')
+      .eq('role', 'technician')
+      .then(({ data }) => setTecnicos(data || []));
 
-    const onRefresh = () => load();
-    window.addEventListener("asignacion-eliminada", onRefresh);
-    return () => window.removeEventListener("asignacion-eliminada", onRefresh);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthStart, monthEnd]);
+    supabase
+      .from('clients')
+      .select('id, company_name, address')
+      .then(({ data }) => setEdificios(data || []));
 
-  const handleDelete = async (r: Row) => {
-    if (!window.confirm("¿Seguro que deseas eliminar esta asignación?")) return;
+    setExternalTechnicians(getExternalTechnicians());
+  }, []);
 
-    const { error } = await supabase.from("calendar_events").delete().eq("id", r.id);
-    if (error) {
-      alert("Error al eliminar: " + error.message);
-      return;
-    }
-    window.dispatchEvent(new Event("asignacion-eliminada"));
+  const handleDelete = async (ev: BreakdownEvent) => {
+    if (!window.confirm('¿Seguro que deseas eliminar esta asignación?')) return;
+
+    const { error } = await supabase.from('calendar_events').delete().eq('id', ev.id);
+    if (error) alert('Error al eliminar: ' + error.message);
+    else window.dispatchEvent(new Event('asignacion-eliminada'));
   };
 
-  const handleEdit = (r: Row) => {
-    setEditRow(r);
-    setEditDesc(r.description || "");
-    setEditBuilding(r.building_name || "");
-    setEditPerson(r.assignee || "");
-    setEditDate(r.date || "");
+  const handleEdit = (ev: BreakdownEvent) => {
+    setEditEvent(ev);
+    setEditDesc(ev.description || '');
+    setEditBuilding(ev.building_name || '');
+    setEditPerson(ev.assignee || '');
+    setEditDate(ev.date || '');
   };
 
   const handleEditSave = async () => {
-    if (!editRow) return;
+    if (!editEvent) return;
 
-    // ✅ Mantenemos columnas coherentes con lo que seleccionamos arriba
     const { error } = await supabase
-      .from("calendar_events")
+      .from('calendar_events')
       .update({
         description: editDesc,
         building_name: editBuilding,
         person: editPerson,
-        date: editDate,
+        date: editDate, // ✅ era event_date (eso te puede dar 400)
       })
-      .eq("id", editRow.id);
+      .eq('id', editEvent.id);
 
-    if (error) {
-      alert("Error al editar: " + error.message);
-      return;
+    if (error) alert('Error al editar: ' + error.message);
+    else {
+      setEditEvent(null);
+      window.dispatchEvent(new Event('asignacion-eliminada'));
     }
-
-    setEditRow(null);
-    window.dispatchEvent(new Event("asignacion-eliminada"));
   };
-
-  const titleMonth = `${String(month + 1).padStart(2, "0")}-${year}`;
 
   return (
     <div className="border rounded-lg bg-white p-4">
-      <h3 className="font-semibold text-gray-900 mb-2">Asignación del mes ({titleMonth})</h3>
+      <h3 className="font-semibold text-gray-900 mb-3">Asignación del mes</h3>
 
-      {loading && <div className="text-gray-600 text-sm">Cargando asignaciones...</div>}
-
-      {error && (
-        <div className="mt-2 border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2 text-sm">
-          {error}
-        </div>
-      )}
-
-      {!loading && rows.length === 0 && !error && (
-        <div className="text-gray-500 text-sm">No hay asignaciones en este mes.</div>
-      )}
-
-      {rows.length > 0 && (
-        <div className="overflow-x-auto max-h-[420px] mt-3">
-          <table className="min-w-full border text-sm">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="border px-2 py-1">Fecha</th>
-                <th className="border px-2 py-1">Tipo</th>
-                <th className="border px-2 py-1">Asignado</th>
-                <th className="border px-2 py-1">Edificio</th>
-                <th className="border px-2 py-1">Descripción</th>
-                <th className="border px-2 py-1">Listo</th>
-                <th className="border px-2 py-1">Editar</th>
-                <th className="border px-2 py-1">Eliminar</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, idx) => {
-                const key = `${r.id}-${idx}`;
-                const [yy, mm, dd] = (r.date || "").split("-");
-                const dateLabel = yy && mm && dd ? `${dd}-${mm}-${yy}` : r.date;
+      <div className="overflow-x-auto max-h-[400px]">
+        <table className="min-w-full border text-sm">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="border px-2 py-1">Fecha</th>
+              <th className="border px-2 py-1">Tipo</th>
+              <th className="border px-2 py-1">Asignado</th>
+              <th className="border px-2 py-1">Edificio</th>
+              <th className="border px-2 py-1">Descripción</th>
+              <th className="border px-2 py-1">Listo</th>
+              <th className="border px-2 py-1">Editar</th>
+              <th className="border px-2 py-1">Eliminar</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(grouped).flatMap(([date, dayEvents]) =>
+              dayEvents.map((ev, idx) => {
+                const key = `${ev.id}-${idx}`;
+                const [yy, mm, dd] = (date || '').split('-');
+                const dateLabel = yy && mm && dd ? `${dd}-${mm}-${yy}` : date;
 
                 return (
                   <tr key={key} className="hover:bg-gray-50">
                     <td className="border px-2 py-1">{dateLabel}</td>
-                    <td className="border px-2 py-1">{eventTypeLabels[r.type] || r.type}</td>
-                    <td className="border px-2 py-1">{r.assignee || "-"}</td>
-                    <td className="border px-2 py-1">{r.building_name || "-"}</td>
-                    <td className="border px-2 py-1">{r.description || "-"}</td>
+                    <td className="border px-2 py-1">{eventTypeLabels[ev.type] || ev.type}</td>
+                    <td className="border px-2 py-1">{ev.assignee || '-'}</td>
+                    <td className="border px-2 py-1">{ev.building_name || '-'}</td>
+                    <td className="border px-2 py-1">{ev.description || '-'}</td>
                     <td className="border px-2 py-1 text-center">
                       <input
                         type="checkbox"
@@ -211,37 +158,29 @@ export function ProfessionalBreakdown({
                       />
                     </td>
                     <td className="border px-2 py-1 text-center">
-                      <button
-                        className="text-blue-600 hover:underline"
-                        title="Editar asignación"
-                        onClick={() => handleEdit(r)}
-                      >
+                      <button className="text-blue-600 hover:underline" onClick={() => handleEdit(ev)}>
                         ✏️
                       </button>
                     </td>
                     <td className="border px-2 py-1 text-center">
-                      <button
-                        className="text-red-600 hover:underline"
-                        title="Eliminar asignación"
-                        onClick={() => handleDelete(r)}
-                      >
+                      <button className="text-red-600 hover:underline" onClick={() => handleDelete(ev)}>
                         🗑️
                       </button>
                     </td>
                   </tr>
                 );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
 
-      {editRow && (
+      {editEvent && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-lg">
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-lg font-bold">Editar Asignación</h2>
-              <button onClick={() => setEditRow(null)} className="text-gray-500 hover:text-red-600">
+              <button onClick={() => setEditEvent(null)} className="text-gray-500 hover:text-red-600">
                 ✕
               </button>
             </div>
@@ -304,10 +243,7 @@ export function ProfessionalBreakdown({
               />
             </div>
 
-            <button
-              className="bg-blue-600 text-white px-4 py-2 rounded mt-2 w-full"
-              onClick={handleEditSave}
-            >
+            <button className="bg-blue-600 text-white px-4 py-2 rounded mt-2 w-full" onClick={handleEditSave}>
               Guardar Cambios
             </button>
           </div>
@@ -315,4 +251,4 @@ export function ProfessionalBreakdown({
       )}
     </div>
   );
-}
+};
