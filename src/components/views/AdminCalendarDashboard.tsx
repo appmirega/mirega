@@ -1,141 +1,127 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Calendar, Plus, Shield } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 
-import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 
-import { getExternalTechnicians, addExternalTechnician } from '../../lib/external_technicians';
-
-import { MaintenanceMassPlannerV2 } from '../calendar/MaintenanceMassPlannerV2';
+import { MaintenanceCalendarView } from '../calendar/MaintenanceCalendarView';
 import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
 import { EmergencyShiftsMonthlyView } from '../calendar/EmergencyShiftsMonthlyView';
 import { CoordinationRequestsPanel } from '../calendar/CoordinationRequestsPanel';
-import { MaintenanceCalendarView } from '../calendar/MaintenanceCalendarView';
+import { MaintenanceMassPlannerV2 } from '../calendar/MaintenanceMassPlannerV2';
 
 import { ProfessionalBreakdown } from './ProfessionalBreakdown';
 
-type CalendarViewMode = 'monthly' | 'weekly';
-
-type CalendarEvent = {
-  id: string;
-  scheduled_date: string; // YYYY-MM-DD
-  type: 'maintenance' | 'work_order' | 'emergency_visit' | 'emergency_shift' | 'calendar_event';
-  title: string;
-  description?: string | null;
-  client_id?: string | null;
-  building_name?: string | null;
-  assigned_name?: string | null;
-  status?: string | null;
+type BreakdownEvent = {
+  id: string | number;
+  date: string; // YYYY-MM-DD
+  type: string;
+  assignee?: string;
+  building_name?: string;
+  status?: string;
+  description?: string;
 };
+
+function pad2(n: number) {
+  return String(n).padStart(2, '0');
+}
 
 export default function AdminCalendarDashboard() {
   const { user } = useAuth();
 
-  const [viewMode, setViewMode] = useState<CalendarViewMode>('monthly');
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth()); // 0-11
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [loadingBreakdown, setLoadingBreakdown] = useState(false);
+  const [breakdownEvents, setBreakdownEvents] = useState<BreakdownEvent[]>([]);
 
-  const [loading, setLoading] = useState<boolean>(false);
+  const targetMonth = useMemo(() => `${selectedYear}-${pad2(selectedMonth + 1)}`, [selectedYear, selectedMonth]);
 
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [emergencyShifts, setEmergencyShifts] = useState<any[]>([]);
-  const [emergencyVisits, setEmergencyVisits] = useState<any[]>([]);
-  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
-  const [maintenanceEvents, setMaintenanceEvents] = useState<any[]>([]);
-  const [workOrders, setWorkOrders] = useState<any[]>([]);
-
-  const [externalTechnicians, setExternalTechnicians] = useState<any[]>([]);
-
-  const monthStart = useMemo(() => {
-    const d = new Date(selectedYear, selectedMonth, 1);
-    return d.toISOString().slice(0, 10);
-  }, [selectedYear, selectedMonth]);
-
+  // Rango del mes para breakdown
+  const monthStart = useMemo(() => `${selectedYear}-${pad2(selectedMonth + 1)}-01`, [selectedYear, selectedMonth]);
   const monthEnd = useMemo(() => {
     const d = new Date(selectedYear, selectedMonth + 1, 0);
-    return d.toISOString().slice(0, 10);
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   }, [selectedYear, selectedMonth]);
 
-  const loadAll = async () => {
-    if (!user) return;
-    setLoading(true);
+  // Carga SOLO para el panel derecho (no rompe el calendario aunque falle)
+  const loadBreakdown = async () => {
+    if (!user) {
+      setBreakdownEvents([]);
+      return;
+    }
 
+    setLoadingBreakdown(true);
     try {
-      setExternalTechnicians(getExternalTechnicians());
+      // ✅ calendar_events usa columna "date" (no scheduled_date)
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .select('id, date, type, person, building_name, status, description, title')
+        .gte('date', monthStart)
+        .lte('date', monthEnd);
 
-      // 1) Emergency shifts (turnos)
-      const { data: shiftData } = await supabase
-        .from('emergency_shifts')
-        .select('*')
-        .gte('shift_date', monthStart)
-        .lte('shift_date', monthEnd);
+      if (error) throw error;
 
-      setEmergencyShifts(shiftData || []);
+      const mapped: BreakdownEvent[] = (data || []).map((x: any) => ({
+        id: x.id,
+        date: x.date,
+        type: x.type || 'calendar_event',
+        assignee: x.person || undefined,
+        building_name: x.building_name || undefined,
+        status: x.status || undefined,
+        description: x.description || x.title || undefined,
+      }));
 
-      // 2) Emergency visits
-      const { data: visitData } = await supabase
-        .from('emergency_visits')
-        .select('*')
-        .gte('visit_date', monthStart)
-        .lte('visit_date', monthEnd);
-
-      setEmergencyVisits(visitData || []);
-
-      // 3) Calendar events
-      const { data: calData } = await supabase
-    <div className="p-4">
-      <h1>Calendario Test</h1>
-    </div>
-        });
-      });
-
-      setEvents(merged);
+      setBreakdownEvents(mapped);
     } catch (e) {
-      console.error('[AdminCalendarDashboard] Error cargando calendario:', e);
+      console.error('[AdminCalendarDashboard] Breakdown load error:', e);
+      setBreakdownEvents([]); // nunca crashear
     } finally {
-      setLoading(false);
+      setLoadingBreakdown(false);
     }
   };
 
   useEffect(() => {
-    loadAll();
-
-    const onRefresh = () => loadAll();
-    window.addEventListener('asignacion-eliminada', onRefresh);
-    return () => window.removeEventListener('asignacion-eliminada', onRefresh);
+    loadBreakdown();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, monthStart, monthEnd]);
 
-  const handleAddExternalTech = () => {
-    const name = window.prompt('Nombre del técnico externo:');
-    if (!name) return;
-    const phone = window.prompt('Teléfono (opcional):') || '';
-    addExternalTechnician({ name, phone });
-    setExternalTechnicians(getExternalTechnicians());
-  };
-
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Calendar className="w-5 h-5 text-blue-600" />
           <h1 className="text-xl font-bold">Calendario (Admin)</h1>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            className="px-3 py-2 rounded bg-slate-100 hover:bg-slate-200 text-sm"
-            onClick={() => setViewMode((v) => (v === 'monthly' ? 'weekly' : 'monthly'))}
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="text-sm font-semibold">Mes:</label>
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(Number(e.target.value))}
           >
-            Vista: {viewMode === 'monthly' ? 'Mensual' : 'Semanal'}
-          </button>
+            {Array.from({ length: 12 }).map((_, i) => (
+              <option key={i} value={i}>
+                {new Date(2000, i, 1).toLocaleString('es-CL', { month: 'long' })}
+              </option>
+            ))}
+          </select>
+
+          <label className="text-sm font-semibold">Año:</label>
+          <input
+            type="number"
+            className="border rounded px-2 py-1 text-sm w-24"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+          />
 
           <button
-            className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm flex items-center gap-2"
-            onClick={handleAddExternalTech}
-            title="Agregar técnico externo"
+            className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-sm"
+            onClick={loadBreakdown}
+            disabled={loadingBreakdown}
+            title="Recargar panel de asignación"
           >
-            <Plus className="w-4 h-4" /> Externo
+            {loadingBreakdown ? 'Cargando...' : 'Recargar panel'}
           </button>
         </div>
       </div>
@@ -143,70 +129,27 @@ export default function AdminCalendarDashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Columna principal */}
         <div className="xl:col-span-2 space-y-4">
-          {/* Navegación mes/año */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <label className="text-sm font-semibold">Mes:</label>
-            <select
-              className="border rounded px-2 py-1 text-sm"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-            >
-              {Array.from({ length: 12 }).map((_, i) => (
-                <option key={i} value={i}>
-                  {new Date(2000, i, 1).toLocaleString('es-CL', { month: 'long' })}
-                </option>
-              ))}
-            </select>
-
-            <label className="text-sm font-semibold">Año:</label>
-            <input
-              type="number"
-              className="border rounded px-2 py-1 text-sm w-24"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-            />
-
-            <button
-              className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-sm"
-              onClick={loadAll}
-              disabled={loading}
-            >
-              {loading ? 'Cargando...' : 'Recargar'}
-            </button>
-          </div>
-
-          {/* Vista calendario de mantenimientos (visual) */}
           <div className="border rounded bg-white p-3">
-            <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-slate-700">
-              <Shield className="w-4 h-4" /> Vista de calendario
-            </div>
-
-            <MaintenanceCalendarView
-              events={events}
-              month={selectedMonth}
-              year={selectedYear}
-              viewMode={viewMode}
-              externalTechnicians={externalTechnicians}
-            />
+            <MaintenanceCalendarView />
           </div>
 
-          {/* Paneles adicionales */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="border rounded bg-white p-3">
-              <EmergencyShiftScheduler month={selectedMonth} year={selectedYear} />
+              <EmergencyShiftScheduler />
             </div>
 
             <div className="border rounded bg-white p-3">
-              <EmergencyShiftsMonthlyView month={selectedMonth} year={selectedYear} />
+              {/* ✅ este componente pide targetMonth (YYYY-MM) */}
+              <EmergencyShiftsMonthlyView targetMonth={targetMonth} />
             </div>
 
             <div className="border rounded bg-white p-3 md:col-span-2">
-              <CoordinationRequestsPanel month={selectedMonth} year={selectedYear} />
+              <CoordinationRequestsPanel />
             </div>
           </div>
 
           <div className="border rounded bg-white p-3">
-            <MaintenanceMassPlannerV2 month={selectedMonth} year={selectedYear} />
+            <MaintenanceMassPlannerV2 />
           </div>
         </div>
 
@@ -215,15 +158,7 @@ export default function AdminCalendarDashboard() {
           <ProfessionalBreakdown
             selectedMonth={selectedMonth}
             selectedYear={selectedYear}
-            events={events.map((e) => ({
-              id: e.id,
-              date: e.scheduled_date,
-              type: e.type,
-              assignee: e.assigned_name || undefined,
-              building_name: e.building_name || undefined,
-              status: e.status || undefined,
-              description: e.description || undefined,
-            }))}
+            events={breakdownEvents}
           />
         </div>
       </div>
