@@ -1,344 +1,187 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Calendar, Plus, Shield } from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "../../lib/supabase";
 
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../contexts/AuthContext';
-
-import { getExternalTechnicians, addExternalTechnician } from '../../lib/external_technicians';
-
-import { MaintenanceMassPlannerV2 } from '../calendar/MaintenanceMassPlannerV2';
-import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
-import { EmergencyShiftsMonthlyView } from '../calendar/EmergencyShiftsMonthlyView';
-import { CoordinationRequestsPanel } from '../calendar/CoordinationRequestsPanel';
-import { MaintenanceCalendarView } from '../calendar/MaintenanceCalendarView';
-
-import { ProfessionalBreakdown } from './ProfessionalBreakdown';
-
-type CalendarViewMode = 'monthly' | 'weekly';
+import FullCalendar from "@fullcalendar/react";
+import dayGridPlugin from "@fullcalendar/daygrid";
+import timeGridPlugin from "@fullcalendar/timegrid";
+import interactionPlugin from "@fullcalendar/interaction";
 
 type CalendarEvent = {
   id: string;
-  scheduled_date: string; // YYYY-MM-DD
-  type: 'maintenance' | 'work_order' | 'emergency_visit' | 'emergency_shift' | 'calendar_event';
   title: string;
-  description?: string | null;
-  client_id?: string | null;
-  building_name?: string | null;
-  assigned_name?: string | null;
-  status?: string | null;
+  start: string; // ISO
+  end?: string;  // ISO
+  allDay?: boolean;
 };
 
+function startOfMonthISO(d: Date) {
+  const x = new Date(d.getFullYear(), d.getMonth(), 1);
+  // YYYY-MM-DD
+  return x.toISOString().slice(0, 10);
+}
+function endOfMonthISO(d: Date) {
+  const x = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return x.toISOString().slice(0, 10);
+}
+
 export default function AdminCalendarDashboard() {
-  const { user } = useAuth();
-
-  const [viewMode, setViewMode] = useState<CalendarViewMode>('monthly');
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth()); // 0-11
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-
-  const [loading, setLoading] = useState<boolean>(false);
+  const [monthCursor, setMonthCursor] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [emergencyShifts, setEmergencyShifts] = useState<any[]>([]);
-  const [emergencyVisits, setEmergencyVisits] = useState<any[]>([]);
-  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
-  const [maintenanceSchedules, setMaintenanceSchedules] = useState<any[]>([]);
-  const [workOrders, setWorkOrders] = useState<any[]>([]);
-
-  const [externalTechnicians, setExternalTechnicians] = useState<any[]>([]);
-
-  const monthStartISO = useMemo(() => {
-    const d = new Date(selectedYear, selectedMonth, 1);
-    return d.toISOString().slice(0, 10);
-  }, [selectedYear, selectedMonth]);
-
-  const monthEndISO = useMemo(() => {
-    const d = new Date(selectedYear, selectedMonth + 1, 0);
-    return d.toISOString().slice(0, 10);
-  }, [selectedYear, selectedMonth]);
-
-  const loadAll = async () => {
-    if (!user) return;
-
-    setLoading(true);
-    try {
-      setExternalTechnicians(getExternalTechnicians());
-
-      const start = monthStartISO;
-      const end = monthEndISO;
-
-      // 1) maintenance_schedules
-      const { data: schedules, error: schErr } = await supabase
-        .from('maintenance_schedules')
-        .select(
-          `
-          id,
-          scheduled_date,
-          client_id,
-          building_name,
-          status,
-          assigned_technician_id,
-          profiles:assigned_technician_id(full_name)
-        `
-        )
-        .gte('scheduled_date', start)
-        .lte('scheduled_date', end);
-
-      if (schErr) throw schErr;
-
-      // 2) emergency_visits
-      const { data: emergencies, error: emErr } = await supabase
-        .from('emergency_visits')
-        .select('id, created_at, client_id, status, failure_description')
-        .gte('created_at', `${start}T00:00:00`)
-        .lte('created_at', `${end}T23:59:59`);
-
-      if (emErr) throw emErr;
-
-      // 3) work_orders
-      const { data: wo, error: woErr } = await supabase
-        .from('work_orders')
-        .select('id, created_at, client_id, status, description')
-        .gte('created_at', `${start}T00:00:00`)
-        .lte('created_at', `${end}T23:59:59`);
-
-      if (woErr) throw woErr;
-
-      // 4) emergency_shifts
-      const { data: shifts, error: shErr } = await supabase
-        .from('emergency_shifts')
-        .select('id, shift_date, technician_name, status')
-        .gte('shift_date', start)
-        .lte('shift_date', end);
-
-      if (shErr) throw shErr;
-
-      // 5) calendar_events  ✅ (aquí estaba quedando cortado en tus builds)
-      const { data: customEvents, error: ceErr } = await supabase
-        .from('calendar_events')
-        .select('id, date, title, description, status, building_name, person, type')
-        .gte('date', start)
-        .lte('date', end);
-
-      if (ceErr) throw ceErr;
-
-      setMaintenanceSchedules(schedules || []);
-      setEmergencyVisits(emergencies || []);
-      setWorkOrders(wo || []);
-      setEmergencyShifts(shifts || []);
-      setCalendarEvents(customEvents || []);
-
-      // Consolidado para la vista principal
-      const merged: CalendarEvent[] = [];
-
-      (schedules || []).forEach((s: any) => {
-        merged.push({
-          id: `m-${s.id}`,
-          scheduled_date: s.scheduled_date,
-          type: 'maintenance',
-          title: 'Mantenimiento',
-          description: null,
-          client_id: s.client_id,
-          building_name: s.building_name,
-          assigned_name: s.profiles?.full_name ?? null,
-          status: s.status ?? null,
-        });
-      });
-
-      (emergencies || []).forEach((e: any) => {
-        const date = (e.created_at || '').slice(0, 10);
-        merged.push({
-          id: `ev-${e.id}`,
-          scheduled_date: date,
-          type: 'emergency_visit',
-          title: 'Emergencia',
-          description: e.failure_description ?? null,
-          client_id: e.client_id ?? null,
-          building_name: null,
-          assigned_name: null,
-          status: e.status ?? null,
-        });
-      });
-
-      (wo || []).forEach((w: any) => {
-        const date = (w.created_at || '').slice(0, 10);
-        merged.push({
-          id: `w-${w.id}`,
-          scheduled_date: date,
-          type: 'work_order',
-          title: 'Orden de trabajo',
-          description: w.description ?? null,
-          client_id: w.client_id ?? null,
-          building_name: null,
-          assigned_name: null,
-          status: w.status ?? null,
-        });
-      });
-
-      (shifts || []).forEach((s: any) => {
-        merged.push({
-          id: `es-${s.id}`,
-          scheduled_date: s.shift_date,
-          type: 'emergency_shift',
-          title: 'Turno emergencia',
-          description: null,
-          client_id: null,
-          building_name: null,
-          assigned_name: s.technician_name ?? null,
-          status: s.status ?? null,
-        });
-      });
-
-      (customEvents || []).forEach((c: any) => {
-        merged.push({
-          id: `c-${c.id}`,
-          scheduled_date: c.date,
-          type: 'calendar_event',
-          title: c.title || 'Evento',
-          description: c.description ?? null,
-          client_id: c.client_id ?? null,
-          building_name: c.building_name ?? null,
-          assigned_name: c.person ?? null,
-          status: c.status ?? null,
-        });
-      });
-
-      setEvents(merged);
-    } catch (e) {
-      console.error('[AdminCalendarDashboard] Error cargando calendario:', e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const monthStart = useMemo(() => startOfMonthISO(monthCursor), [monthCursor]);
+  const monthEnd = useMemo(() => endOfMonthISO(monthCursor), [monthCursor]);
 
   useEffect(() => {
-    loadAll();
-    const onRefresh = () => loadAll();
-    window.addEventListener('asignacion-eliminada', onRefresh);
-    return () => window.removeEventListener('asignacion-eliminada', onRefresh);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, monthStartISO, monthEndISO]);
+    let cancelled = false;
 
-  const handleAddExternalTech = () => {
-    const name = window.prompt('Nombre del técnico externo:');
-    if (!name) return;
-    const phone = window.prompt('Teléfono (opcional):') || '';
-    addExternalTechnician({ name, phone });
-    setExternalTechnicians(getExternalTechnicians());
-  };
+    async function loadAll() {
+      setLoading(true);
+      setErrorMsg(null);
+
+      try {
+        // 1) calendar_events (si existe en tu DB)
+        const { data: calData, error: calError } = await supabase
+          .from("calendar_events")
+          .select("*")
+          .gte("date", monthStart)
+          .lte("date", monthEnd);
+
+        if (calError) {
+          // NO matamos la vista: lo mostramos en pantalla
+          console.error("[Calendar] calendar_events error:", calError);
+        }
+
+        // 2) service_requests (tu tabla NO tiene scheduled_date, usamos created_at)
+        const { data: srData, error: srError } = await supabase
+          .from("service_requests")
+          .select("*")
+          .gte("created_at", `${monthStart}T00:00:00.000Z`)
+          .lte("created_at", `${monthEnd}T23:59:59.999Z`);
+
+        if (srError) {
+          console.error("[Calendar] service_requests error:", srError);
+        }
+
+        // 3) emergency_visits (según tu SQL: visit_date + start_time/end_time)
+        const { data: evData, error: evError } = await supabase
+          .from("emergency_visits")
+          .select("*")
+          .gte("visit_date", monthStart)
+          .lte("visit_date", monthEnd);
+
+        if (evError) {
+          console.error("[Calendar] emergency_visits error:", evError);
+        }
+
+        // Map a FullCalendar events (con defensas)
+        const mapped: CalendarEvent[] = [];
+
+        // calendar_events -> asumimos { id, title, date, start_time?, end_time? }
+        (calData ?? []).forEach((e: any) => {
+          const date = e?.date; // YYYY-MM-DD
+          if (!date) return;
+
+          const startTime = e?.start_time ?? "09:00";
+          const endTime = e?.end_time ?? undefined;
+
+          mapped.push({
+            id: `cal-${e?.id ?? crypto.randomUUID()}`,
+            title: e?.title ?? "Evento",
+            start: `${date}T${startTime}:00`,
+            end: endTime ? `${date}T${endTime}:00` : undefined,
+            allDay: !e?.start_time,
+          });
+        });
+
+        // service_requests -> usamos created_at como fecha (para que NO haga 400)
+        (srData ?? []).forEach((r: any) => {
+          const createdAt = r?.created_at;
+          if (!createdAt) return;
+          mapped.push({
+            id: `sr-${r?.id ?? crypto.randomUUID()}`,
+            title: `Solicitud: ${r?.title ?? "sin título"}`,
+            start: createdAt,
+            allDay: false,
+          });
+        });
+
+        // emergency_visits -> { visit_date, start_time }
+        (evData ?? []).forEach((v: any) => {
+          const date = v?.visit_date; // YYYY-MM-DD
+          if (!date) return;
+          const st = v?.start_time ?? "09:00";
+          const et = v?.end_time ?? undefined;
+
+          mapped.push({
+            id: `ev-${v?.id ?? crypto.randomUUID()}`,
+            title: `Emergencia: ${v?.emergency_id ?? "visita"}`,
+            start: `${date}T${st}:00`,
+            end: et ? `${date}T${et}:00` : undefined,
+            allDay: false,
+          });
+        });
+
+        if (!cancelled) {
+          setEvents(mapped);
+        }
+      } catch (err: any) {
+        console.error("[Calendar] loadAll fatal:", err);
+        if (!cancelled) {
+          setErrorMsg(err?.message ?? "Error desconocido cargando el calendario");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadAll();
+    return () => {
+      cancelled = true;
+    };
+  }, [monthStart, monthEnd]);
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-blue-600" />
-          <h1 className="text-xl font-bold">Calendario (Admin)</h1>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            className="px-3 py-2 rounded bg-slate-100 hover:bg-slate-200 text-sm"
-            onClick={() => setViewMode((v) => (v === 'monthly' ? 'weekly' : 'monthly'))}
-          >
-            Vista: {viewMode === 'monthly' ? 'Mensual' : 'Semanal'}
-          </button>
-
-          <button
-            className="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm flex items-center gap-2"
-            onClick={handleAddExternalTech}
-            title="Agregar técnico externo"
-          >
-            <Plus className="w-4 h-4" /> Externo
-          </button>
-        </div>
+    <div className="p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Calendario (Admin)</h1>
+        {loading ? (
+          <span className="text-sm text-slate-500">Cargando…</span>
+        ) : (
+          <span className="text-sm text-slate-500">
+            {events.length} evento(s)
+          </span>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        {/* Columna principal */}
-        <div className="xl:col-span-2 space-y-4">
-          {/* Navegación mes/año */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <label className="text-sm font-semibold">Mes:</label>
-            <select
-              className="border rounded px-2 py-1 text-sm"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-            >
-              {Array.from({ length: 12 }).map((_, i) => (
-                <option key={i} value={i}>
-                  {new Date(2000, i, 1).toLocaleString('es-CL', { month: 'long' })}
-                </option>
-              ))}
-            </select>
-
-            <label className="text-sm font-semibold">Año:</label>
-            <input
-              type="number"
-              className="border rounded px-2 py-1 text-sm w-24"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-            />
-
-            <button
-              className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-sm"
-              onClick={loadAll}
-              disabled={loading}
-            >
-              {loading ? 'Cargando...' : 'Recargar'}
-            </button>
-          </div>
-
-          {/* Vista calendario */}
-          <div className="border rounded bg-white p-3">
-            <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-slate-700">
-              <Shield className="w-4 h-4" /> Vista de calendario
-            </div>
-
-            <MaintenanceCalendarView
-              events={events}
-              month={selectedMonth}
-              year={selectedYear}
-              viewMode={viewMode}
-              externalTechnicians={externalTechnicians}
-            />
-          </div>
-
-          {/* Paneles adicionales */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border rounded bg-white p-3">
-              <EmergencyShiftScheduler month={selectedMonth} year={selectedYear} />
-            </div>
-
-            <div className="border rounded bg-white p-3">
-              <EmergencyShiftsMonthlyView month={selectedMonth} year={selectedYear} />
-            </div>
-
-            <div className="border rounded bg-white p-3 md:col-span-2">
-              <CoordinationRequestsPanel month={selectedMonth} year={selectedYear} />
-            </div>
-          </div>
-
-          <div className="border rounded bg-white p-3">
-            <MaintenanceMassPlannerV2 month={selectedMonth} year={selectedYear} />
-          </div>
+      {errorMsg ? (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {errorMsg}
         </div>
+      ) : null}
 
-        {/* Columna derecha */}
-        <div className="space-y-4">
-          <ProfessionalBreakdown
-            selectedMonth={selectedMonth}
-            selectedYear={selectedYear}
-            events={events.map((e) => ({
-              id: e.id,
-              date: e.scheduled_date,
-              type: e.type,
-              assignee: e.assigned_name || undefined,
-              building_name: e.building_name || undefined,
-              status: e.status || undefined,
-              description: e.description || undefined,
-            }))}
-          />
-        </div>
+      <div className="rounded-lg border bg-white p-2">
+        <FullCalendar
+          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+          initialView="dayGridMonth"
+          height="auto"
+          headerToolbar={{
+            left: "prev,next today",
+            center: "title",
+            right: "dayGridMonth,timeGridWeek,timeGridDay",
+          }}
+          events={events}
+          datesSet={(arg) => {
+            // Actualiza el cursor al mes visible
+            setMonthCursor(arg.start);
+          }}
+        />
       </div>
+
+      <p className="mt-3 text-xs text-slate-500">
+        Nota: el 404 de /favicon.png es normal si no lo tienes en /public. No afecta.
+      </p>
     </div>
   );
 }
