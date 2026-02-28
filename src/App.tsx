@@ -1,4 +1,6 @@
 import { AdminMaintenancesDashboard } from './components/views/AdminMaintenancesDashboard';
+import AdminCalendarDashboard from './components/views/AdminCalendarDashboard';
+import { TechnicianCalendarView } from './components/views/TechnicianCalendarView';
 import { TechnicianMaintenanceChecklistView } from './components/views/TechnicianMaintenanceChecklistView';
 import { TechnicianDashboard } from './components/dashboards/TechnicianDashboard';
 import { TechnicianEmergencyView } from './components/views/TechnicianEmergencyView';
@@ -6,22 +8,19 @@ import { AdminEmergenciesDashboard } from './components/views/AdminEmergenciesDa
 import { ServiceRequestsDashboard } from './components/views/ServiceRequestsDashboard';
 import { UserProfile } from './components/UserProfile';
 import { AdminDashboard } from './components/dashboards/AdminDashboard';
-import { useState, Suspense, lazy } from 'react';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { useState } from 'react';
+import { useAuth } from './contexts/AuthContext';
 import { LoginPage } from './components/LoginPage';
 import { SplashScreen } from './components/SplashScreen';
 import { Layout } from './components/Layout';
 
-// ✅ Lazy load del calendario para evitar que rompa el arranque
-const AdminCalendarDashboard = lazy(() => import('./components/views/AdminCalendarDashboard'));
-const TechnicianCalendarView = lazy(() =>
-  import('./components/views/TechnicianCalendarView').then((m) => ({ default: m.TechnicianCalendarView }))
-);
-
 function App() {
+  console.log('[App.tsx] App montando...');
+
   const [currentView, setCurrentView] = useState('dashboard');
   const [viewKey, setViewKey] = useState(0);
   const [showSplash, setShowSplash] = useState(true);
+
   const { user, profile, loading } = useAuth();
 
   const handleNavigate = (path: string) => {
@@ -30,14 +29,22 @@ function App() {
     } else {
       setCurrentView(path);
     }
+
     setViewKey((prev) => prev + 1);
   };
 
   if (loading || showSplash) {
-    return <SplashScreen onComplete={() => setShowSplash(false)} minDuration={3500} />;
+    console.log('[App.tsx] Mostrando SplashScreen');
+    return (
+      <SplashScreen
+        onComplete={() => setShowSplash(false)}
+        minDuration={3500}
+      />
+    );
   }
 
   if (!user) {
+    console.log('[App.tsx] Mostrando LoginPage');
     return <LoginPage />;
   }
 
@@ -50,7 +57,11 @@ function App() {
       } else if (profile?.role === 'technician') {
         content = <TechnicianDashboard />;
       } else if (profile?.role === 'client') {
-        content = <div className="text-center py-12">La vista de atajos para cliente está en desarrollo.</div>;
+        content = (
+          <div className="text-center py-12">
+            La vista de atajos para cliente está en desarrollo.
+          </div>
+        );
       } else {
         content = (
           <div className="text-center py-12">
@@ -64,9 +75,17 @@ function App() {
       if (profile?.role === 'technician') {
         content = <TechnicianMaintenanceChecklistView />;
       } else if (profile?.role === 'admin') {
-        content = <AdminMaintenancesDashboard onNewMaintenance={() => setCurrentView('new-maintenance')} />;
+        content = (
+          <AdminMaintenancesDashboard
+            onNewMaintenance={() => setCurrentView('new-maintenance')}
+          />
+        );
       } else {
-        content = <div className="text-center py-12">Vista de mantenimientos no disponible para este rol.</div>;
+        content = (
+          <div className="text-center py-12">
+            Vista de mantenimientos no disponible para este rol.
+          </div>
+        );
       }
       break;
 
@@ -74,7 +93,11 @@ function App() {
       if (profile?.role === 'admin') {
         content = <TechnicianEmergencyView />;
       } else {
-        content = <div className="text-center py-12">Vista de nueva mantención no disponible para este rol.</div>;
+        content = (
+          <div className="text-center py-12">
+            Vista de nueva mantención no disponible para este rol.
+          </div>
+        );
       }
       break;
 
@@ -84,7 +107,11 @@ function App() {
       } else if (profile?.role === 'technician') {
         content = <TechnicianEmergencyView />;
       } else {
-        content = <div className="text-center py-12">Vista de emergencias no disponible para este rol.</div>;
+        content = (
+          <div className="text-center py-12">
+            Vista de emergencias no disponible para este rol.
+          </div>
+        );
       }
       break;
 
@@ -92,25 +119,27 @@ function App() {
       if (profile?.role === 'admin' || profile?.role === 'technician') {
         content = <ServiceRequestsDashboard />;
       } else {
-        content = <div className="text-center py-12">Vista de solicitudes de servicio no disponible para este rol.</div>;
+        content = (
+          <div className="text-center py-12">
+            Vista de solicitudes de servicio no disponible para este rol.
+          </div>
+        );
       }
       break;
 
     case 'calendar':
       if (profile?.role === 'admin') {
         content = (
-          <Suspense fallback={<div className="p-6">Cargando calendario…</div>}>
-            <AdminCalendarDashboard />
-          </Suspense>
+          <AdminCalendarDashboard onNavigate={handleNavigate} />
         );
       } else if (profile?.role === 'technician') {
-        content = (
-          <Suspense fallback={<div className="p-6">Cargando calendario…</div>}>
-            <TechnicianCalendarView />
-          </Suspense>
-        );
+        content = <TechnicianCalendarView />;
       } else {
-        content = <div className="text-center py-12">Vista de calendario no disponible para este rol.</div>;
+        content = (
+          <div className="text-center py-12">
+            Vista de calendario no disponible para este rol.
+          </div>
+        );
       }
       break;
 
@@ -134,11 +163,4 @@ function App() {
   );
 }
 
-// ✅ IMPORTANTE: export default debe ser el wrapper con AuthProvider
-export default function AppWrapper() {
-  return (
-    <AuthProvider>
-      <App />
-    </AuthProvider>
-  );
-}
+export default App;
