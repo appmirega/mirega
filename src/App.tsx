@@ -16,33 +16,25 @@ import { Layout } from './components/Layout';
 
 function App() {
   console.log('[App.tsx] App montando...');
-
   const [currentView, setCurrentView] = useState('dashboard');
   const [viewKey, setViewKey] = useState(0);
   const [showSplash, setShowSplash] = useState(true);
-
   const { user, profile, loading } = useAuth();
 
   const handleNavigate = (path: string) => {
+    // Para admin, el submenú 'Mantenimientos' debe mostrar la vista de mantenimientos admin
     if (profile?.role === 'admin' && path === 'maintenance-checklist') {
       setCurrentView('maintenance-checklist');
     } else {
       setCurrentView(path);
     }
-
     setViewKey((prev) => prev + 1);
   };
 
   if (loading || showSplash) {
     console.log('[App.tsx] Mostrando SplashScreen');
-    return (
-      <SplashScreen
-        onComplete={() => setShowSplash(false)}
-        minDuration={3500}
-      />
-    );
+    return <SplashScreen onComplete={() => setShowSplash(false)} minDuration={3500} />;
   }
-
   if (!user) {
     console.log('[App.tsx] Mostrando LoginPage');
     return <LoginPage />;
@@ -57,11 +49,7 @@ function App() {
       } else if (profile?.role === 'technician') {
         content = <TechnicianDashboard />;
       } else if (profile?.role === 'client') {
-        content = (
-          <div className="text-center py-12">
-            La vista de atajos para cliente está en desarrollo.
-          </div>
-        );
+        content = <div className="text-center py-12">La vista de atajos para cliente está en desarrollo.</div>;
       } else {
         content = (
           <div className="text-center py-12">
@@ -75,17 +63,9 @@ function App() {
       if (profile?.role === 'technician') {
         content = <TechnicianMaintenanceChecklistView />;
       } else if (profile?.role === 'admin') {
-        content = (
-          <AdminMaintenancesDashboard
-            onNewMaintenance={() => setCurrentView('new-maintenance')}
-          />
-        );
+        content = <AdminMaintenancesDashboard onNewMaintenance={() => setCurrentView('new-maintenance')} />;
       } else {
-        content = (
-          <div className="text-center py-12">
-            Vista de mantenimientos no disponible para este rol.
-          </div>
-        );
+        content = <div className="text-center py-12">Vista de mantenimientos no disponible para este rol.</div>;
       }
       break;
 
@@ -93,11 +73,7 @@ function App() {
       if (profile?.role === 'admin') {
         content = <TechnicianEmergencyView />;
       } else {
-        content = (
-          <div className="text-center py-12">
-            Vista de nueva mantención no disponible para este rol.
-          </div>
-        );
+        content = <div className="text-center py-12">Vista de nueva mantención no disponible para este rol.</div>;
       }
       break;
 
@@ -107,11 +83,7 @@ function App() {
       } else if (profile?.role === 'technician') {
         content = <TechnicianEmergencyView />;
       } else {
-        content = (
-          <div className="text-center py-12">
-            Vista de emergencias no disponible para este rol.
-          </div>
-        );
+        content = <div className="text-center py-12">Vista de emergencias no disponible para este rol.</div>;
       }
       break;
 
@@ -119,27 +91,18 @@ function App() {
       if (profile?.role === 'admin' || profile?.role === 'technician') {
         content = <ServiceRequestsDashboard />;
       } else {
-        content = (
-          <div className="text-center py-12">
-            Vista de solicitudes de servicio no disponible para este rol.
-          </div>
-        );
+        content = <div className="text-center py-12">Vista de solicitudes de servicio no disponible para este rol.</div>;
       }
       break;
 
     case 'calendar':
       if (profile?.role === 'admin') {
-        content = (
-          <AdminCalendarDashboard onNavigate={handleNavigate} />
-        );
+        // ✅ IMPORTANTE: pasar onNavigate para conectar botones/atajos del calendario
+        content = <AdminCalendarDashboard onNavigate={handleNavigate} />;
       } else if (profile?.role === 'technician') {
         content = <TechnicianCalendarView />;
       } else {
-        content = (
-          <div className="text-center py-12">
-            Vista de calendario no disponible para este rol.
-          </div>
-        );
+        content = <div className="text-center py-12">Vista de calendario no disponible para este rol.</div>;
       }
       break;
 

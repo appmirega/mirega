@@ -1,325 +1,157 @@
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../lib/supabase";
+import { useMemo, useState } from 'react';
 
-import FullCalendar from "@fullcalendar/react";
-import dayGridPlugin from "@fullcalendar/daygrid";
-import timeGridPlugin from "@fullcalendar/timegrid";
-import interactionPlugin from "@fullcalendar/interaction";
+// ✅ Herramientas reales ya existentes en tu proyecto
+import { MaintenanceCalendarView } from '../calendar/MaintenanceCalendarView';
+import { EmergencyShiftsMonthlyView } from '../calendar/EmergencyShiftsMonthlyView';
+import { EmergencyShiftScheduler } from '../calendar/EmergencyShiftScheduler';
+import { MaintenanceMassPlannerV2 } from '../calendar/MaintenanceMassPlannerV2';
+import { CoordinationRequestsPanel } from '../calendar/CoordinationRequestsPanel';
+import { TechnicianAvailabilityPanel } from '../calendar/TechnicianAvailabilityPanel';
 
-// ✅ Español FullCalendar
-import esLocale from "@fullcalendar/core/locales/es";
-
-type CalendarEvent = {
-  id: string;
-  title: string;
-  start: string; // ISO
-  end?: string; // ISO
-  allDay?: boolean;
+type AdminCalendarDashboardProps = {
+  onNavigate?: (path: string) => void;
 };
 
-type ServiceRequest = {
-  id: string | number;
-  title?: string | null;
-  status?: string | null;
-  created_at?: string | null;
-  client_id?: string | null;
-  technician_id?: string | null;
-};
+type TabKey =
+  | 'maintenance_calendar'
+  | 'mass_planner'
+  | 'emergency_scheduler'
+  | 'emergency_monthly'
+  | 'coordination_requests'
+  | 'availability';
 
-type EmergencyVisit = {
-  id: string | number;
-  emergency_id?: string | number | null;
-  visit_date?: string | null; // YYYY-MM-DD
-  start_time?: string | null; // HH:mm
-  end_time?: string | null;   // HH:mm
-};
+export default function AdminCalendarDashboard({ onNavigate }: AdminCalendarDashboardProps) {
+  const [tab, setTab] = useState<TabKey>('maintenance_calendar');
 
-function startOfMonthISO(d: Date) {
-  const x = new Date(d.getFullYear(), d.getMonth(), 1);
-  return x.toISOString().slice(0, 10); // YYYY-MM-DD
-}
-function endOfMonthISO(d: Date) {
-  const x = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-  return x.toISOString().slice(0, 10); // YYYY-MM-DD
-}
-
-export default function AdminCalendarDashboard() {
-  const [monthCursor, setMonthCursor] = useState(() => new Date());
-
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // Panel lateral (datos base)
-  const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
-  const [emergencyVisits, setEmergencyVisits] = useState<EmergencyVisit[]>([]);
-
-  // Esto queda como “placeholder” para cuando conectemos turnos y mantenimientos reales
-  const [maintenanceCount] = useState<number>(0);
-
-  const monthStart = useMemo(() => startOfMonthISO(monthCursor), [monthCursor]);
-  const monthEnd = useMemo(() => endOfMonthISO(monthCursor), [monthCursor]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadAll() {
-      setLoading(true);
-      setErrorMsg(null);
-
-      try {
-        // 1) calendar_events (si existe en tu DB). Si no existe o falla RLS, no rompe la vista.
-        const { data: calData, error: calError } = await supabase
-          .from("calendar_events")
-          .select("*")
-          .gte("date", monthStart)
-          .lte("date", monthEnd);
-
-        if (calError) {
-          console.error("[Calendar] calendar_events error:", calError);
-        }
-
-        // 2) service_requests (evitamos scheduled_date porque en tu caso NO existe y provoca 400)
-        const { data: srData, error: srError } = await supabase
-          .from("service_requests")
-          .select("*")
-          .gte("created_at", `${monthStart}T00:00:00.000Z`)
-          .lte("created_at", `${monthEnd}T23:59:59.999Z`);
-
-        if (srError) {
-          console.error("[Calendar] service_requests error:", srError);
-        }
-
-        // 3) emergency_visits (según lo que vimos: visit_date + start_time/end_time)
-        const { data: evData, error: evError } = await supabase
-          .from("emergency_visits")
-          .select("*")
-          .gte("visit_date", monthStart)
-          .lte("visit_date", monthEnd);
-
-        if (evError) {
-          console.error("[Calendar] emergency_visits error:", evError);
-        }
-
-        // ---- Map a FullCalendar events (defensivo, para que nunca “reviente”) ----
-        const mapped: CalendarEvent[] = [];
-
-        // calendar_events -> asumimos { id, title, date, start_time?, end_time? }
-        (calData ?? []).forEach((e: any) => {
-          const date = e?.date; // YYYY-MM-DD
-          if (!date) return;
-
-          const startTime = e?.start_time ?? null;
-          const endTime = e?.end_time ?? null;
-
-          mapped.push({
-            id: `cal-${e?.id ?? crypto.randomUUID()}`,
-            title: e?.title ?? "Evento",
-            start: startTime ? `${date}T${startTime}:00` : `${date}T00:00:00`,
-            end: endTime ? `${date}T${endTime}:00` : undefined,
-            allDay: !startTime,
-          });
-        });
-
-        // service_requests -> lo mostramos como evento informativo por fecha creación
-        const srList = (srData ?? []) as any[];
-        srList.forEach((r) => {
-          const createdAt = r?.created_at;
-          if (!createdAt) return;
-
-          mapped.push({
-            id: `sr-${r?.id ?? crypto.randomUUID()}`,
-            title: `Solicitud: ${r?.title ?? "sin título"}`,
-            start: createdAt,
-            allDay: false,
-          });
-        });
-
-        // emergency_visits -> evento por visit_date/start_time
-        const evList = (evData ?? []) as any[];
-        evList.forEach((v) => {
-          const date = v?.visit_date;
-          if (!date) return;
-
-          const st = v?.start_time ?? "09:00";
-          const et = v?.end_time ?? null;
-
-          mapped.push({
-            id: `ev-${v?.id ?? crypto.randomUUID()}`,
-            title: `Emergencia: ${v?.emergency_id ?? "visita"}`,
-            start: `${date}T${st}:00`,
-            end: et ? `${date}T${et}:00` : undefined,
-            allDay: false,
-          });
-        });
-
-        if (!cancelled) {
-          setEvents(mapped);
-
-          // Panel lateral
-          setServiceRequests(srList.map((x) => x as ServiceRequest));
-          setEmergencyVisits(evList.map((x) => x as EmergencyVisit));
-        }
-      } catch (err: any) {
-        console.error("[Calendar] loadAll fatal:", err);
-        if (!cancelled) {
-          setErrorMsg(err?.message ?? "Error desconocido cargando el calendario");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  const header = useMemo(() => {
+    switch (tab) {
+      case 'maintenance_calendar':
+        return { title: 'Calendario de Mantenciones', subtitle: 'Planifica, asigna y revisa el mes completo.' };
+      case 'mass_planner':
+        return { title: 'Planificación Masiva', subtitle: 'Programación masiva de mantenciones por rango de fechas.' };
+      case 'emergency_scheduler':
+        return { title: 'Turnos de Emergencia', subtitle: 'Programa turnos/guardias de emergencia.' };
+      case 'emergency_monthly':
+        return { title: 'Resumen Mensual Emergencias', subtitle: 'Vista mensual de turnos/visitas de emergencia.' };
+      case 'coordination_requests':
+        return { title: 'Solicitudes de Coordinación', subtitle: 'Solicitudes de técnicos/clientes para coordinar servicios.' };
+      case 'availability':
+        return { title: 'Disponibilidad de Técnicos', subtitle: 'Disponibilidad / ausencias para planificación.' };
+      default:
+        return { title: 'Gestión de Calendario', subtitle: '' };
     }
+  }, [tab]);
 
-    loadAll();
-    return () => {
-      cancelled = true;
-    };
-  }, [monthStart, monthEnd]);
-
-  // ---- UI helpers ----
-  const pendingRequests = useMemo(() => {
-    // si tienes status “pending”, “open”, etc, aquí luego se ajusta
-    return serviceRequests.slice(0, 8);
-  }, [serviceRequests]);
-
-  const nextEmergencies = useMemo(() => {
-    return emergencyVisits.slice(0, 8);
-  }, [emergencyVisits]);
+  const TabButton = ({
+    active,
+    children,
+    onClick,
+  }: {
+    active: boolean;
+    children: React.ReactNode;
+    onClick: () => void;
+  }) => (
+    <button
+      onClick={onClick}
+      className={[
+        'px-3 py-2 rounded-lg text-sm font-medium border',
+        active
+          ? 'bg-slate-900 text-white border-slate-900'
+          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50',
+      ].join(' ')}
+      type="button"
+    >
+      {children}
+    </button>
+  );
 
   return (
-    <div className="p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Gestión de Calendario</h1>
+    <div className="p-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">{header.title}</h1>
+          {header.subtitle ? <p className="text-slate-600 mt-1">{header.subtitle}</p> : null}
+        </div>
 
-        <div className="flex items-center gap-3">
-          {loading ? (
-            <span className="text-sm text-slate-500">Cargando…</span>
-          ) : (
-            <span className="text-sm text-slate-500">
-              {events.length} evento(s)
-            </span>
-          )}
+        {/* Atajos a otras vistas del sistema (si quieres) */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => onNavigate?.('service-requests')}
+            className="px-3 py-2 rounded-lg text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50"
+          >
+            Ver Solicitudes
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate?.('maintenance-checklist')}
+            className="px-3 py-2 rounded-lg text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50"
+          >
+            Mantenimientos
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate?.('emergencies')}
+            className="px-3 py-2 rounded-lg text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50"
+          >
+            Emergencias
+          </button>
         </div>
       </div>
 
-      {errorMsg ? (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {errorMsg}
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
-        {/* CALENDARIO */}
-        <div className="rounded-lg border bg-white p-2">
-          <FullCalendar
-            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-            initialView="dayGridMonth"
-            height="auto"
-
-            // ✅ Español completo
-            locale={esLocale}
-            buttonText={{
-              today: "hoy",
-              month: "mes",
-              week: "semana",
-              day: "día",
-              list: "lista",
-            }}
-            allDayText="Todo el día"
-            noEventsText="No hay eventos para mostrar"
-
-            headerToolbar={{
-              left: "prev,next today",
-              center: "title",
-              right: "dayGridMonth,timeGridWeek,timeGridDay",
-            }}
-            events={events}
-            datesSet={(arg) => {
-              // Cambia el cursor al rango visible (así recarga el mes correcto)
-              setMonthCursor(arg.start);
-            }}
-          />
-          <p className="mt-2 text-xs text-slate-500">
-            Nota: el 404 de <b>/favicon.png</b> es normal si no lo tienes en /public. No afecta.
-          </p>
-        </div>
-
-        {/* PANEL LATERAL (Dashboard) */}
-        <aside className="rounded-lg border bg-white p-3">
-          <h2 className="mb-3 text-base font-semibold">Acciones rápidas</h2>
-
-          <div className="grid grid-cols-1 gap-2">
-            <button
-              className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-              onClick={() => alert("Próximo paso: modal para programar mantenimiento (lo conectamos a tu tabla real).")}
-            >
-              + Programar mantenimiento
-            </button>
-
-            <button
-              className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-              onClick={() => alert("Próximo paso: modal para crear turno de emergencia (lo conectamos a emergency_shifts).")}
-            >
-              + Programar turno de emergencia
-            </button>
-
-            <button
-              className="rounded-md border px-3 py-2 text-sm font-medium hover:bg-slate-50"
-              onClick={() => alert("Próximo paso: asignar solicitud a técnico y fecha/hora.")}
-            >
-              Asignar / agendar solicitud
-            </button>
-          </div>
-
-          <hr className="my-4" />
-
-          <h3 className="mb-2 text-sm font-semibold">Solicitudes (clientes / técnicos)</h3>
-          {pendingRequests.length === 0 ? (
-            <p className="text-sm text-slate-500">No hay solicitudes en este mes.</p>
-          ) : (
-            <ul className="space-y-2">
-              {pendingRequests.map((r) => (
-                <li key={String(r.id)} className="rounded-md border p-2">
-                  <div className="text-sm font-medium">
-                    {r.title ?? "Solicitud sin título"}
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Estado: {r.status ?? "—"} • {r.created_at ? new Date(r.created_at).toLocaleString("es-CL") : "—"}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <hr className="my-4" />
-
-          <h3 className="mb-2 text-sm font-semibold">Emergencias (visitas)</h3>
-          {nextEmergencies.length === 0 ? (
-            <p className="text-sm text-slate-500">No hay visitas de emergencia en este mes.</p>
-          ) : (
-            <ul className="space-y-2">
-              {nextEmergencies.map((v) => (
-                <li key={String(v.id)} className="rounded-md border p-2">
-                  <div className="text-sm font-medium">
-                    Emergencia: {String(v.emergency_id ?? "—")}
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {v.visit_date ?? "—"} {v.start_time ? `• ${v.start_time}` : ""}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <hr className="my-4" />
-
-          <h3 className="mb-2 text-sm font-semibold">Mantenimientos</h3>
-          <p className="text-sm text-slate-500">
-            Programados este mes: <b>{maintenanceCount}</b> (pendiente de conectar a tu tabla real)
-          </p>
-        </aside>
+      {/* Tabs */}
+      <div className="flex gap-2 flex-wrap">
+        <TabButton active={tab === 'maintenance_calendar'} onClick={() => setTab('maintenance_calendar')}>
+          Calendario Mantenciones
+        </TabButton>
+        <TabButton active={tab === 'mass_planner'} onClick={() => setTab('mass_planner')}>
+          Planificación Masiva
+        </TabButton>
+        <TabButton active={tab === 'emergency_scheduler'} onClick={() => setTab('emergency_scheduler')}>
+          Turnos Emergencia
+        </TabButton>
+        <TabButton active={tab === 'emergency_monthly'} onClick={() => setTab('emergency_monthly')}>
+          Emergencias Mensual
+        </TabButton>
+        <TabButton active={tab === 'coordination_requests'} onClick={() => setTab('coordination_requests')}>
+          Solicitudes
+        </TabButton>
+        <TabButton active={tab === 'availability'} onClick={() => setTab('availability')}>
+          Disponibilidad
+        </TabButton>
       </div>
+
+      {/* Content */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3">
+        {tab === 'maintenance_calendar' ? (
+          <MaintenanceCalendarView />
+        ) : null}
+
+        {tab === 'mass_planner' ? (
+          <MaintenanceMassPlannerV2 />
+        ) : null}
+
+        {tab === 'emergency_scheduler' ? (
+          <EmergencyShiftScheduler />
+        ) : null}
+
+        {tab === 'emergency_monthly' ? (
+          <EmergencyShiftsMonthlyView />
+        ) : null}
+
+        {tab === 'coordination_requests' ? (
+          <CoordinationRequestsPanel />
+        ) : null}
+
+        {tab === 'availability' ? (
+          <TechnicianAvailabilityPanel />
+        ) : null}
+      </div>
+
+      <p className="text-xs text-slate-500">
+        Nota: el 404 de <code>/favicon.png</code> es normal si no lo tienes en <code>/public</code>. No afecta.
+      </p>
     </div>
   );
 }
