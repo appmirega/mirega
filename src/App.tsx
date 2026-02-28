@@ -15,7 +15,6 @@ import { SplashScreen } from './components/SplashScreen';
 import { Layout } from './components/Layout';
 
 function App() {
-  console.log('[App.tsx] App montando...');
   const [currentView, setCurrentView] = useState('dashboard');
   const [viewKey, setViewKey] = useState(0);
   const [showSplash, setShowSplash] = useState(true);
@@ -32,11 +31,10 @@ function App() {
   };
 
   if (loading || showSplash) {
-    console.log('[App.tsx] Mostrando SplashScreen');
     return <SplashScreen onComplete={() => setShowSplash(false)} minDuration={3500} />;
   }
+
   if (!user) {
-    console.log('[App.tsx] Mostrando LoginPage');
     return <LoginPage />;
   }
 
@@ -97,7 +95,7 @@ function App() {
 
     case 'calendar':
       if (profile?.role === 'admin') {
-        // ✅ IMPORTANTE: pasar onNavigate para conectar botones/atajos del calendario
+        // ✅ ESTA ES LA CLAVE: pasamos onNavigate para que los botones del calendario abran vistas existentes
         content = <AdminCalendarDashboard onNavigate={handleNavigate} />;
       } else if (profile?.role === 'technician') {
         content = <TechnicianCalendarView />;
