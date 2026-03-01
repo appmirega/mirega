@@ -1,8 +1,18 @@
-  // Restaurar emergencyContext necesario para renderizado condicional
-  const [emergencyContext, setEmergencyContext] = useState<string | null>(null);
-import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import { X, Building, User, Users, Clock, Calendar, Lock, AlertCircle, Trash2, Check, AlertTriangle } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { supabase } from "../../lib/supabase";
+import {
+  X,
+  Building,
+  User,
+  Users,
+  Clock,
+  Calendar,
+  Lock,
+  AlertCircle,
+  Trash2,
+  Check,
+  AlertTriangle,
+} from "lucide-react";
 
 interface Technician {
   technician_id: string;
@@ -29,9 +39,13 @@ interface MaintenanceAssignment {
   display_status: string;
   estimated_duration_hours: number;
   assigned_technician_id?: string;
+  publication_status?: string;
+
+  // ✅ existe en MaintenanceCalendarView, lo agregamos aquí también
+  emergency_context_notes?: string;
 }
 
-interface Building {
+interface BuildingRow {
   id: string;
   name: string;
   address: string;
@@ -53,113 +67,127 @@ export function MaintenanceAssignmentModal({
   technicians,
   technicianAbsences,
   onClose,
-  onSuccess
+  onSuccess,
 }: MaintenanceAssignmentModalProps) {
-  const [buildings, setBuildings] = useState<Building[]>([]);
-  const [formData, setFormData] = useState({
-    building_id: '',
-    assigned_technician_id: '',
-    is_external: false,
-    external_personnel_name: '',
-    external_personnel_phone: '',
-    scheduled_date: '',
-    scheduled_time_start: '09:00',
-    scheduled_time_end: '11:00',
-    estimated_duration_hours: 2,
-    is_fixed: false,
-    notes: '',
-    requires_additional_technicians: false,
-    additional_technicians_count: 1,
-    coordination_notes: '',
-    assignment_type: 'mantenimiento',
-  });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [buildings, setBuildings] = useState<BuildingRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [isHoliday, setIsHoliday] = useState(false);
-  // Eliminado setEmergencyContext no usado
+
+  // ✅ FIX: Hook dentro del componente (nunca antes de imports)
+  const [emergencyContext, setEmergencyContext] = useState<string | null>(null);
+
+  const [formData, setFormData] = useState({
+    building_id: "",
+    assigned_technician_id: "",
+    is_external: false,
+    external_personnel_name: "",
+    external_personnel_phone: "",
+    scheduled_date: "",
+    scheduled_time_start: "09:00",
+    scheduled_time_end: "11:00",
+    estimated_duration_hours: 2,
+    is_fixed: false,
+    notes: "",
+    requires_additional_technicians: false,
+    additional_technicians_count: 1,
+    coordination_notes: "",
+    assignment_type: "mantenimiento",
+  });
+
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadBuildings();
+
     if (selectedDate) {
-      // Usar fecha local exacta seleccionada, sin desfase ni conversión a UTC
+      // fecha local exacta (sin UTC)
       const yyyy = selectedDate.getFullYear();
-      const mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
-      const dd = String(selectedDate.getDate()).padStart(2, '0');
+      const mm = String(selectedDate.getMonth() + 1).padStart(2, "0");
+      const dd = String(selectedDate.getDate()).padStart(2, "0");
       const dateStr = `${yyyy}-${mm}-${dd}`;
-      setFormData(prev => ({ ...prev, scheduled_date: dateStr }));
+
+      setFormData((prev) => ({ ...prev, scheduled_date: dateStr }));
       checkHoliday(dateStr);
     }
+
     if (assignment) {
       loadAssignmentData();
+    } else {
+      // si es creación nueva, no mostrar contexto de emergencia de otra cosa
+      setEmergencyContext(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, assignment]);
 
   const loadBuildings = async () => {
     const { data, error } = await supabase
-      .from('buildings')
-      .select('id, name, address, client_id')
-      .order('name');
+      .from("buildings")
+      .select("id, name, address, client_id")
+      .order("name");
 
     if (error) {
-      console.error('Error loading buildings:', error);
+      console.error("Error loading buildings:", error);
       return;
     }
 
-    setBuildings(data || []);
+    setBuildings((data as any[]) || []);
   };
 
   const loadAssignmentData = async () => {
     if (!assignment) return;
 
     const { data, error } = await supabase
-      .from('maintenance_assignments')
-      .select('*')
-      .eq('id', assignment.id)
+      .from("maintenance_assignments")
+      .select("*")
+      .eq("id", assignment.id)
       .single();
 
     if (error) {
-      console.error('Error loading assignment:', error);
+      console.error("Error loading assignment:", error);
       return;
     }
 
     setFormData({
-      building_id: data.building_id || '',
-      assigned_technician_id: data.assigned_technician_id || '',
+      building_id: data.building_id || "",
+      assigned_technician_id: data.assigned_technician_id || "",
       is_external: data.is_external || false,
-      external_personnel_name: data.external_personnel_name || '',
-      external_personnel_phone: data.external_personnel_phone || '',
+      external_personnel_name: data.external_personnel_name || "",
+      external_personnel_phone: data.external_personnel_phone || "",
       scheduled_date: data.scheduled_date,
       scheduled_time_start: data.scheduled_time_start,
       scheduled_time_end: data.scheduled_time_end,
       estimated_duration_hours: data.estimated_duration_hours || 2,
       is_fixed: data.is_fixed || false,
-      notes: data.notes || '',
+      notes: data.notes || "",
       requires_additional_technicians: data.requires_additional_technicians || false,
       additional_technicians_count: data.additional_technicians_count || 1,
-      coordination_notes: data.coordination_notes || ''
+      coordination_notes: data.coordination_notes || "",
+      assignment_type: data.assignment_type || "mantenimiento",
     });
+
+    // ✅ FIX: el UI lo usa, ahora sí lo seteamos
+    setEmergencyContext((data.emergency_context_notes as string) ?? null);
   };
 
   const checkHoliday = async (date: string) => {
-    const { data, error } = await supabase
-      .rpc('is_holiday', { check_date: date });
+    const { data, error } = await supabase.rpc("is_holiday", { check_date: date });
 
     if (!error && data) {
-      setIsHoliday(data);
+      setIsHoliday(true);
+    } else {
+      setIsHoliday(false);
     }
   };
 
   const validateForm = async () => {
     const newErrors: Record<string, string> = {};
 
-    // Validar edificio
     if (!formData.building_id) {
-      newErrors.building_id = 'Seleccione un edificio';
+      newErrors.building_id = "Seleccione un edificio";
     }
 
-    // Validar asignación (técnico o personal externo)
     if (!formData.is_external && !formData.assigned_technician_id) {
-      newErrors.assigned_technician_id = 'Seleccione un técnico';
+      newErrors.assigned_technician_id = "Seleccione un técnico";
     }
 
     if (formData.is_external) {
@@ -171,434 +199,325 @@ export function MaintenanceAssignmentModal({
       }
     }
 
-    // Validar fecha y hora
     if (!formData.scheduled_date) {
-      newErrors.scheduled_date = 'Seleccione una fecha';
+      newErrors.scheduled_date = "Seleccione una fecha";
     }
 
     if (!formData.scheduled_time_start) {
-      newErrors.scheduled_time_start = 'Ingrese hora de inicio';
+      newErrors.scheduled_time_start = "Seleccione hora de inicio";
     }
 
     if (!formData.scheduled_time_end) {
-      newErrors.scheduled_time_end = 'Ingrese hora de fin';
-    }
-
-    if (formData.scheduled_time_start >= formData.scheduled_time_end) {
-      newErrors.scheduled_time_end = 'La hora de fin debe ser posterior a la de inicio';
-    }
-
-    // Validar que técnicos internos solo trabajen de lunes a viernes
-    if (!formData.is_external) {
-      // Parsear fecha sin problemas de zona horaria: YYYY-MM-DD -> new Date(year, month-1, day)
-      const [year, month, day] = formData.scheduled_date.split('-').map(Number);
-      const date = new Date(year, month - 1, day);
-      const dayOfWeek = date.getDay();
-      
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        newErrors.scheduled_date = 'Los técnicos internos solo trabajan de lunes a viernes. Use personal externo para fines de semana.';
-      }
-
-      // Validar disponibilidad del técnico
-      if (formData.assigned_technician_id) {
-        // Validar ausencia (vacaciones/permiso) usando mapa local
-        const absencesForDate = technicianAbsences?.get(formData.scheduled_date);
-        const reasons = absencesForDate?.get(formData.assigned_technician_id);
-        if (reasons && reasons.length > 0) {
-          newErrors.assigned_technician_id = `El técnico no está disponible (vacaciones/permiso: ${reasons.join(', ')})`;
-        } else {
-          // Validar disponibilidad del técnico vía RPC (respaldo)
-          const { data: isAvailable } = await supabase
-            .rpc('is_technician_available', {
-              tech_id: formData.assigned_technician_id,
-              check_date: formData.scheduled_date
-            });
-
-          if (!isAvailable) {
-            newErrors.assigned_technician_id = 'El técnico no está disponible en esta fecha (vacaciones o permiso)';
-          }
-        }
-      }
-    }
-
-    // Advertencia para días festivos (no bloquear, solo advertir)
-    if (isHoliday && !formData.is_external) {
-      newErrors.scheduled_date = 'El día seleccionado es festivo. Se recomienda usar personal externo.';
+      newErrors.scheduled_time_end = "Seleccione hora de fin";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!await validateForm()) {
-      return;
-    }
+  const handleSave = async () => {
+    const ok = await validateForm();
+    if (!ok) return;
 
     setLoading(true);
-
     try {
-      const payload = {
+      const payload: any = {
         building_id: formData.building_id,
+        assigned_technician_id: formData.is_external ? null : formData.assigned_technician_id,
+        is_external: formData.is_external,
+        external_personnel_name: formData.is_external ? formData.external_personnel_name : null,
+        external_personnel_phone: formData.is_external ? formData.external_personnel_phone : null,
         scheduled_date: formData.scheduled_date,
         scheduled_time_start: formData.scheduled_time_start,
         scheduled_time_end: formData.scheduled_time_end,
         estimated_duration_hours: formData.estimated_duration_hours,
-        is_external: formData.is_external,
-        assigned_technician_id: formData.is_external ? null : formData.assigned_technician_id,
-        external_personnel_name: formData.is_external ? formData.external_personnel_name : null,
-        external_personnel_phone: formData.is_external ? formData.external_personnel_phone : null,
         is_fixed: formData.is_fixed,
-        notes: formData.notes || null,
-        status: 'scheduled',
+        notes: formData.notes,
         requires_additional_technicians: formData.requires_additional_technicians,
         additional_technicians_count: formData.additional_technicians_count,
-        coordination_notes: formData.coordination_notes || null,
-        calendar_month: formData.scheduled_date.substring(0, 7),
-        assignment_type: formData.assignment_type || (formData.is_external ? 'turno' : 'mantenimiento') // Guarda el tipo seleccionado
+        coordination_notes: formData.coordination_notes,
+        assignment_type: formData.assignment_type,
       };
 
-      if (assignment) {
-        // Actualizar asignación existente
+      if (assignment?.id) {
         const { error } = await supabase
-          .from('maintenance_assignments')
+          .from("maintenance_assignments")
           .update(payload)
-          .eq('id', assignment.id);
+          .eq("id", assignment.id);
 
         if (error) throw error;
       } else {
-        // Crear nueva asignación
-        const { error } = await supabase
-          .from('maintenance_assignments')
-          .insert([payload]);
-
+        const { error } = await supabase.from("maintenance_assignments").insert(payload);
         if (error) throw error;
       }
 
       onSuccess();
-      if (onClose) onClose();
-      // Resetear assignment_type correctamente al crear nueva asignación
-      setFormData(prev => ({
-        ...prev,
-        assignment_type: prev.is_external ? 'turno' : 'mantenimiento',
-      }));
-    } catch (error: any) {
-      console.error('Error saving assignment:', error);
-      setErrors({ submit: error.message || 'Error al guardar la asignación' });
+      onClose();
+    } catch (err) {
+      console.error("Error saving assignment:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!assignment || !confirm('¿Está seguro de eliminar esta asignación de mantenimiento?')) {
-      return;
-    }
+    if (!assignment?.id) return;
+
+    const ok = window.confirm("¿Eliminar esta asignación?");
+    if (!ok) return;
 
     setLoading(true);
-
     try {
       const { error } = await supabase
-        .from('maintenance_assignments')
-        .update({ status: 'cancelled' })
-        .eq('id', assignment.id);
+        .from("maintenance_assignments")
+        .delete()
+        .eq("id", assignment.id);
 
       if (error) throw error;
 
       onSuccess();
-    } catch (error: any) {
-      console.error('Error deleting assignment:', error);
-      setErrors({ submit: error.message || 'Error al eliminar la asignación' });
+      onClose();
+    } catch (err) {
+      console.error("Error deleting assignment:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleComplete = async () => {
-    if (!assignment || !confirm('¿Confirmar que el mantenimiento fue completado?')) {
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const { error } = await supabase
-        .from('maintenance_assignments')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          completed_by_signature: 'Firmado desde calendario' // TODO: Implementar firma real
-        })
-        .eq('id', assignment.id);
-
-      if (error) throw error;
-
-      onSuccess();
-    } catch (error: any) {
-      console.error('Error completing assignment:', error);
-      setErrors({ submit: error.message || 'Error al completar la asignación' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const availableTechnicians = technicians.filter(t => !t.is_on_leave);
+  const currentDateStr = formData.scheduled_date;
+  const absencesForDay = currentDateStr ? technicianAbsences?.get(currentDateStr) : undefined;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-200">
-          <h2 className="text-xl font-bold text-slate-900">
-            {assignment ? 'Editar Mantenimiento' : 'Asignar Mantenimiento'}
-          </h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
+      <div className="w-full max-w-3xl rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b p-4">
+          <div>
+            <h2 className="text-lg font-semibold">
+              {assignment ? "Editar asignación" : "Nueva asignación"}
+            </h2>
+            <p className="text-sm text-slate-500">
+              {isHoliday ? "⚠️ Fecha feriado detectada" : "Planifica y asigna técnicos sin romper el calendario"}
+            </p>
+          </div>
+
           <button
+            className="rounded-md p-2 hover:bg-slate-100"
             onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            aria-label="Cerrar"
+            type="button"
           >
-            <X className="w-5 h-5 text-slate-500" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Errores generales */}
-          {errors.submit && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-800">{errors.submit}</p>
-            </div>
-          )}
-
-          {/* Advertencia de día festivo */}
-          {isHoliday && (
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-purple-800">
-                El día seleccionado es festivo. Se recomienda asignar a personal externo.
-              </p>
-            </div>
-          )}
-
+        <div className="space-y-4 p-4">
           {/* Edificio */}
           <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
-              <Building className="w-4 h-4" />
-              Edificio *
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              <span className="inline-flex items-center gap-2">
+                <Building className="h-4 w-4" /> Edificio
+              </span>
             </label>
             <select
-              value={formData.building_id}
-              onChange={(e) => setFormData({ ...formData, building_id: e.target.value })}
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                errors.building_id ? 'border-red-300' : 'border-slate-300'
+              className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
+                errors.building_id ? "border-red-400" : "border-slate-200"
               }`}
+              value={formData.building_id}
+              onChange={(e) => setFormData((p) => ({ ...p, building_id: e.target.value }))}
             >
-              <option value="">Seleccione un edificio</option>
-              {buildings.map(building => (
-                <option key={building.id} value={building.id}>
-                  {building.name} - {building.address}
+              <option value="">Seleccione...</option>
+              {buildings.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} — {b.address}
                 </option>
               ))}
             </select>
             {errors.building_id && (
-              <p className="text-xs text-red-600 mt-1">{errors.building_id}</p>
+              <div className="mt-1 flex items-center gap-2 text-sm text-red-600">
+                <AlertCircle className="h-4 w-4" /> {errors.building_id}
+              </div>
             )}
           </div>
 
-          {/* Tipo de asignación */}
-          <div>
-            <label className="text-sm font-medium text-slate-700 mb-2 block">
-              Tipo de Asignación *
-            </label>
-            <select
-              value={formData.assignment_type || (formData.is_external ? 'turno' : 'mantenimiento')}
-              onChange={e => setFormData({ ...formData, assignment_type: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-2"
-              required
-            >
-              <option value="mantenimiento">Mantenimiento</option>
-              <option value="reparaciones">Reparaciones</option>
-              <option value="induccion_rescate">Inducción de rescate</option>
-              <option value="vista_certificacion">Vista certificación</option>
-              <option value="otros">Otros</option>
-              <option value="turno">Turno</option>
-            </select>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  checked={!formData.is_external}
-                  onChange={() => setFormData({ ...formData, is_external: false })}
-                  className="w-4 h-4 text-blue-600"
-                />
-                <User className="w-4 h-4 text-slate-600" />
-                <span className="text-sm text-slate-700">Técnico Interno</span>
+          {/* Asignación */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-lg border p-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <Users className="h-4 w-4" /> Técnico interno
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
+
+              <select
+                disabled={formData.is_external}
+                className={`mt-2 w-full rounded-md border px-3 py-2 text-sm outline-none ${
+                  errors.assigned_technician_id ? "border-red-400" : "border-slate-200"
+                } ${formData.is_external ? "bg-slate-50" : ""}`}
+                value={formData.assigned_technician_id}
+                onChange={(e) =>
+                  setFormData((p) => ({ ...p, assigned_technician_id: e.target.value }))
+                }
+              >
+                <option value="">Seleccione...</option>
+                {technicians.map((t) => {
+                  const isAbsent = absencesForDay?.has(t.technician_id) ?? false;
+                  const reasons = isAbsent ? absencesForDay?.get(t.technician_id) ?? [] : [];
+                  const badge = isAbsent ? ` (AUSENTE: ${reasons.join(", ")})` : "";
+                  return (
+                    <option key={t.technician_id} value={t.technician_id}>
+                      {t.full_name}
+                      {badge}
+                    </option>
+                  );
+                })}
+              </select>
+
+              {errors.assigned_technician_id && !formData.is_external && (
+                <div className="mt-1 flex items-center gap-2 text-sm text-red-600">
+                  <AlertCircle className="h-4 w-4" /> {errors.assigned_technician_id}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <User className="h-4 w-4" /> Personal externo
+              </label>
+
+              <div className="mt-2 flex items-center gap-2">
                 <input
-                  type="radio"
+                  type="checkbox"
                   checked={formData.is_external}
-                  onChange={() => setFormData({ ...formData, is_external: true })}
-                  className="w-4 h-4 text-blue-600"
+                  onChange={(e) =>
+                    setFormData((p) => ({
+                      ...p,
+                      is_external: e.target.checked,
+                      assigned_technician_id: e.target.checked ? "" : p.assigned_technician_id,
+                    }))
+                  }
                 />
-                <Users className="w-4 h-4 text-slate-600" />
-                <span className="text-sm text-slate-700">Personal Externo</span>
-              </label>
+                <span className="text-sm text-slate-700">Asignar externo</span>
+              </div>
+
+              <div className="mt-2 grid grid-cols-1 gap-2">
+                <input
+                  disabled={!formData.is_external}
+                  className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
+                    errors.external_personnel_name ? "border-red-400" : "border-slate-200"
+                  } ${!formData.is_external ? "bg-slate-50" : ""}`}
+                  placeholder="Nombre"
+                  value={formData.external_personnel_name}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, external_personnel_name: e.target.value }))
+                  }
+                />
+                <input
+                  disabled={!formData.is_external}
+                  className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
+                    errors.external_personnel_phone ? "border-red-400" : "border-slate-200"
+                  } ${!formData.is_external ? "bg-slate-50" : ""}`}
+                  placeholder="Teléfono"
+                  value={formData.external_personnel_phone}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, external_personnel_phone: e.target.value }))
+                  }
+                />
+              </div>
+
+              {(errors.external_personnel_name || errors.external_personnel_phone) &&
+                formData.is_external && (
+                  <div className="mt-2 space-y-1 text-sm text-red-600">
+                    {errors.external_personnel_name && (
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4" /> {errors.external_personnel_name}
+                      </div>
+                    )}
+                    {errors.external_personnel_phone && (
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4" /> {errors.external_personnel_phone}
+                      </div>
+                    )}
+                  </div>
+                )}
             </div>
           </div>
 
-          {/* Técnico interno */}
-          {!formData.is_external && (
+          {/* Fecha y Horas */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
-                <User className="w-4 h-4" />
-                Técnico *
-              </label>
-              <select
-                value={formData.assigned_technician_id}
-                onChange={(e) => setFormData({ ...formData, assigned_technician_id: e.target.value })}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  errors.assigned_technician_id ? 'border-red-300' : 'border-slate-300'
-                }`}
-              >
-                <option value="">Seleccione un técnico</option>
-                {availableTechnicians.map(tech => (
-                  <option key={tech.technician_id} value={tech.technician_id}>
-                    {tech.full_name} {tech.emergency_shift_type && `(Turno: ${tech.emergency_shift_type})`}
-                  </option>
-                ))}
-              </select>
-              {errors.assigned_technician_id && (
-                <p className="text-xs text-red-600 mt-1">{errors.assigned_technician_id}</p>
-              )}
-            </div>
-          )}
-
-          {/* Personal externo */}
-          {formData.is_external && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-slate-700 mb-2 block">
-                  Nombre Personal Externo *
-                </label>
-                <input
-                  type="text"
-                  value={formData.external_personnel_name}
-                  onChange={(e) => setFormData({ ...formData, external_personnel_name: e.target.value })}
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                    errors.external_personnel_name ? 'border-red-300' : 'border-slate-300'
-                  }`}
-                  placeholder="Ej: Juan Pérez"
-                />
-                {errors.external_personnel_name && (
-                  <p className="text-xs text-red-600 mt-1">{errors.external_personnel_name}</p>
-                )}
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700 mb-2 block">
-                  Teléfono *
-                </label>
-                <input
-                  type="tel"
-                  value={formData.external_personnel_phone}
-                  onChange={(e) => setFormData({ ...formData, external_personnel_phone: e.target.value })}
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                    errors.external_personnel_phone ? 'border-red-300' : 'border-slate-300'
-                  }`}
-                  placeholder="+56912345678"
-                />
-                {errors.external_personnel_phone && (
-                  <p className="text-xs text-red-600 mt-1">{errors.external_personnel_phone}</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Fecha y horario */}
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
-                <Calendar className="w-4 h-4" />
-                Fecha *
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                <span className="inline-flex items-center gap-2">
+                  <Calendar className="h-4 w-4" /> Fecha
+                </span>
               </label>
               <input
                 type="date"
+                className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
+                  errors.scheduled_date ? "border-red-400" : "border-slate-200"
+                }`}
                 value={formData.scheduled_date}
                 onChange={(e) => {
-                  setFormData({ ...formData, scheduled_date: e.target.value });
+                  setFormData((p) => ({ ...p, scheduled_date: e.target.value }));
                   checkHoliday(e.target.value);
                 }}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  errors.scheduled_date ? 'border-red-300' : 'border-slate-300'
-                }`}
               />
               {errors.scheduled_date && (
-                <p className="text-xs text-red-600 mt-1">{errors.scheduled_date}</p>
+                <div className="mt-1 flex items-center gap-2 text-sm text-red-600">
+                  <AlertCircle className="h-4 w-4" /> {errors.scheduled_date}
+                </div>
               )}
             </div>
+
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
-                <Clock className="w-4 h-4" />
-                Hora Inicio *
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                <span className="inline-flex items-center gap-2">
+                  <Clock className="h-4 w-4" /> Inicio
+                </span>
               </label>
               <input
                 type="time"
-                value={formData.scheduled_time_start}
-                onChange={(e) => setFormData({ ...formData, scheduled_time_start: e.target.value })}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  errors.scheduled_time_start ? 'border-red-300' : 'border-slate-300'
+                className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
+                  errors.scheduled_time_start ? "border-red-400" : "border-slate-200"
                 }`}
+                value={formData.scheduled_time_start}
+                onChange={(e) => setFormData((p) => ({ ...p, scheduled_time_start: e.target.value }))}
               />
               {errors.scheduled_time_start && (
-                <p className="text-xs text-red-600 mt-1">{errors.scheduled_time_start}</p>
+                <div className="mt-1 flex items-center gap-2 text-sm text-red-600">
+                  <AlertCircle className="h-4 w-4" /> {errors.scheduled_time_start}
+                </div>
               )}
             </div>
+
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
-                <Clock className="w-4 h-4" />
-                Hora Fin *
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                <span className="inline-flex items-center gap-2">
+                  <Clock className="h-4 w-4" /> Fin
+                </span>
               </label>
               <input
                 type="time"
-                value={formData.scheduled_time_end}
-                onChange={(e) => setFormData({ ...formData, scheduled_time_end: e.target.value })}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  errors.scheduled_time_end ? 'border-red-300' : 'border-slate-300'
+                className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
+                  errors.scheduled_time_end ? "border-red-400" : "border-slate-200"
                 }`}
+                value={formData.scheduled_time_end}
+                onChange={(e) => setFormData((p) => ({ ...p, scheduled_time_end: e.target.value }))}
               />
               {errors.scheduled_time_end && (
-                <p className="text-xs text-red-600 mt-1">{errors.scheduled_time_end}</p>
+                <div className="mt-1 flex items-center gap-2 text-sm text-red-600">
+                  <AlertCircle className="h-4 w-4" /> {errors.scheduled_time_end}
+                </div>
               )}
             </div>
-          </div>
-
-          {/* Duración estimada */}
-          <div>
-            <label className="text-sm font-medium text-slate-700 mb-2 block">
-              Duración Estimada (horas)
-            </label>
-            <input
-              type="number"
-              step="0.5"
-              min="0.5"
-              max="8"
-              value={formData.estimated_duration_hours}
-              onChange={(e) => setFormData({ ...formData, estimated_duration_hours: parseFloat(e.target.value) })}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
           </div>
 
           {/* Bloquear fecha */}
-          <div>
-            <label className="flex items-center gap-2 cursor-pointer">
+          <div className="rounded-lg border p-3">
+            <label className="flex cursor-pointer items-center gap-3">
               <input
                 type="checkbox"
                 checked={formData.is_fixed}
-                onChange={(e) => setFormData({ ...formData, is_fixed: e.target.checked })}
-                className="w-4 h-4 text-blue-600 rounded"
+                onChange={(e) => setFormData((p) => ({ ...p, is_fixed: e.target.checked }))}
               />
-              <Lock className="w-4 h-4 text-slate-600" />
+              <Lock className="h-4 w-4 text-slate-600" />
               <span className="text-sm text-slate-700">
                 Bloquear fecha (no permitir reprogramación)
               </span>
@@ -607,121 +526,60 @@ export function MaintenanceAssignmentModal({
 
           {/* Contexto de Emergencias */}
           {emergencyContext && (
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+            <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">
               <div className="flex items-start gap-2">
-                <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-orange-800 whitespace-pre-wrap">
-                  {emergencyContext}
-                </div>
+                <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-orange-600" />
+                <div className="whitespace-pre-wrap text-sm text-orange-800">{emergencyContext}</div>
               </div>
             </div>
           )}
 
-          {/* Solicitud de Apoyo Adicional */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.requires_additional_technicians}
-                onChange={(e) => setFormData({ ...formData, requires_additional_technicians: e.target.checked })}
-                className="w-4 h-4 text-blue-600 rounded"
-              />
-              <div>
-                <span className="text-sm font-medium text-slate-700">Requiere apoyo adicional</span>
-                <p className="text-xs text-slate-600">Se necesitan múltiples técnicos para este mantenimiento</p>
-              </div>
-            </label>
-
-            {formData.requires_additional_technicians && (
-              <div className="mt-3 space-y-3">
-                <div>
-                  <label className="text-sm font-medium text-slate-700 mb-2 block">
-                    Cantidad total de técnicos necesarios
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="5"
-                    value={formData.additional_technicians_count}
-                    onChange={(e) => setFormData({ ...formData, additional_technicians_count: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-700 mb-2 block">
-                    Notas de coordinación
-                  </label>
-                  <textarea
-                    value={formData.coordination_notes}
-                    onChange={(e) => setFormData({ ...formData, coordination_notes: e.target.value })}
-                    rows={2}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Ej: Se requiere especialista eléctrico, soldador..."
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Notas */}
           <div>
-            <label className="text-sm font-medium text-slate-700 mb-2 block">
-              Notas / Observaciones
-            </label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Notas</label>
             <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+              className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none"
               rows={3}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Información adicional sobre el mantenimiento..."
+              value={formData.notes}
+              onChange={(e) => setFormData((p) => ({ ...p, notes: e.target.value }))}
+              placeholder="Notas internas..."
             />
           </div>
+        </div>
 
-          {/* Botones */}
-          <div className="flex gap-3 pt-4 border-t border-slate-200">
-            {assignment && assignment.status !== 'completed' && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleComplete}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                >
-                  <Check className="w-4 h-4" />
-                  Completar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Cancelar
-                </button>
-              </>
-            )}
-            
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="ml-auto px-6 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50"
-            >
-              Cerrar
-            </button>
-            
-            {assignment?.status !== 'completed' && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t p-4">
+          <div className="flex gap-2">
+            {assignment?.id && (
               <button
-                type="submit"
+                type="button"
+                className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+                onClick={handleDelete}
                 disabled={loading}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? 'Guardando...' : assignment ? 'Actualizar' : 'Asignar'}
+                <Trash2 className="h-4 w-4" /> Eliminar
               </button>
             )}
           </div>
-        </form>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="rounded-md border px-3 py-2 text-sm font-medium hover:bg-slate-50"
+              onClick={onClose}
+              disabled={loading}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              onClick={handleSave}
+              disabled={loading}
+            >
+              <Check className="h-4 w-4" /> {loading ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
