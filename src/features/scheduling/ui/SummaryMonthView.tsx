@@ -71,11 +71,12 @@ export function SummaryMonthView(props: {
   const [approvedAbsencesCount, setApprovedAbsencesCount] = useState(0);
   const [blockedDaysSet, setBlockedDaysSet] = useState<Set<string>>(new Set());
 
-  // ✅ Cargar ausencias aprobadas sin hooks nuevos
+  // ✅ Carga ausencias aprobadas directamente aquí
   useEffect(() => {
     const load = async () => {
       setAbsLoading(true);
       setAbsError("");
+
       try {
         const { data, error } = await supabase
           .from("technician_availability")
@@ -205,8 +206,8 @@ export function SummaryMonthView(props: {
             <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-700">
               <div className="font-semibold">Tip</div>
               <div>
-                El sombreado rojo claro indica días con ausencias aprobadas. En una mejora posterior
-                bloquearemos también el planner.
+                El sombreado rojo claro indica días con ausencias aprobadas. En el
+                siguiente paso bloqueamos también el planner.
               </div>
             </div>
           </div>
@@ -215,7 +216,8 @@ export function SummaryMonthView(props: {
             <div className="rounded-md border bg-slate-50 p-3">
               <div className="text-sm font-semibold">{selected.title}</div>
               <div className="text-xs text-slate-600">
-                Tipo: <b>{typeLabel(selected.event_type)}</b> · Estado: <b>{safe(selected.status)}</b>
+                Tipo: <b>{typeLabel(selected.event_type)}</b> · Estado:{" "}
+                <b>{safe(selected.status)}</b>
               </div>
             </div>
 
