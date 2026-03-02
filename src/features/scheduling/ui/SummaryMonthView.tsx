@@ -5,12 +5,20 @@ import {
   Views,
   type Event as RBCEvent,
 } from "react-big-calendar";
-import { format, parse, startOfWeek, getDay } from "date-fns";
+import {
+  format,
+  parse,
+  startOfWeek,
+  getDay,
+  eachDayOfInterval,
+  isWithinInterval,
+} from "date-fns";
 import { es } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 
 import type { CalendarEventRow } from "../domain/calendarEvent";
 import { useMonthCalendarEvents } from "../hooks/useMonthCalendarEvents";
+import { useMonthApprovedAbsences } from "../hooks/useMonthApprovedAbsences";
 
 const locales = { es };
 
@@ -62,11 +70,16 @@ function safe(v: any) {
 export function SummaryMonthView(props: {
   selectedDate: Date;
   monthStart: string; // YYYY-MM-DD
-  monthEnd: string;   // YYYY-MM-DD
+  monthEnd: string; // YYYY-MM-DD
   onNavigate: (d: Date) => void;
 }) {
   const { selectedDate, monthStart, monthEnd, onNavigate } = props;
+
+  // eventos (view consolidada)
   const { loading, rows, error } = useMonthCalendarEvents(monthStart, monthEnd);
+
+  // ausencias aprobadas (tabla technician_availability)
+  const abs = useMonthApprovedAbsences(monthStart, monthEnd);
 
   const [selected, setSelected] = useState<CalendarEventRow | null>(null);
 
@@ -82,23 +95,70 @@ export function SummaryMonthView(props: {
 
   const stats = useMemo(() => {
     const s = { maintenance: 0, emergency_shift: 0, emergency_visit: 0 };
-    for (const r of rows) s[r.event_type] = (s as any)[r.event_type] + 1;
+    for (const r of rows) (s as any)[r.event_type] = ((s as any)[r.event_type] ?? 0) + 1;
     return s;
   }, [rows]);
 
-  const eventPropGetter = (event: CalEvent) => {
-    const t = event.resource.event_type;
-    // No fijamos colores globales, pero sí usamos clases inline leves (sin estilos raros)
-    // Si quieres colores exactos, dime y lo dejamos fino.
+  /**
+   * Construye un set de días (YYYY-MM-DD) bloqueados por ausencias aprobadas.
+   * Sombreamos el día si al menos 1 ausencia aprobada cubre la fecha.
+   */
+  const blockedDaysSet = useMemo(() => {
+    const set = new Set<string>();
+
+    if (!abs.rows?.length) return set;
+
+    const monthInterval = {
+      start: new Date(`${monthStart}T00:00:00`),
+      end: new Date(`${monthEnd}T23:59:59`),
+    };
+
+    for (const a of abs.rows) {
+      // Intersección de [a.start_date, a.end_date] con el intervalo del mes
+      const aStart = new Date(`${a.start_date}T00:00:00`);
+      const aEnd = new Date(`${a.end_date}T23:59:59`);
+
+      // Si no se cruzan, saltar (igual ya filtramos en SQL, pero por seguridad)
+      if (aEnd < monthInterval.start || aStart > monthInterval.end) continue;
+
+      const clampStart = aStart < monthInterval.start ? monthInterval.start : aStart;
+      const clampEnd = aEnd > monthInterval.end ? monthInterval.end : aEnd;
+
+      const days = eachDayOfInterval({ start: clampStart, end: clampEnd });
+      for (const d of days) set.add(format(d, "yyyy-MM-dd"));
+    }
+
+    return set;
+  }, [abs.rows, monthStart, monthEnd]);
+
+  const blockedDaysCount = blockedDaysSet.size;
+
+  const eventPropGetter = (_event: CalEvent) => {
     const base = {
       borderRadius: "8px",
       border: "1px solid rgba(0,0,0,0.08)",
       padding: "2px 6px",
     } as React.CSSProperties;
 
-    if (t === "maintenance") return { style: { ...base } };
-    if (t === "emergency_shift") return { style: { ...base } };
-    return { style: { ...base } };
+    return { style: base };
+  };
+
+  /**
+   * Sombreado de día: SOLO afecta la celda del día.
+   * En month view, RBC llama dayPropGetter para cada celda.
+   */
+  const dayPropGetter = (date: Date) => {
+    const key = format(date, "yyyy-MM-dd");
+
+    if (!blockedDaysSet.has(key)) return {};
+
+    // Sombreado muy suave (bloqueo visual), sin romper lectura.
+    return {
+      style: {
+        backgroundColor: "rgba(255, 0, 0, 0.06)",
+      } as React.CSSProperties,
+      className: "mirega-day-blocked",
+    };
   };
 
   return (
@@ -121,7 +181,24 @@ export function SummaryMonthView(props: {
             <span className="rounded-full border bg-white px-2 py-1">
               Visitas: <b>{stats.emergency_visit}</b>
             </span>
+
+            <span className="rounded-full border bg-white px-2 py-1">
+              Días bloqueados: <b>{blockedDaysCount}</b>
+            </span>
+
+            <span className="rounded-full border bg-white px-2 py-1">
+              Ausencias aprobadas: <b>{abs.rows.length}</b>
+              {abs.error ? <span className="ml-1 text-red-600">({abs.error})</span> : null}
+            </span>
           </div>
+        </div>
+
+        <div className="mb-2 flex items-center gap-2 text-xs text-slate-600">
+          <span
+            className="inline-block h-3 w-3 rounded-sm"
+            style={{ backgroundColor: "rgba(255, 0, 0, 0.06)", border: "1px solid rgba(0,0,0,0.08)" }}
+          />
+          <span>Día con ausencias aprobadas (bloqueo visual)</span>
         </div>
 
         <RBCalendar
@@ -138,6 +215,7 @@ export function SummaryMonthView(props: {
           popup
           onSelectEvent={(ev) => setSelected((ev as CalEvent).resource)}
           eventPropGetter={eventPropGetter as any}
+          dayPropGetter={dayPropGetter as any}
         />
       </div>
 
@@ -146,8 +224,17 @@ export function SummaryMonthView(props: {
         <div className="mb-2 text-base font-semibold">Detalle</div>
 
         {!selected ? (
-          <div className="text-sm text-slate-600">
-            Haz click en un evento del calendario para ver los detalles.
+          <div className="space-y-2 text-sm text-slate-600">
+            <div>Haz click en un evento del calendario para ver los detalles.</div>
+
+            {/* Extra útil: si hoy cae en un día bloqueado */}
+            <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-700">
+              <div className="font-semibold">Tip</div>
+              <div>
+                El sombreado rojo claro indica días con ausencias aprobadas. El planner
+                se bloqueará en la siguiente mejora.
+              </div>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
