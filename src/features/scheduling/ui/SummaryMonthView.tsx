@@ -1,24 +1,17 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Calendar as RBCalendar,
   dateFnsLocalizer,
   Views,
   type Event as RBCEvent,
 } from "react-big-calendar";
-import {
-  format,
-  parse,
-  startOfWeek,
-  getDay,
-  eachDayOfInterval,
-  isWithinInterval,
-} from "date-fns";
+import { format, parse, startOfWeek, getDay, eachDayOfInterval } from "date-fns";
 import { es } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 
+import { supabase } from "../../../lib/supabase";
 import type { CalendarEventRow } from "../domain/calendarEvent";
 import { useMonthCalendarEvents } from "../hooks/useMonthCalendarEvents";
-import { useMonthApprovedAbsences } from "../hooks/useMonthApprovedAbsences";
 
 const locales = { es };
 
@@ -52,19 +45,14 @@ function asDate(value: string) {
   return new Date(value);
 }
 
-function isAllDay(row: CalendarEventRow) {
-  // Mantención como all-day (por ahora)
-  return row.event_type === "maintenance";
+function safe(v: any) {
+  return v == null || v === "" ? "—" : String(v);
 }
 
 function typeLabel(t: CalendarEventRow["event_type"]) {
   if (t === "maintenance") return "Mantención";
   if (t === "emergency_shift") return "Turno emergencia";
   return "Visita emergencia";
-}
-
-function safe(v: any) {
-  return v == null || v === "" ? "—" : String(v);
 }
 
 export function SummaryMonthView(props: {
@@ -75,20 +63,61 @@ export function SummaryMonthView(props: {
 }) {
   const { selectedDate, monthStart, monthEnd, onNavigate } = props;
 
-  // eventos (view consolidada)
   const { loading, rows, error } = useMonthCalendarEvents(monthStart, monthEnd);
 
-  // ausencias aprobadas (tabla technician_availability)
-  const abs = useMonthApprovedAbsences(monthStart, monthEnd);
-
   const [selected, setSelected] = useState<CalendarEventRow | null>(null);
+  const [absLoading, setAbsLoading] = useState(false);
+  const [absError, setAbsError] = useState("");
+  const [approvedAbsencesCount, setApprovedAbsencesCount] = useState(0);
+  const [blockedDaysSet, setBlockedDaysSet] = useState<Set<string>>(new Set());
+
+  // ✅ Cargar ausencias aprobadas sin hooks nuevos
+  useEffect(() => {
+    const load = async () => {
+      setAbsLoading(true);
+      setAbsError("");
+      try {
+        const { data, error } = await supabase
+          .from("technician_availability")
+          .select("start_date, end_date")
+          .eq("status", "approved")
+          .lte("start_date", monthEnd)
+          .gte("end_date", monthStart);
+
+        if (error) throw error;
+
+        const list = data ?? [];
+        setApprovedAbsencesCount(list.length);
+
+        const set = new Set<string>();
+
+        for (const a of list as any[]) {
+          const start = new Date(`${a.start_date}T00:00:00`);
+          const end = new Date(`${a.end_date}T00:00:00`);
+          const days = eachDayOfInterval({ start, end });
+
+          for (const d of days) set.add(format(d, "yyyy-MM-dd"));
+        }
+
+        setBlockedDaysSet(set);
+      } catch (e: any) {
+        setAbsError(e?.message || "Error cargando ausencias aprobadas");
+        setBlockedDaysSet(new Set());
+        setApprovedAbsencesCount(0);
+      } finally {
+        setAbsLoading(false);
+      }
+    };
+
+    void load();
+  }, [monthStart, monthEnd]);
 
   const events: CalEvent[] = useMemo(() => {
     return rows.map((r) => ({
       title: r.title,
       start: asDate(r.start_at),
       end: asDate(r.end_at),
-      allDay: isAllDay(r),
+      allDay: r.event_type === "maintenance",
       resource: r,
     }));
   }, [rows]);
@@ -99,71 +128,16 @@ export function SummaryMonthView(props: {
     return s;
   }, [rows]);
 
-  /**
-   * Construye un set de días (YYYY-MM-DD) bloqueados por ausencias aprobadas.
-   * Sombreamos el día si al menos 1 ausencia aprobada cubre la fecha.
-   */
-  const blockedDaysSet = useMemo(() => {
-    const set = new Set<string>();
-
-    if (!abs.rows?.length) return set;
-
-    const monthInterval = {
-      start: new Date(`${monthStart}T00:00:00`),
-      end: new Date(`${monthEnd}T23:59:59`),
-    };
-
-    for (const a of abs.rows) {
-      // Intersección de [a.start_date, a.end_date] con el intervalo del mes
-      const aStart = new Date(`${a.start_date}T00:00:00`);
-      const aEnd = new Date(`${a.end_date}T23:59:59`);
-
-      // Si no se cruzan, saltar (igual ya filtramos en SQL, pero por seguridad)
-      if (aEnd < monthInterval.start || aStart > monthInterval.end) continue;
-
-      const clampStart = aStart < monthInterval.start ? monthInterval.start : aStart;
-      const clampEnd = aEnd > monthInterval.end ? monthInterval.end : aEnd;
-
-      const days = eachDayOfInterval({ start: clampStart, end: clampEnd });
-      for (const d of days) set.add(format(d, "yyyy-MM-dd"));
-    }
-
-    return set;
-  }, [abs.rows, monthStart, monthEnd]);
-
-  const blockedDaysCount = blockedDaysSet.size;
-
-  const eventPropGetter = (_event: CalEvent) => {
-    const base = {
-      borderRadius: "8px",
-      border: "1px solid rgba(0,0,0,0.08)",
-      padding: "2px 6px",
-    } as React.CSSProperties;
-
-    return { style: base };
-  };
-
-  /**
-   * Sombreado de día: SOLO afecta la celda del día.
-   * En month view, RBC llama dayPropGetter para cada celda.
-   */
   const dayPropGetter = (date: Date) => {
     const key = format(date, "yyyy-MM-dd");
-
     if (!blockedDaysSet.has(key)) return {};
-
-    // Sombreado muy suave (bloqueo visual), sin romper lectura.
     return {
-      style: {
-        backgroundColor: "rgba(255, 0, 0, 0.06)",
-      } as React.CSSProperties,
-      className: "mirega-day-blocked",
+      style: { backgroundColor: "rgba(255, 0, 0, 0.06)" } as React.CSSProperties,
     };
   };
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_360px]">
-      {/* Calendar */}
       <div className="rounded-lg border bg-white p-2">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm text-slate-600">
@@ -183,12 +157,13 @@ export function SummaryMonthView(props: {
             </span>
 
             <span className="rounded-full border bg-white px-2 py-1">
-              Días bloqueados: <b>{blockedDaysCount}</b>
+              Días bloqueados: <b>{blockedDaysSet.size}</b>
             </span>
 
             <span className="rounded-full border bg-white px-2 py-1">
-              Ausencias aprobadas: <b>{abs.rows.length}</b>
-              {abs.error ? <span className="ml-1 text-red-600">({abs.error})</span> : null}
+              Ausencias aprobadas: <b>{approvedAbsencesCount}</b>
+              {absLoading ? <span className="ml-1 text-slate-500">(…)</span> : null}
+              {absError ? <span className="ml-1 text-red-600">({absError})</span> : null}
             </span>
           </div>
         </div>
@@ -196,7 +171,10 @@ export function SummaryMonthView(props: {
         <div className="mb-2 flex items-center gap-2 text-xs text-slate-600">
           <span
             className="inline-block h-3 w-3 rounded-sm"
-            style={{ backgroundColor: "rgba(255, 0, 0, 0.06)", border: "1px solid rgba(0,0,0,0.08)" }}
+            style={{
+              backgroundColor: "rgba(255, 0, 0, 0.06)",
+              border: "1px solid rgba(0,0,0,0.08)",
+            }}
           />
           <span>Día con ausencias aprobadas (bloqueo visual)</span>
         </div>
@@ -214,25 +192,21 @@ export function SummaryMonthView(props: {
           onNavigate={onNavigate}
           popup
           onSelectEvent={(ev) => setSelected((ev as CalEvent).resource)}
-          eventPropGetter={eventPropGetter as any}
           dayPropGetter={dayPropGetter as any}
         />
       </div>
 
-      {/* Side panel */}
       <div className="rounded-lg border bg-white p-4">
         <div className="mb-2 text-base font-semibold">Detalle</div>
 
         {!selected ? (
           <div className="space-y-2 text-sm text-slate-600">
             <div>Haz click en un evento del calendario para ver los detalles.</div>
-
-            {/* Extra útil: si hoy cae en un día bloqueado */}
             <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-700">
               <div className="font-semibold">Tip</div>
               <div>
-                El sombreado rojo claro indica días con ausencias aprobadas. El planner
-                se bloqueará en la siguiente mejora.
+                El sombreado rojo claro indica días con ausencias aprobadas. En una mejora posterior
+                bloquearemos también el planner.
               </div>
             </div>
           </div>
@@ -241,8 +215,7 @@ export function SummaryMonthView(props: {
             <div className="rounded-md border bg-slate-50 p-3">
               <div className="text-sm font-semibold">{selected.title}</div>
               <div className="text-xs text-slate-600">
-                Tipo: <b>{typeLabel(selected.event_type)}</b> · Estado:{" "}
-                <b>{safe(selected.status)}</b>
+                Tipo: <b>{typeLabel(selected.event_type)}</b> · Estado: <b>{safe(selected.status)}</b>
               </div>
             </div>
 
