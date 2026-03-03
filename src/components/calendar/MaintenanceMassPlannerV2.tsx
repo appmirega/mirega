@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { eachDayOfInterval } from "date-fns";
+import { eachDayOfInterval, format } from "date-fns";
+import { es } from "date-fns/locale";
 import { supabase } from "../../lib/supabase";
 import { Calendar, UserPlus, Trash2, X } from "lucide-react";
 
@@ -155,15 +156,8 @@ export function MaintenanceMassPlannerV2({
   const [month, setMonth] = useState(() => new Date().getMonth());
   const [year, setYear] = useState(() => new Date().getFullYear());
 
-  const monthStart = useMemo(() => {
-    const d = new Date(year, month, 1);
-    return toISODate(d);
-  }, [year, month]);
-
-  const monthEnd = useMemo(() => {
-    const d = new Date(year, month + 1, 0);
-    return toISODate(d);
-  }, [year, month]);
+  const monthStart = useMemo(() => toISODate(new Date(year, month, 1)), [year, month]);
+  const monthEnd = useMemo(() => toISODate(new Date(year, month + 1, 0)), [year, month]);
 
   const [externalNameInput, setExternalNameInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -228,7 +222,9 @@ export function MaintenanceMassPlannerV2({
 
       if (!extErr && ext) {
         setExternalTechnicians(
-          (ext || []).filter((x: any) => x.id && x.full_name).map((x: any) => ({ id: x.id, full_name: x.full_name }))
+          (ext || [])
+            .filter((x: any) => x.id && x.full_name)
+            .map((x: any) => ({ id: x.id, full_name: x.full_name }))
         );
         setExternalStoreMode("db");
       } else {
@@ -264,9 +260,7 @@ export function MaintenanceMassPlannerV2({
           const days = eachDayOfInterval({ start, end });
 
           if (!map[a.technician_id]) map[a.technician_id] = new Set<string>();
-          for (const d of days) {
-            map[a.technician_id].add(toISODate(d));
-          }
+          for (const d of days) map[a.technician_id].add(toISODate(d));
         }
 
         setBlockedByTech(map);
@@ -328,10 +322,12 @@ export function MaintenanceMassPlannerV2({
   }, [year, month]);
 
   const updateDraft = (buildingId: string, patch: Partial<AssignmentDraft>) => {
-    setDrafts((prev) => prev.map((d) => (d.building.id === buildingId ? { ...d, ...patch } : d)));
+    setDrafts((prev) =>
+      prev.map((d) => (d.building.id === buildingId ? { ...d, ...patch } : d))
+    );
   };
 
-  // --- Save (CORREGIDO: NO envia completion_type) ---
+  // --- Save (bloqueo por ausencias aprobadas) ---
   const handleSave = async () => {
     setError("");
     setSuccess("");
@@ -343,9 +339,13 @@ export function MaintenanceMassPlannerV2({
         return;
       }
 
-      const invalid = drafts.find((d) => d.internalTechnicians.length === 0 && d.externalTechnicians.length === 0);
+      const invalid = drafts.find(
+        (d) => d.internalTechnicians.length === 0 && d.externalTechnicians.length === 0
+      );
       if (invalid) {
-        setError(`En "${invalid.building.name}": selecciona al menos 1 técnico interno o 1 externo recurrente.`);
+        setError(
+          `En "${invalid.building.name}": selecciona al menos 1 técnico interno o 1 externo recurrente.`
+        );
         return;
       }
 
@@ -355,11 +355,6 @@ export function MaintenanceMassPlannerV2({
       if (absenceLoading) {
         setError("Cargando ausencias aprobadas... intenta nuevamente en unos segundos.");
         return;
-      }
-
-      // Si hay error cargando ausencias, no bloqueamos (solo avisamos en consola)
-      if (absenceError) {
-        console.warn("Absence load error:", absenceError);
       }
 
       const violations: Array<{ day: string; building: string; techName: string }> = [];
@@ -387,9 +382,6 @@ export function MaintenanceMassPlannerV2({
       const rows: any[] = [];
 
       for (const d of drafts) {
-        const durationDays =
-          d.durationOption === "custom" ? Math.max(4, Number(d.customDays || 4)) : Number(d.durationOption);
-
         const base = {
           client_id: d.building.id,
           building_name: d.building.name,
@@ -399,10 +391,6 @@ export function MaintenanceMassPlannerV2({
           is_external: false,
           external_personnel_name: null,
           calendar_month: monthStr,
-
-          // OJO: NO enviar completion_type.
-          // Tu CHECK permite SOLO: signed / transferred / cancelled
-          // completion_type queda NULL (permitido según tu esquema)
         };
 
         for (const t of d.internalTechnicians) {
@@ -422,14 +410,11 @@ export function MaintenanceMassPlannerV2({
             external_personnel_name: ex.full_name,
           });
         }
-
-        // Si en el futuro quieres guardar duración en DB:
-        // Lo ideal es crear una columna "duration_days" (numeric) o "scheduled_duration_days"
-        // y guardarla ahí. Hoy no la tenemos en tu esquema.
-        void durationDays;
       }
 
-      const { error: insertError } = await supabase.from("maintenance_assignments").insert(rows);
+      const { error: insertError } = await supabase
+        .from("maintenance_assignments")
+        .insert(rows);
       if (insertError) throw insertError;
 
       setSuccess("Asignaciones guardadas correctamente.");
@@ -449,7 +434,7 @@ export function MaintenanceMassPlannerV2({
   return (
     <div className="p-6">
       <h2 className="text-2xl font-bold flex items-center gap-2 mb-4">
-        <Calendar className="w-7 h-7" /> Calendario de mantenimiento (mensual)
+        <Calendar className="w-7 h-7" /> Planner masivo (mantenciones)
       </h2>
 
       {absenceLoading ? (
@@ -563,7 +548,9 @@ export function MaintenanceMassPlannerV2({
             <div className="font-semibold mb-3">Planificación por edificio</div>
 
             {drafts.length === 0 ? (
-              <div className="text-sm text-slate-500">Selecciona edificios para empezar.</div>
+              <div className="text-sm text-slate-500">
+                Selecciona edificios para empezar.
+              </div>
             ) : (
               <div className="space-y-4">
                 {drafts.map((d) => (
@@ -573,7 +560,11 @@ export function MaintenanceMassPlannerV2({
                       <button
                         type="button"
                         className="text-slate-500 hover:text-slate-900"
-                        onClick={() => setSelectedBuildings((prev) => prev.filter((id) => id !== d.building.id))}
+                        onClick={() =>
+                          setSelectedBuildings((prev) =>
+                            prev.filter((id) => id !== d.building.id)
+                          )
+                        }
                         title="Quitar edificio"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -582,11 +573,15 @@ export function MaintenanceMassPlannerV2({
 
                     <div className="grid grid-cols-1 gap-3">
                       <div>
-                        <div className="text-xs font-semibold text-slate-700 mb-1">Día</div>
+                        <div className="text-xs font-semibold text-slate-700 mb-1">
+                          Día
+                        </div>
                         <select
                           className="w-full border rounded-lg px-3 py-2 text-sm"
                           value={d.day}
-                          onChange={(e) => updateDraft(d.building.id, { day: e.target.value })}
+                          onChange={(e) =>
+                            updateDraft(d.building.id, { day: e.target.value })
+                          }
                         >
                           {daysInMonth.map((day) => (
                             <option key={day} value={day}>
@@ -597,22 +592,30 @@ export function MaintenanceMassPlannerV2({
                       </div>
 
                       <div>
-                        <div className="text-xs font-semibold text-slate-700 mb-1">Técnicos internos</div>
+                        <div className="text-xs font-semibold text-slate-700 mb-1">
+                          Técnicos internos
+                        </div>
                         <TagPicker
                           items={technicians}
                           selected={d.internalTechnicians}
                           placeholder="Buscar técnico..."
-                          onChange={(next) => updateDraft(d.building.id, { internalTechnicians: next })}
+                          onChange={(next) =>
+                            updateDraft(d.building.id, { internalTechnicians: next })
+                          }
                         />
                       </div>
 
                       <div>
-                        <div className="text-xs font-semibold text-slate-700 mb-1">Técnicos externos</div>
+                        <div className="text-xs font-semibold text-slate-700 mb-1">
+                          Técnicos externos
+                        </div>
                         <TagPicker
                           items={externalTechnicians}
                           selected={d.externalTechnicians}
                           placeholder="Buscar externo..."
-                          onChange={(next) => updateDraft(d.building.id, { externalTechnicians: next })}
+                          onChange={(next) =>
+                            updateDraft(d.building.id, { externalTechnicians: next })
+                          }
                           disabled={externalTechnicians.length === 0}
                         />
                       </div>
@@ -622,16 +625,21 @@ export function MaintenanceMassPlannerV2({
                           id={`fixed-${d.building.id}`}
                           type="checkbox"
                           checked={d.is_fixed}
-                          onChange={(e) => updateDraft(d.building.id, { is_fixed: e.target.checked })}
+                          onChange={(e) =>
+                            updateDraft(d.building.id, { is_fixed: e.target.checked })
+                          }
                         />
-                        <label htmlFor={`fixed-${d.building.id}`} className="text-sm text-slate-700">
+                        <label
+                          htmlFor={`fixed-${d.building.id}`}
+                          className="text-sm text-slate-700"
+                        >
                           Fija
                         </label>
                       </div>
 
                       <div className="text-xs text-slate-500">
-                        Nota: Si intentas asignar un técnico interno en un día con ausencia aprobada,
-                        el sistema lo bloqueará.
+                        Nota: si intentas asignar un técnico interno en un día con
+                        ausencia aprobada, el sistema lo bloqueará.
                       </div>
                     </div>
                   </div>

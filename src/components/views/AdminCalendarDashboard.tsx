@@ -105,7 +105,9 @@ export default function AdminCalendarDashboard() {
     <button
       onClick={() => setActiveTab(id)}
       className={`rounded-md px-3 py-2 text-sm ${
-        activeTab === id ? "bg-slate-900 text-white" : "border bg-white text-slate-700"
+        activeTab === id
+          ? "bg-slate-900 text-white"
+          : "border bg-white text-slate-700"
       }`}
     >
       {label}
@@ -140,8 +142,14 @@ export default function AdminCalendarDashboard() {
       )}
 
       {activeTab !== "summary" && (
-        <ToolErrorBoundary onReset={() => setActiveTab("summary")}>
-          <Suspense fallback={<div className="text-sm text-slate-500">Cargando...</div>}>
+        // ✅ CLAVE: con key={activeTab} se resetea el ErrorBoundary al cambiar de pestaña
+        <ToolErrorBoundary
+          key={activeTab}
+          onReset={() => setActiveTab("summary")}
+        >
+          <Suspense
+            fallback={<div className="text-sm text-slate-500">Cargando...</div>}
+          >
             {activeTab === "mass_planner" && <MaintenanceMassPlannerV2 />}
             {activeTab === "emergency_scheduler" && <EmergencyShiftScheduler />}
             {activeTab === "coordination" && <CoordinationServiceRequestsTab />}
