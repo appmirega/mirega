@@ -18,13 +18,32 @@ function statusLabel(s: ReqStatus) {
   return map[s] || String(s);
 }
 
+function reqTypeLabel(t: ServiceRequest["request_type"]) {
+  const map: Record<string, string> = {
+    repair: "Reparación",
+    parts: "Repuestos",
+    support: "Soporte",
+    inspection: "Inspección",
+  };
+  return map[t] || String(t);
+}
+
+function mapRequestTypeToCalendarEventType(
+  t: ServiceRequest["request_type"]
+): "repair" | "parts" | "support" | "inspection" {
+  if (t === "repair") return "repair";
+  if (t === "parts") return "parts";
+  if (t === "support") return "support";
+  return "inspection";
+}
+
 export function CoordinationServiceRequestsTab() {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<ServiceRequest[]>([]);
   const [error, setError] = useState("");
 
   const [planning, setPlanning] = useState<ServiceRequest | null>(null);
-  const [planDate, setPlanDate] = useState<string>(""); // YYYY-MM-DD
+  const [planDate, setPlanDate] = useState<string>("");
   const [planBuildingName, setPlanBuildingName] = useState<string>("");
 
   const load = async () => {
@@ -33,11 +52,13 @@ export function CoordinationServiceRequestsTab() {
     try {
       const { data, error } = await supabase
         .from("service_requests")
-        .select(`
+        .select(
+          `
           *,
           clients:clients(company_name, building_name, address),
           elevators:elevators(elevator_number, location_name, brand, model)
-        `)
+        `
+        )
         .in("status", ["pending", "analyzing", "approved"])
         .order("created_at", { ascending: false });
 
@@ -84,30 +105,52 @@ export function CoordinationServiceRequestsTab() {
 
   const openPlan = (r: ServiceRequest) => {
     setPlanning(r);
-    setPlanDate("");
+    const today = new Date().toISOString().slice(0, 10);
+    setPlanDate(today);
     setPlanBuildingName(r.clients?.building_name || r.title || "");
   };
 
+  /**
+   * ✅ NUEVO: en vez de crear maintenance_assignments,
+   * creamos un evento consolidado en calendar_events,
+   * que Resumen lee vía v_calendar_events_month.
+   */
   const createAssignmentFromRequest = async () => {
     if (!planning) return;
     if (!planDate) return alert("Selecciona una fecha");
     if (!planning.client_id) return alert("Solicitud sin client_id");
 
+    const eventType = mapRequestTypeToCalendarEventType(planning.request_type);
+
+    // timestamps día completo
+    const start_at = `${planDate}T00:00:00`;
+    const end_at = `${planDate}T23:59:59`;
+
+    // id con patrón consistente (como maintenance:<uuid>)
+    const id = `${eventType}:${planning.id}`;
+
+    const title = `${reqTypeLabel(planning.request_type)} - ${planBuildingName || planning.title}`;
+
     try {
-      const { error } = await supabase.from("maintenance_assignments").insert({
+      const { error: insErr } = await supabase.from("calendar_events").insert({
+        id,
+        event_type: eventType,
+        source_id: planning.id, // vinculamos al id de la solicitud
         client_id: planning.client_id,
         building_name: planBuildingName,
-        scheduled_date: planDate,
-        status: "scheduled",
-        is_fixed: false,
+        technician_id: null,
         is_external: false,
         external_personnel_name: null,
-        assigned_technician_id: null,
-        calendar_month: planDate.slice(0, 7), // YYYY-MM
+        status: "scheduled",
+        event_date: planDate,
+        start_at,
+        end_at,
+        title,
       });
 
-      if (error) throw error;
+      if (insErr) throw insErr;
 
+      // la solicitud pasa a "in_progress" cuando ya existe evento real
       const { error: updErr } = await supabase
         .from("service_requests")
         .update({ status: "in_progress" })
@@ -124,7 +167,11 @@ export function CoordinationServiceRequestsTab() {
   };
 
   const grouped = useMemo(() => {
-    const by: Record<string, ServiceRequest[]> = { pending: [], analyzing: [], approved: [] };
+    const by: Record<string, ServiceRequest[]> = {
+      pending: [],
+      analyzing: [],
+      approved: [],
+    };
     rows.forEach((r) => {
       if (r.status === "pending") by.pending.push(r);
       else if (r.status === "analyzing") by.analyzing.push(r);
@@ -137,64 +184,77 @@ export function CoordinationServiceRequestsTab() {
     <div className="rounded-lg border bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <div className="text-base font-semibold">Coordinación (Solicitudes)</div>
-          <div className="text-sm text-slate-600">
-            Aprobar/rechazar y convertir a asignación formal.
+          <div className="text-base font-semibold">Coordinación (solicitudes)</div>
+          <div className="text-xs text-slate-500">
+            Admin revisa solicitudes del cliente y las convierte en asignaciones reales del calendario.
           </div>
         </div>
-        <button className="rounded-md border bg-white px-3 py-2 text-sm" onClick={load}>
-          Recargar
+        <button
+          className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white"
+          onClick={load}
+          disabled={loading}
+        >
+          {loading ? "Cargando..." : "Refrescar"}
         </button>
       </div>
 
-      {loading ? <div className="text-sm text-slate-500">Cargando...</div> : null}
-      {error ? <div className="text-sm text-red-600">{error}</div> : null}
+      {error ? (
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {(["pending", "analyzing", "approved"] as const).map((st) => (
-          <div key={st} className="rounded-lg border p-3">
-            <div className="mb-2 text-sm font-semibold">{statusLabel(st as any)}</div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {(["pending", "analyzing", "approved"] as const).map((status) => (
+          <div key={status} className="rounded-lg border p-3">
+            <div className="mb-2 text-sm font-semibold">{statusLabel(status)}</div>
 
             <div className="space-y-2">
-              {grouped[st].length === 0 ? (
-                <div className="text-xs text-slate-500">Sin items</div>
+              {grouped[status].length === 0 ? (
+                <div className="text-xs text-slate-500">Sin solicitudes</div>
               ) : (
-                grouped[st].map((r) => (
-                  <div key={r.id} className="rounded-md border p-2">
-                    <div className="text-sm font-medium">{r.title}</div>
-                    <div className="text-xs text-slate-600">
-                      Cliente: {r.clients?.company_name || r.client_id} · Edificio:{" "}
-                      {r.clients?.building_name || "—"}
-                    </div>
-                    <div className="text-xs text-slate-600">
-                      Prioridad: {r.priority} · Tipo: {r.request_type}
-                    </div>
+                grouped[status].map((r) => (
+                  <div key={r.id} className="rounded-lg border bg-white p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold">{r.title}</div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          Tipo: <b>{reqTypeLabel(r.request_type)}</b> · Prioridad:{" "}
+                          <b>{r.priority}</b>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Cliente: <b>{r.clients?.company_name || "—"}</b> · Edificio:{" "}
+                          <b>{r.clients?.building_name || "—"}</b>
+                        </div>
+                      </div>
 
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {r.status !== "approved" ? (
-                        <button
-                          className="rounded-md bg-slate-900 px-2 py-1 text-xs text-white"
-                          onClick={() => approve(r.id)}
-                        >
-                          Aprobar
-                        </button>
-                      ) : null}
+                      <div className="flex flex-col gap-2">
+                        {r.status === "pending" || r.status === "analyzing" ? (
+                          <>
+                            <button
+                              className="rounded-md bg-emerald-600 px-2 py-1 text-xs text-white"
+                              onClick={() => approve(r.id)}
+                            >
+                              Aprobar
+                            </button>
+                            <button
+                              className="rounded-md bg-rose-600 px-2 py-1 text-xs text-white"
+                              onClick={() => reject(r.id)}
+                            >
+                              Rechazar
+                            </button>
+                          </>
+                        ) : null}
 
-                      <button
-                        className="rounded-md border bg-white px-2 py-1 text-xs"
-                        onClick={() => reject(r.id)}
-                      >
-                        Rechazar
-                      </button>
-
-                      {r.status === "approved" ? (
-                        <button
-                          className="rounded-md bg-emerald-600 px-2 py-1 text-xs text-white"
-                          onClick={() => openPlan(r)}
-                        >
-                          Planificar
-                        </button>
-                      ) : null}
+                        {r.status === "approved" ? (
+                          <button
+                            className="rounded-md bg-emerald-600 px-2 py-1 text-xs text-white"
+                            onClick={() => openPlan(r)}
+                          >
+                            Planificar
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 ))
@@ -222,7 +282,9 @@ export function CoordinationServiceRequestsTab() {
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-slate-700">Edificio / Identificador</div>
+                <div className="text-xs font-semibold text-slate-700">
+                  Edificio / Identificador
+                </div>
                 <input
                   className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
                   value={planBuildingName}
@@ -244,6 +306,11 @@ export function CoordinationServiceRequestsTab() {
                 >
                   Crear asignación
                 </button>
+              </div>
+
+              <div className="text-xs text-slate-500">
+                Nota: esto crea un evento real en <b>calendar_events</b> y pasa la solicitud a{" "}
+                <b>in_progress</b>.
               </div>
             </div>
           </div>

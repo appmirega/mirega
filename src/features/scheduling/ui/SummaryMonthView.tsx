@@ -23,37 +23,34 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
-const messagesES = {
-  allDay: "Todo el día",
-  previous: "Anterior",
-  next: "Siguiente",
-  today: "Hoy",
-  month: "Mes",
-  week: "Semana",
-  day: "Día",
-  agenda: "Agenda",
-  date: "Fecha",
-  time: "Hora",
-  event: "Evento",
-  noEventsInRange: "No hay eventos en este rango.",
-  showMore: (total: number) => `+ Ver ${total} más`,
-};
-
-type CalEvent = RBCEvent & { resource: CalendarEventRow };
-
-function asDate(value: string) {
-  return new Date(value);
-}
-
 function safe(v: any) {
   return v == null || v === "" ? "—" : String(v);
 }
 
 function typeLabel(t: CalendarEventRow["event_type"]) {
-  if (t === "maintenance") return "Mantención";
-  if (t === "emergency_shift") return "Turno emergencia";
-  return "Visita emergencia";
+  switch (t) {
+    case "maintenance":
+      return "Mantención";
+    case "emergency_shift":
+      return "Turno emergencia";
+    case "emergency_visit":
+      return "Visita emergencia";
+    case "repair":
+      return "Reparación";
+    case "parts":
+      return "Repuestos";
+    case "support":
+      return "Soporte";
+    case "inspection":
+      return "Inspección";
+    default:
+      return String(t);
+  }
 }
+
+type UIEvent = RBCEvent & {
+  _row: CalendarEventRow;
+};
 
 export function SummaryMonthView(props: {
   selectedDate: Date;
@@ -63,209 +60,143 @@ export function SummaryMonthView(props: {
 }) {
   const { selectedDate, monthStart, monthEnd, onNavigate } = props;
 
-  const { loading, rows, error } = useMonthCalendarEvents(monthStart, monthEnd);
+  const { data, error, loading, reload } = useMonthCalendarEvents({
+    monthStart,
+    monthEnd,
+  });
 
-  const [selected, setSelected] = useState<CalendarEventRow | null>(null);
-  const [absLoading, setAbsLoading] = useState(false);
+  const [approvedAbsences, setApprovedAbsences] = useState<
+    Array<{ technician_id: string; start_date: string; end_date: string }>
+  >([]);
   const [absError, setAbsError] = useState("");
-  const [approvedAbsencesCount, setApprovedAbsencesCount] = useState(0);
-  const [blockedDaysSet, setBlockedDaysSet] = useState<Set<string>>(new Set());
 
-  // ✅ Carga ausencias aprobadas directamente aquí
+  // Cargar ausencias aprobadas (para sombrear días en el calendario)
   useEffect(() => {
-    const load = async () => {
-      setAbsLoading(true);
+    (async () => {
       setAbsError("");
-
       try {
         const { data, error } = await supabase
           .from("technician_availability")
-          .select("start_date, end_date")
+          .select("technician_id, start_date, end_date")
           .eq("status", "approved")
           .lte("start_date", monthEnd)
           .gte("end_date", monthStart);
 
         if (error) throw error;
-
-        const list = data ?? [];
-        setApprovedAbsencesCount(list.length);
-
-        const set = new Set<string>();
-
-        for (const a of list as any[]) {
-          const start = new Date(`${a.start_date}T00:00:00`);
-          const end = new Date(`${a.end_date}T00:00:00`);
-          const days = eachDayOfInterval({ start, end });
-
-          for (const d of days) set.add(format(d, "yyyy-MM-dd"));
-        }
-
-        setBlockedDaysSet(set);
+        setApprovedAbsences((data ?? []) as any[]);
       } catch (e: any) {
         setAbsError(e?.message || "Error cargando ausencias aprobadas");
-        setBlockedDaysSet(new Set());
-        setApprovedAbsencesCount(0);
-      } finally {
-        setAbsLoading(false);
+        setApprovedAbsences([]);
       }
-    };
-
-    void load();
+    })();
   }, [monthStart, monthEnd]);
 
-  const events: CalEvent[] = useMemo(() => {
-    return rows.map((r) => ({
-      title: r.title,
-      start: asDate(r.start_at),
-      end: asDate(r.end_at),
-      allDay: r.event_type === "maintenance",
-      resource: r,
-    }));
-  }, [rows]);
+  const blockedDays = useMemo(() => {
+    const out = new Set<string>();
+    for (const a of approvedAbsences) {
+      const start = new Date(`${a.start_date}T00:00:00`);
+      const end = new Date(`${a.end_date}T00:00:00`);
+      const days = eachDayOfInterval({ start, end });
+      for (const d of days) out.add(d.toISOString().slice(0, 10));
+    }
+    return out;
+  }, [approvedAbsences]);
 
-  const stats = useMemo(() => {
-    const s = { maintenance: 0, emergency_shift: 0, emergency_visit: 0 };
-    for (const r of rows) (s as any)[r.event_type] = ((s as any)[r.event_type] ?? 0) + 1;
-    return s;
-  }, [rows]);
+  const events: UIEvent[] = useMemo(() => {
+    return (data ?? []).map((r) => {
+      const start = new Date(r.start_at);
+      const end = new Date(r.end_at);
+      return {
+        title: `${typeLabel(r.event_type)} • ${safe(r.building_name)} • ${safe(
+          r.title
+        )}`,
+        start,
+        end,
+        allDay: true,
+        _row: r,
+      } as UIEvent;
+    });
+  }, [data]);
 
   const dayPropGetter = (date: Date) => {
-    const key = format(date, "yyyy-MM-dd");
-    if (!blockedDaysSet.has(key)) return {};
-    return {
-      style: { backgroundColor: "rgba(255, 0, 0, 0.06)" } as React.CSSProperties,
-    };
+    const key = date.toISOString().slice(0, 10);
+    if (blockedDays.has(key)) {
+      return {
+        className: "bg-red-50",
+        style: { backgroundColor: "rgba(239, 68, 68, 0.08)" },
+      };
+    }
+    return {};
   };
 
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_360px]">
-      <div className="rounded-lg border bg-white p-2">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm text-slate-600">
-            {loading ? "Cargando eventos..." : "Resumen maestro (solo lectura)"}
-            {error ? <span className="ml-2 text-red-600">({error})</span> : null}
-          </div>
-
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full border bg-white px-2 py-1">
-              Mantenciones: <b>{stats.maintenance}</b>
-            </span>
-            <span className="rounded-full border bg-white px-2 py-1">
-              Turnos: <b>{stats.emergency_shift}</b>
-            </span>
-            <span className="rounded-full border bg-white px-2 py-1">
-              Visitas: <b>{stats.emergency_visit}</b>
-            </span>
-
-            <span className="rounded-full border bg-white px-2 py-1">
-              Días bloqueados: <b>{blockedDaysSet.size}</b>
-            </span>
-
-            <span className="rounded-full border bg-white px-2 py-1">
-              Ausencias aprobadas: <b>{approvedAbsencesCount}</b>
-              {absLoading ? <span className="ml-1 text-slate-500">(…)</span> : null}
-              {absError ? <span className="ml-1 text-red-600">({absError})</span> : null}
-            </span>
+    <div className="rounded-lg border bg-white p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-base font-semibold">Resumen mensual (maestro)</div>
+          <div className="text-xs text-slate-500">
+            Solo lectura. Muestra asignaciones confirmadas del mes.
           </div>
         </div>
 
-        <div className="mb-2 flex items-center gap-2 text-xs text-slate-600">
-          <span
-            className="inline-block h-3 w-3 rounded-sm"
-            style={{
-              backgroundColor: "rgba(255, 0, 0, 0.06)",
-              border: "1px solid rgba(0,0,0,0.08)",
-            }}
-          />
-          <span>Día con ausencias aprobadas (bloqueo visual)</span>
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded-md border bg-white px-3 py-2 text-sm"
+            onClick={() => onNavigate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1))}
+          >
+            ◀ Mes anterior
+          </button>
+          <button
+            className="rounded-md border bg-white px-3 py-2 text-sm"
+            onClick={() => onNavigate(new Date())}
+          >
+            Hoy
+          </button>
+          <button
+            className="rounded-md border bg-white px-3 py-2 text-sm"
+            onClick={() => onNavigate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1))}
+          >
+            Mes siguiente ▶
+          </button>
+          <button
+            className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white"
+            onClick={reload}
+            disabled={loading}
+          >
+            {loading ? "Cargando..." : "Refrescar"}
+          </button>
         </div>
+      </div>
 
+      {error ? (
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      {absError ? (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          {absError}
+        </div>
+      ) : null}
+
+      <div className="h-[72vh]">
         <RBCalendar
           localizer={localizer}
-          culture="es"
-          messages={messagesES as any}
           events={events}
-          views={[Views.MONTH, Views.WEEK, Views.DAY]}
-          defaultView={Views.MONTH}
           startAccessor="start"
           endAccessor="end"
+          views={[Views.MONTH]}
+          defaultView={Views.MONTH}
           date={selectedDate}
-          onNavigate={onNavigate}
+          onNavigate={(d) => onNavigate(d)}
+          dayPropGetter={dayPropGetter}
           popup
-          onSelectEvent={(ev) => setSelected((ev as CalEvent).resource)}
-          dayPropGetter={dayPropGetter as any}
         />
       </div>
 
-      <div className="rounded-lg border bg-white p-4">
-        <div className="mb-2 text-base font-semibold">Detalle</div>
-
-        {!selected ? (
-          <div className="space-y-2 text-sm text-slate-600">
-            <div>Haz click en un evento del calendario para ver los detalles.</div>
-            <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-700">
-              <div className="font-semibold">Tip</div>
-              <div>
-                El sombreado rojo claro indica días con ausencias aprobadas. En el
-                siguiente paso bloqueamos también el planner.
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="rounded-md border bg-slate-50 p-3">
-              <div className="text-sm font-semibold">{selected.title}</div>
-              <div className="text-xs text-slate-600">
-                Tipo: <b>{typeLabel(selected.event_type)}</b> · Estado:{" "}
-                <b>{safe(selected.status)}</b>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2 text-sm">
-              <div className="rounded-md border p-3">
-                <div className="text-xs font-semibold text-slate-700">Fecha</div>
-                <div>{format(new Date(selected.start_at), "dd-MM-yyyy")}</div>
-              </div>
-
-              <div className="rounded-md border p-3">
-                <div className="text-xs font-semibold text-slate-700">Horario</div>
-                <div>
-                  {format(new Date(selected.start_at), "HH:mm")} →{" "}
-                  {format(new Date(selected.end_at), "HH:mm")}
-                </div>
-              </div>
-
-              <div className="rounded-md border p-3">
-                <div className="text-xs font-semibold text-slate-700">Edificio</div>
-                <div>{safe(selected.building_name)}</div>
-              </div>
-
-              <div className="rounded-md border p-3">
-                <div className="text-xs font-semibold text-slate-700">Cliente (id)</div>
-                <div className="break-all">{safe(selected.client_id)}</div>
-              </div>
-
-              <div className="rounded-md border p-3">
-                <div className="text-xs font-semibold text-slate-700">Técnico (id)</div>
-                <div className="break-all">{safe(selected.technician_id)}</div>
-              </div>
-
-              {selected.is_external ? (
-                <div className="rounded-md border p-3">
-                  <div className="text-xs font-semibold text-slate-700">Externo</div>
-                  <div>{safe(selected.external_personnel_name)}</div>
-                </div>
-              ) : null}
-            </div>
-
-            <button
-              className="w-full rounded-md border bg-white px-3 py-2 text-sm"
-              onClick={() => setSelected(null)}
-            >
-              Limpiar selección
-            </button>
-          </div>
-        )}
+      <div className="mt-3 text-xs text-slate-500">
+        Días con ausencias aprobadas se marcan en rojo suave.
       </div>
     </div>
   );
