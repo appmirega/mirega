@@ -5,7 +5,13 @@ import {
   Views,
   type Event as RBCEvent,
 } from "react-big-calendar";
-import { format, parse, startOfWeek, getDay, eachDayOfInterval } from "date-fns";
+import {
+  format,
+  parse,
+  startOfWeek,
+  getDay,
+  eachDayOfInterval,
+} from "date-fns";
 import { es } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 
@@ -27,26 +33,23 @@ function safe(v: any) {
   return v == null || v === "" ? "—" : String(v);
 }
 
-function typeLabel(t: CalendarEventRow["event_type"]) {
-  switch (t) {
-    case "maintenance":
-      return "Mantención";
-    case "emergency_shift":
-      return "Turno emergencia";
-    case "emergency_visit":
-      return "Visita emergencia";
-    case "repair":
-      return "Reparación";
-    case "parts":
-      return "Repuestos";
-    case "support":
-      return "Soporte";
-    case "inspection":
-      return "Inspección";
-    default:
-      return String(t);
-  }
-}
+/* ===============================
+   LABELS POR TIPO (ACTUALIZADO)
+================================ */
+const typeLabel: Record<string, string> = {
+  maintenance: "Mantención",
+  work_order: "Solicitud",
+  emergency_visit: "Emergencia",
+  emergency_shift: "Turno emergencia",
+  calendar_event: "Evento",
+  repair: "Reparación",
+  parts: "Repuestos",
+  support: "Soporte",
+  inspection: "Inspección",
+  technical_visit: "Visita técnica",
+  certification: "Certificación",
+  rescue_training: "Inducción / Rescate",
+};
 
 type UIEvent = RBCEvent & {
   _row: CalendarEventRow;
@@ -54,8 +57,8 @@ type UIEvent = RBCEvent & {
 
 export function SummaryMonthView(props: {
   selectedDate: Date;
-  monthStart: string; // YYYY-MM-DD
-  monthEnd: string; // YYYY-MM-DD
+  monthStart: string;
+  monthEnd: string;
   onNavigate: (d: Date) => void;
 }) {
   const { selectedDate, monthStart, monthEnd, onNavigate } = props;
@@ -70,7 +73,9 @@ export function SummaryMonthView(props: {
   >([]);
   const [absError, setAbsError] = useState("");
 
-  // Cargar ausencias aprobadas (para sombrear días en el calendario)
+  /* ===============================
+     CARGAR AUSENCIAS APROBADAS
+  =============================== */
   useEffect(() => {
     (async () => {
       setAbsError("");
@@ -91,25 +96,34 @@ export function SummaryMonthView(props: {
     })();
   }, [monthStart, monthEnd]);
 
+  /* ===============================
+     DÍAS BLOQUEADOS
+  =============================== */
   const blockedDays = useMemo(() => {
     const out = new Set<string>();
     for (const a of approvedAbsences) {
       const start = new Date(`${a.start_date}T00:00:00`);
       const end = new Date(`${a.end_date}T00:00:00`);
       const days = eachDayOfInterval({ start, end });
-      for (const d of days) out.add(d.toISOString().slice(0, 10));
+      for (const d of days) {
+        out.add(d.toISOString().slice(0, 10));
+      }
     }
     return out;
   }, [approvedAbsences]);
 
+  /* ===============================
+     MAPEO DE EVENTOS PARA CALENDAR
+  =============================== */
   const events: UIEvent[] = useMemo(() => {
     return (data ?? []).map((r) => {
-      const start = new Date(r.start_at);
-      const end = new Date(r.end_at);
+      const start = new Date(r.start_at || r.event_date);
+      const end = new Date(r.end_at || r.event_date);
+
       return {
-        title: `${typeLabel(r.event_type)} • ${safe(r.building_name)} • ${safe(
-          r.title
-        )}`,
+        title: `${typeLabel[r.event_type] || r.event_type} • ${safe(
+          r.building_name
+        )} • ${safe(r.title)}`,
         start,
         end,
         allDay: true,
@@ -118,12 +132,16 @@ export function SummaryMonthView(props: {
     });
   }, [data]);
 
+  /* ===============================
+     PINTAR DÍAS BLOQUEADOS
+  =============================== */
   const dayPropGetter = (date: Date) => {
     const key = date.toISOString().slice(0, 10);
     if (blockedDays.has(key)) {
       return {
-        className: "bg-red-50",
-        style: { backgroundColor: "rgba(239, 68, 68, 0.08)" },
+        style: {
+          backgroundColor: "rgba(239, 68, 68, 0.08)",
+        },
       };
     }
     return {};
@@ -133,7 +151,9 @@ export function SummaryMonthView(props: {
     <div className="rounded-lg border bg-white p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <div className="text-base font-semibold">Resumen mensual (maestro)</div>
+          <div className="text-base font-semibold">
+            Resumen mensual (maestro)
+          </div>
           <div className="text-xs text-slate-500">
             Solo lectura. Muestra asignaciones confirmadas del mes.
           </div>
@@ -142,22 +162,41 @@ export function SummaryMonthView(props: {
         <div className="flex items-center gap-2">
           <button
             className="rounded-md border bg-white px-3 py-2 text-sm"
-            onClick={() => onNavigate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1))}
+            onClick={() =>
+              onNavigate(
+                new Date(
+                  selectedDate.getFullYear(),
+                  selectedDate.getMonth() - 1,
+                  1
+                )
+              )
+            }
           >
             ◀ Mes anterior
           </button>
+
           <button
             className="rounded-md border bg-white px-3 py-2 text-sm"
             onClick={() => onNavigate(new Date())}
           >
             Hoy
           </button>
+
           <button
             className="rounded-md border bg-white px-3 py-2 text-sm"
-            onClick={() => onNavigate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1))}
+            onClick={() =>
+              onNavigate(
+                new Date(
+                  selectedDate.getFullYear(),
+                  selectedDate.getMonth() + 1,
+                  1
+                )
+              )
+            }
           >
             Mes siguiente ▶
           </button>
+
           <button
             className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white"
             onClick={reload}
@@ -168,17 +207,17 @@ export function SummaryMonthView(props: {
         </div>
       </div>
 
-      {error ? (
+      {error && (
         <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}
         </div>
-      ) : null}
+      )}
 
-      {absError ? (
+      {absError && (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           {absError}
         </div>
-      ) : null}
+      )}
 
       <div className="h-[72vh]">
         <RBCalendar
