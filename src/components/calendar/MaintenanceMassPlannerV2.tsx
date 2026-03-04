@@ -1,150 +1,51 @@
-import { useEffect, useMemo, useState } from "react";
-import { eachDayOfInterval, format } from "date-fns";
-import { es } from "date-fns/locale";
-import { supabase } from "../../lib/supabase";
-import { Calendar, UserPlus, Trash2, X } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { supabase } from "../../lib/supabaseClient";
 
-interface Technician {
+type Building = {
+  id: string;
+  name: string;
+  client_name?: string | null;
+};
+
+type Technician = {
   id: string;
   full_name: string;
-}
+};
 
-interface Building {
-  id: string; // client_id
-  name: string; // internal_alias
-}
-
-interface ExternalTech {
-  id: string; // uuid si existe tabla, si no un id local
+type ExternalTech = {
+  id: string;
   full_name: string;
+};
+
+type AssignmentDraft = {
+  buildingId: string;
+  date: string; // YYYY-MM-DD
+  technicianId: string | null;
+  title?: string | null;
+};
+
+function monthKey(year: number, monthIndex: number) {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
 }
 
-type DurationOption = 0.5 | 1 | 2 | 3 | "custom";
-
-interface AssignmentDraft {
-  building: Building;
-  internalTechnicians: Technician[];
-  externalTechnicians: ExternalTech[];
-  day: string;
-  durationOption: DurationOption;
-  customDays: number; // usado si durationOption === "custom"
-  is_fixed: boolean;
+function getMonthDays(year: number, monthIndex: number) {
+  return new Date(year, monthIndex + 1, 0).getDate();
 }
 
-function cx(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
+function toISODate(year: number, monthIndex: number, day: number) {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function normalize(s: string) {
-  return s.trim().toLowerCase();
+function safeName(s?: string | null) {
+  return (s || "").trim();
 }
 
-function toISODate(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
+export function MaintenanceMassPlannerV2() {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth()); // 0-11
+  const [monthDays, setMonthDays] = useState(() => getMonthDays(now.getFullYear(), now.getMonth()));
 
-function monthKey(year: number, monthIndex0: number) {
-  return `${year}-${String(monthIndex0 + 1).padStart(2, "0")}`;
-}
-
-function isWeekday(dateStr: string) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  const dow = dt.getDay();
-  return dow !== 0 && dow !== 6;
-}
-
-/**
- * Selector “chips” (mejor UX que <select multiple>)
- */
-function TagPicker<T extends { id: string; full_name: string }>({
-  items,
-  selected,
-  placeholder,
-  onChange,
-  disabled,
-}: {
-  items: T[];
-  selected: T[];
-  placeholder: string;
-  onChange: (next: T[]) => void;
-  disabled?: boolean;
-}) {
-  const [q, setQ] = useState("");
-
-  const selectedIds = useMemo(() => new Set(selected.map((s) => s.id)), [selected]);
-
-  const filtered = useMemo(() => {
-    const query = normalize(q);
-    if (!query) return items.filter((it) => !selectedIds.has(it.id)).slice(0, 12);
-    return items
-      .filter((it) => !selectedIds.has(it.id))
-      .filter((it) => normalize(it.full_name).includes(query))
-      .slice(0, 12);
-  }, [items, q, selectedIds]);
-
-  return (
-    <div className={cx("w-full", disabled && "opacity-60 pointer-events-none")}>
-      <div className="flex flex-wrap gap-2 mb-2">
-        {selected.length === 0 ? (
-          <span className="text-sm text-slate-400">Sin selección</span>
-        ) : (
-          selected.map((s) => (
-            <span
-              key={s.id}
-              className="inline-flex items-center gap-2 bg-slate-100 border border-slate-200 rounded-full px-3 py-1 text-sm"
-            >
-              {s.full_name}
-              <button
-                type="button"
-                className="text-slate-500 hover:text-slate-900"
-                onClick={() => onChange(selected.filter((x) => x.id !== s.id))}
-                aria-label="Quitar"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </span>
-          ))
-        )}
-      </div>
-
-      <div className="relative">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={placeholder}
-          className="w-full border rounded-lg px-3 py-2 text-sm"
-        />
-
-        {filtered.length > 0 && (
-          <div className="absolute z-20 mt-1 w-full bg-white border rounded-lg shadow-sm max-h-56 overflow-auto">
-            {filtered.map((it) => (
-              <button
-                key={it.id}
-                type="button"
-                className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                onClick={() => {
-                  onChange([...selected, it]);
-                  setQ("");
-                }}
-              >
-                {it.full_name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function MaintenanceMassPlannerV2({
-  onClose,
-  onSuccess,
-}: {
-  onClose: () => void;
-  onSuccess: () => void;
-}) {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [externalTechnicians, setExternalTechnicians] = useState<ExternalTech[]>([]);
@@ -153,528 +54,490 @@ export function MaintenanceMassPlannerV2({
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<AssignmentDraft[]>([]);
 
-  const [month, setMonth] = useState(() => new Date().getMonth());
-  const [year, setYear] = useState(() => new Date().getFullYear());
+  // ✅ Descontar edificios ya asignados en el mes seleccionado
+  const [assignedBuildingIds, setAssignedBuildingIds] = useState<Set<string>>(new Set());
 
-  const monthStart = useMemo(() => toISODate(new Date(year, month, 1)), [year, month]);
-  const monthEnd = useMemo(() => toISODate(new Date(year, month + 1, 0)), [year, month]);
-
-  const [externalNameInput, setExternalNameInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState("");
 
-  // --- Absences blocking (approved only) ---
-  const [absenceLoading, setAbsenceLoading] = useState(false);
-  const [absenceError, setAbsenceError] = useState("");
-  // Map: technician_id -> Set of blocked days "YYYY-MM-DD"
-  const [blockedByTech, setBlockedByTech] = useState<Record<string, Set<string>>>({});
+  const currentMonthKey = useMemo(() => monthKey(year, month), [year, month]);
+
+  const availableBuildings = useMemo(() => {
+    if (!assignedBuildingIds || assignedBuildingIds.size === 0) return buildings;
+    return buildings.filter((b) => !assignedBuildingIds.has(b.id));
+  }, [buildings, assignedBuildingIds]);
+
+  useEffect(() => {
+    setMonthDays(getMonthDays(year, month));
+  }, [year, month]);
+
+  const monthDates = useMemo(() => {
+    const days = getMonthDays(year, month);
+    const arr: string[] = [];
+    for (let d = 1; d <= days; d++) {
+      arr.push(toISODate(year, month, d));
+    }
+    return arr;
+  }, [year, month]);
 
   // --- Load base data ---
   useEffect(() => {
     (async () => {
-      // Buildings (clients)
-      const { data: clientsData, error: clientsErr } = await supabase
-        .from("clients")
-        .select("id, internal_alias")
-        .order("internal_alias", { ascending: true });
+      setLoading(true);
+      setError(null);
+      try {
+        const [{ data: buildingsData, error: buildingsErr }, { data: techData, error: techErr }] =
+          await Promise.all([
+            supabase
+              .from("buildings")
+              .select("id,name,clients(name)")
+              .order("name", { ascending: true }),
+            supabase.from("profiles").select("id,full_name").order("full_name", { ascending: true }),
+          ]);
 
-      if (!clientsErr) {
-        setBuildings(
-          (clientsData || [])
-            .filter((e: any) => e.internal_alias && String(e.internal_alias).trim() !== "")
-            .map((e: any) => ({ id: e.id, name: e.internal_alias }))
-        );
-      }
+        if (buildingsErr) throw buildingsErr;
+        if (techErr) throw techErr;
 
-      // Internal technicians: prefer view used by Calendar
-      const { data: techView, error: techViewErr } = await supabase
-        .from("v_technician_availability_today")
-        .select("technician_id, full_name")
-        .order("full_name", { ascending: true });
+        const mappedBuildings: Building[] = (buildingsData || []).map((b: any) => ({
+          id: b.id,
+          name: b.name,
+          client_name: b.clients?.name ?? null,
+        }));
 
-      if (!techViewErr && techView) {
-        setTechnicians(
-          (techView || [])
-            .filter((t: any) => t.technician_id && t.full_name)
-            .map((t: any) => ({ id: t.technician_id, full_name: t.full_name }))
-        );
-      } else {
-        // fallback
-        const { data: profs } = await supabase
-          .from("profiles")
-          .select("id, full_name")
-          .eq("role", "technician")
+        setBuildings(mappedBuildings);
+        setTechnicians((techData || []) as Technician[]);
+
+        // External technicians (optional)
+        // If you have a table: external_technicians, load it; otherwise keep local-only
+        const { data: extData, error: extErr } = await supabase
+          .from("external_technicians")
+          .select("id,full_name")
           .order("full_name", { ascending: true });
 
-        setTechnicians(
-          (profs || [])
-            .filter((p: any) => p.id && p.full_name)
-            .map((p: any) => ({ id: p.id, full_name: p.full_name }))
-        );
-      }
-
-      // External technicians: if DB exists
-      const { data: ext, error: extErr } = await supabase
-        .from("external_technicians")
-        .select("id, full_name")
-        .order("full_name", { ascending: true });
-
-      if (!extErr && ext) {
-        setExternalTechnicians(
-          (ext || [])
-            .filter((x: any) => x.id && x.full_name)
-            .map((x: any) => ({ id: x.id, full_name: x.full_name }))
-        );
-        setExternalStoreMode("db");
-      } else {
-        setExternalStoreMode("local");
-        setExternalTechnicians([]);
+        if (!extErr && extData) {
+          setExternalTechnicians(extData as ExternalTech[]);
+          setExternalStoreMode("db");
+        } else {
+          setExternalStoreMode("local");
+        }
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message || "Error cargando datos");
+      } finally {
+        setLoading(false);
       }
     })();
   }, []);
 
-  // --- Load approved absences for this month (blocking) ---
+  // Cargar qué edificios YA tienen asignación en el mes seleccionado (para ocultarlos del listado)
   useEffect(() => {
-    (async () => {
-      setAbsenceLoading(true);
-      setAbsenceError("");
-
+    const loadAssigned = async () => {
       try {
         const { data, error } = await supabase
-          .from("technician_availability")
-          .select("technician_id, start_date, end_date, status")
-          .eq("status", "approved")
-          .lte("start_date", monthEnd)
-          .gte("end_date", monthStart);
+          .from("maintenance_assignments")
+          .select("client_id")
+          .eq("calendar_month", currentMonthKey);
 
         if (error) throw error;
 
-        const map: Record<string, Set<string>> = {};
+        const ids = new Set<string>((data || [])
+          .map((r: any) => r?.client_id)
+          .filter(Boolean));
 
-        for (const a of (data ?? []) as any[]) {
-          if (!a.technician_id || !a.start_date || !a.end_date) continue;
-
-          const start = new Date(`${a.start_date}T00:00:00`);
-          const end = new Date(`${a.end_date}T00:00:00`);
-          const days = eachDayOfInterval({ start, end });
-
-          if (!map[a.technician_id]) map[a.technician_id] = new Set<string>();
-          for (const d of days) map[a.technician_id].add(toISODate(d));
-        }
-
-        setBlockedByTech(map);
+        setAssignedBuildingIds(ids);
+        setSelectedBuildings((prev) => prev.filter((id) => !ids.has(id)));
       } catch (e: any) {
-        setAbsenceError(e?.message || "Error cargando ausencias aprobadas");
-        setBlockedByTech({});
-      } finally {
-        setAbsenceLoading(false);
+        console.warn("[MaintenanceMassPlannerV2] Could not load assigned buildings", e);
+        setAssignedBuildingIds(new Set());
       }
-    })();
-  }, [monthStart, monthEnd]);
+    };
 
-  // --- helpers ---
-  const selectedBuildingsObjects = useMemo(() => {
-    const idSet = new Set(selectedBuildings);
-    return buildings.filter((b) => idSet.has(b.id));
-  }, [buildings, selectedBuildings]);
+    if (buildings.length === 0) {
+      setAssignedBuildingIds(new Set());
+      return;
+    }
 
-  useEffect(() => {
-    // Rebuild drafts when selected buildings change
-    setDrafts((prev) => {
-      const byId = new Map(prev.map((d) => [d.building.id, d]));
-      const next: AssignmentDraft[] = [];
+    loadAssigned();
+  }, [currentMonthKey, buildings.length]);
 
-      for (const b of selectedBuildingsObjects) {
-        const existing = byId.get(b.id);
-        next.push(
-          existing || {
-            building: b,
-            internalTechnicians: [],
-            externalTechnicians: [],
-            day: toISODate(new Date(year, month, 1)),
-            durationOption: 1,
-            customDays: 4,
-            is_fixed: false,
-          }
-        );
-      }
-      return next;
-    });
-  }, [selectedBuildingsObjects, month, year]);
+  // Helpers for drafts
+  const ensureDraftForBuilding = (buildingId: string) => {
+    // Creates drafts for all dates with empty technician by default
+    const existing = drafts.filter((d) => d.buildingId === buildingId);
+    if (existing.length > 0) return;
 
-  const addExternalLocal = () => {
-    const name = externalNameInput.trim();
-    if (!name) return;
-    const id = `local-${Date.now()}`;
-    setExternalTechnicians((prev) => [...prev, { id, full_name: name }]);
-    setExternalNameInput("");
+    const newDrafts: AssignmentDraft[] = monthDates.map((date) => ({
+      buildingId,
+      date,
+      technicianId: null,
+      title: "Mantención",
+    }));
+
+    setDrafts((prev) => [...prev, ...newDrafts]);
   };
 
-  const daysInMonth = useMemo(() => {
-    const last = new Date(year, month + 1, 0);
-    const out: string[] = [];
-    for (let d = 1; d <= last.getDate(); d++) {
-      const iso = toISODate(new Date(year, month, d));
-      if (isWeekday(iso)) out.push(iso);
-    }
-    return out;
-  }, [year, month]);
+  const removeDraftsForBuilding = (buildingId: string) => {
+    setDrafts((prev) => prev.filter((d) => d.buildingId !== buildingId));
+  };
 
-  const updateDraft = (buildingId: string, patch: Partial<AssignmentDraft>) => {
+  const toggleBuilding = (buildingId: string) => {
+    setSuccess("");
+    setError(null);
+
+    setSelectedBuildings((prev) => {
+      const exists = prev.includes(buildingId);
+      const next = exists ? prev.filter((id) => id !== buildingId) : [...prev, buildingId];
+
+      // Maintain drafts
+      if (!exists) ensureDraftForBuilding(buildingId);
+      else removeDraftsForBuilding(buildingId);
+
+      return next;
+    });
+  };
+
+  const setDraftTechnician = (buildingId: string, date: string, technicianId: string | null) => {
     setDrafts((prev) =>
-      prev.map((d) => (d.building.id === buildingId ? { ...d, ...patch } : d))
+      prev.map((d) =>
+        d.buildingId === buildingId && d.date === date ? { ...d, technicianId } : d
+      )
     );
   };
 
-  // --- Save (bloqueo por ausencias aprobadas) ---
+  const setDraftTitle = (buildingId: string, title: string) => {
+    setDrafts((prev) =>
+      prev.map((d) =>
+        d.buildingId === buildingId ? { ...d, title } : d
+      )
+    );
+  };
+
+  const selectedBuildingObjects = useMemo(() => {
+    const set = new Set(selectedBuildings);
+    return buildings.filter((b) => set.has(b.id));
+  }, [selectedBuildings, buildings]);
+
+  const draftsByBuilding = useMemo(() => {
+    const map = new Map<string, AssignmentDraft[]>();
+    for (const d of drafts) {
+      const arr = map.get(d.buildingId) || [];
+      arr.push(d);
+      map.set(d.buildingId, arr);
+    }
+    // sort by date
+    map.forEach((arr) => arr.sort((a, b) => a.date.localeCompare(b.date)));
+    return map;
+  }, [drafts]);
+
   const handleSave = async () => {
-    setError("");
+    setSaving(true);
+    setError(null);
     setSuccess("");
-    setLoading(true);
 
     try {
-      if (drafts.length === 0) {
-        setError("Selecciona uno o más edificios.");
-        return;
+      if (selectedBuildings.length === 0) {
+        throw new Error("Debes seleccionar al menos un edificio.");
       }
 
-      const invalid = drafts.find(
-        (d) => d.internalTechnicians.length === 0 && d.externalTechnicians.length === 0
-      );
-      if (invalid) {
-        setError(
-          `En "${invalid.building.name}": selecciona al menos 1 técnico interno o 1 externo recurrente.`
-        );
-        return;
+      // Build rows for insertion
+      // Note: this table uses client_id as building/client reference in your project.
+      const rows = drafts
+        .filter((d) => selectedBuildings.includes(d.buildingId))
+        .map((d) => ({
+          calendar_month: currentMonthKey,
+          client_id: d.buildingId,
+          event_date: d.date,
+          technician_id: d.technicianId,
+          title: d.title || "Mantención",
+          source: "mass_planner",
+          created_at: new Date().toISOString(),
+        }));
+
+      if (rows.length === 0) {
+        throw new Error("No hay asignaciones para guardar.");
       }
 
-      const monthStr = monthKey(year, month);
-
-      // --- Block planning on approved absence days (internal technicians) ---
-      if (absenceLoading) {
-        setError("Cargando ausencias aprobadas... intenta nuevamente en unos segundos.");
-        return;
-      }
-
-      const violations: Array<{ day: string; building: string; techName: string }> = [];
-
-      for (const d of drafts) {
-        for (const t of d.internalTechnicians) {
-          const blockedSet = blockedByTech[t.id];
-          if (blockedSet && blockedSet.has(d.day)) {
-            violations.push({ day: d.day, building: d.building.name, techName: t.full_name });
-          }
-        }
-      }
-
-      if (violations.length > 0) {
-        const v = violations.slice(0, 6);
-        const msg =
-          "No puedes asignar técnicos en fechas con ausencias aprobadas:\n" +
-          v.map((x) => `• ${x.day} — ${x.techName} (${x.building})`).join("\n") +
-          (violations.length > v.length ? `\n…y ${violations.length - v.length} más.` : "");
-
-        setError(msg);
-        return;
-      }
-
-      const rows: any[] = [];
-
-      for (const d of drafts) {
-        const base = {
-          client_id: d.building.id,
-          building_name: d.building.name,
-          scheduled_date: d.day,
-          status: "scheduled",
-          is_fixed: !!d.is_fixed,
-          is_external: false,
-          external_personnel_name: null,
-          calendar_month: monthStr,
-        };
-
-        for (const t of d.internalTechnicians) {
-          rows.push({
-            ...base,
-            assigned_technician_id: t.id,
-            is_external: false,
-            external_personnel_name: null,
-          });
-        }
-
-        for (const ex of d.externalTechnicians) {
-          rows.push({
-            ...base,
-            assigned_technician_id: null,
-            is_external: true,
-            external_personnel_name: ex.full_name,
-          });
-        }
-      }
-
-      const { error: insertError } = await supabase
-        .from("maintenance_assignments")
-        .insert(rows);
+      const { error: insertError } = await supabase.from("maintenance_assignments").insert(rows);
       if (insertError) throw insertError;
 
-      setSuccess("Asignaciones guardadas correctamente.");
-      onSuccess?.();
+      // ✅ Descuenta inmediatamente los edificios asignados en este mes
+      if (selectedBuildings.length > 0) {
+        setAssignedBuildingIds((prev) => {
+          const next = new Set(prev);
+          selectedBuildings.forEach((id) => next.add(id));
+          return next;
+        });
+      }
 
-      setTimeout(() => {
-        setSuccess("");
-        onClose();
-      }, 900);
-    } catch (err: any) {
-      setError(err?.message || "Error al guardar asignaciones.");
+      // Limpia selección/drafts para evitar re-guardar lo mismo
+      setSelectedBuildings([]);
+      setDrafts([]);
+
+      setSuccess("Asignaciones guardadas correctamente.");
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || "Error guardando asignaciones");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold flex items-center gap-2 mb-4">
-        <Calendar className="w-7 h-7" /> Planner masivo (mantenciones)
-      </h2>
-
-      {absenceLoading ? (
-        <div className="text-xs text-slate-500 mb-2">Cargando ausencias aprobadas…</div>
-      ) : absenceError ? (
-        <div className="text-xs text-red-600 mb-2">Ausencias: {absenceError}</div>
-      ) : null}
-
-      {error && (
-        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 whitespace-pre-line">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-          {success}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: selectors */}
-        <div className="space-y-4">
-          <div className="rounded-xl border p-4">
-            <div className="font-semibold mb-2">Mes</div>
-            <div className="flex items-center gap-2">
-              <select
-                className="border rounded-lg px-3 py-2 text-sm"
-                value={month}
-                onChange={(e) => setMonth(Number(e.target.value))}
-              >
-                {Array.from({ length: 12 }).map((_, i) => (
-                  <option key={i} value={i}>
-                    {format(new Date(year, i, 1), "MMMM", { locale: es })}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="number"
-                className="border rounded-lg px-3 py-2 text-sm w-28"
-                value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
-              />
-            </div>
-
-            <div className="mt-2 text-xs text-slate-500">
-              Rango: <b>{monthStart}</b> → <b>{monthEnd}</b>
-            </div>
-          </div>
-
-          <div className="rounded-xl border p-4">
-            <div className="font-semibold mb-2">Edificios</div>
-
-            <select
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              multiple
-              value={selectedBuildings}
-              onChange={(e) => {
-                const opts = Array.from(e.target.selectedOptions).map((o) => o.value);
-                setSelectedBuildings(opts);
-              }}
-              size={10}
-            >
-              {buildings.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-
-            <div className="mt-2 text-xs text-slate-500">
-              Seleccionados: <b>{selectedBuildings.length}</b>
-            </div>
-          </div>
-
-          <div className="rounded-xl border p-4">
-            <div className="font-semibold mb-2 flex items-center justify-between">
-              Técnicos externos
-              <span className="text-xs text-slate-500">
-                modo: <b>{externalStoreMode === "db" ? "DB" : "local"}</b>
-              </span>
-            </div>
-
-            {externalStoreMode === "local" && (
-              <div className="flex gap-2 mb-3">
-                <input
-                  value={externalNameInput}
-                  onChange={(e) => setExternalNameInput(e.target.value)}
-                  placeholder="Nombre técnico externo"
-                  className="flex-1 border rounded-lg px-3 py-2 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={addExternalLocal}
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 text-white px-3 py-2 text-sm"
-                >
-                  <UserPlus className="w-4 h-4" /> Agregar
-                </button>
-              </div>
-            )}
-
-            <div className="text-sm text-slate-600">
-              Disponibles: <b>{externalTechnicians.length}</b>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: drafts */}
-        <div className="space-y-4">
-          <div className="rounded-xl border p-4">
-            <div className="font-semibold mb-3">Planificación por edificio</div>
-
-            {drafts.length === 0 ? (
-              <div className="text-sm text-slate-500">
-                Selecciona edificios para empezar.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {drafts.map((d) => (
-                  <div key={d.building.id} className="rounded-lg border p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="font-semibold">{d.building.name}</div>
-                      <button
-                        type="button"
-                        className="text-slate-500 hover:text-slate-900"
-                        onClick={() =>
-                          setSelectedBuildings((prev) =>
-                            prev.filter((id) => id !== d.building.id)
-                          )
-                        }
-                        title="Quitar edificio"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3">
-                      <div>
-                        <div className="text-xs font-semibold text-slate-700 mb-1">
-                          Día
-                        </div>
-                        <select
-                          className="w-full border rounded-lg px-3 py-2 text-sm"
-                          value={d.day}
-                          onChange={(e) =>
-                            updateDraft(d.building.id, { day: e.target.value })
-                          }
-                        >
-                          {daysInMonth.map((day) => (
-                            <option key={day} value={day}>
-                              {day}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <div className="text-xs font-semibold text-slate-700 mb-1">
-                          Técnicos internos
-                        </div>
-                        <TagPicker
-                          items={technicians}
-                          selected={d.internalTechnicians}
-                          placeholder="Buscar técnico..."
-                          onChange={(next) =>
-                            updateDraft(d.building.id, { internalTechnicians: next })
-                          }
-                        />
-                      </div>
-
-                      <div>
-                        <div className="text-xs font-semibold text-slate-700 mb-1">
-                          Técnicos externos
-                        </div>
-                        <TagPicker
-                          items={externalTechnicians}
-                          selected={d.externalTechnicians}
-                          placeholder="Buscar externo..."
-                          onChange={(next) =>
-                            updateDraft(d.building.id, { externalTechnicians: next })
-                          }
-                          disabled={externalTechnicians.length === 0}
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <input
-                          id={`fixed-${d.building.id}`}
-                          type="checkbox"
-                          checked={d.is_fixed}
-                          onChange={(e) =>
-                            updateDraft(d.building.id, { is_fixed: e.target.checked })
-                          }
-                        />
-                        <label
-                          htmlFor={`fixed-${d.building.id}`}
-                          className="text-sm text-slate-700"
-                        >
-                          Fija
-                        </label>
-                      </div>
-
-                      <div className="text-xs text-slate-500">
-                        Nota: si intentas asignar un técnico interno en un día con
-                        ausencia aprobada, el sistema lo bloqueará.
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-lg border bg-white px-4 py-2 text-sm"
-                onClick={onClose}
-                disabled={loading}
-              >
-                Cancelar
-              </button>
-
-              <button
-                type="button"
-                className="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm"
-                onClick={handleSave}
-                disabled={loading}
-              >
-                {loading ? "Guardando..." : "Guardar asignaciones"}
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-xl border p-4">
-            <div className="text-xs text-slate-600">
-              Tip: Se consideran días hábiles (L-V) en el selector de fechas.
-            </div>
-          </div>
+    <div className="rounded-lg border bg-white p-4">
+      <div className="mb-3">
+        <div className="text-base font-semibold">Planificador de mantenciones (masivo)</div>
+        <div className="text-sm text-slate-500">
+          Selecciona edificios y asigna técnicos por día para el mes completo.
         </div>
       </div>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-sm font-medium">Año</label>
+          <input
+            type="number"
+            className="mt-1 w-28 rounded-md border px-3 py-2 text-sm"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium">Mes</label>
+          <select
+            className="mt-1 w-56 rounded-md border px-3 py-2 text-sm"
+            value={month}
+            onChange={(e) => setMonth(Number(e.target.value))}
+          >
+            {[
+              "Enero",
+              "Febrero",
+              "Marzo",
+              "Abril",
+              "Mayo",
+              "Junio",
+              "Julio",
+              "Agosto",
+              "Septiembre",
+              "Octubre",
+              "Noviembre",
+              "Diciembre",
+            ].map((m, idx) => (
+              <option key={m} value={idx}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="text-sm text-slate-600">
+          <div>
+            Mes: <span className="font-semibold">{currentMonthKey}</span>
+          </div>
+          <div>Días: {monthDays}</div>
+        </div>
+      </div>
+
+      {loading && <div className="mt-4 text-sm text-slate-500">Cargando datos...</div>}
+
+      {!loading && (
+        <div className="mt-4 flex flex-col gap-4 lg:flex-row">
+          {/* LEFT: Buildings list */}
+          <div className="w-full lg:w-80 flex-shrink-0">
+            <label className="block font-medium mb-1">Edificios</label>
+
+            <div className="text-xs text-slate-500 mb-2">
+              Pendientes este mes:{" "}
+              <span className="font-semibold text-slate-700">{availableBuildings.length}</span> /{" "}
+              {buildings.length}
+              {assignedBuildingIds.size > 0 ? " (se ocultan los ya asignados)" : ""}
+            </div>
+
+            {buildings.length === 0 ? (
+              <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">
+                No hay edificios disponibles en la base de datos.
+              </div>
+            ) : availableBuildings.length === 0 ? (
+              <div className="text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 mt-2">
+                No hay edificios pendientes para asignar en{" "}
+                <span className="font-semibold">{currentMonthKey}</span>.
+              </div>
+            ) : (
+              <div className="border rounded px-2 py-2 bg-white" style={{ maxHeight: 260, overflowY: "auto" }}>
+                <div className="flex items-center justify-between gap-2 mb-2 px-1">
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-slate-700 underline"
+                    onClick={() => setSelectedBuildings(availableBuildings.map((b) => b.id))}
+                  >
+                    Seleccionar todos
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-slate-700 underline"
+                    onClick={() => {
+                      setSelectedBuildings([]);
+                      setDrafts([]);
+                    }}
+                  >
+                    Limpiar
+                  </button>
+                </div>
+
+                {availableBuildings.map((b) => (
+                  <label key={b.id} className="flex items-center gap-2 py-1 px-1 rounded hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={selectedBuildings.includes(b.id)}
+                      onChange={() => toggleBuilding(b.id)}
+                    />
+                    <div className="text-sm">
+                      <div className="font-medium">{safeName(b.name) || "Edificio"}</div>
+                      {safeName(b.client_name) && (
+                        <div className="text-xs text-slate-500">{safeName(b.client_name)}</div>
+                      )}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: Drafts editor */}
+          <div className="flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="font-medium">Asignaciones del mes</div>
+                <div className="text-sm text-slate-500">
+                  Define técnico por día (puedes dejar días en blanco y asignar después).
+                </div>
+              </div>
+
+              <button
+                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                disabled={saving || selectedBuildings.length === 0}
+                onClick={handleSave}
+              >
+                {saving ? "Guardando..." : "Guardar asignaciones"}
+              </button>
+            </div>
+
+            {error && (
+              <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
+            {success && (
+              <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                {success}
+              </div>
+            )}
+
+            {selectedBuildingObjects.length === 0 ? (
+              <div className="mt-6 text-sm text-slate-500">
+                Selecciona uno o más edificios para comenzar.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-4">
+                {selectedBuildingObjects.map((b) => {
+                  const list = draftsByBuilding.get(b.id) || [];
+
+                  return (
+                    <div key={b.id} className="rounded-lg border bg-white p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="font-semibold">{safeName(b.name) || "Edificio"}</div>
+                          {safeName(b.client_name) && (
+                            <div className="text-xs text-slate-500">{safeName(b.client_name)}</div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <input
+                            className="w-64 rounded-md border px-3 py-2 text-sm"
+                            placeholder="Título (ej: Mantención)"
+                            value={list[0]?.title || "Mantención"}
+                            onChange={(e) => setDraftTitle(b.id, e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="rounded-md border bg-white px-3 py-2 text-sm"
+                            onClick={() => {
+                              toggleBuilding(b.id);
+                            }}
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="w-full min-w-[720px] border-collapse text-sm">
+                          <thead>
+                            <tr className="border-b bg-slate-50 text-left">
+                              <th className="px-2 py-2">Fecha</th>
+                              <th className="px-2 py-2">Técnico</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {list.map((d) => (
+                              <tr key={`${d.buildingId}-${d.date}`} className="border-b">
+                                <td className="px-2 py-2 whitespace-nowrap">{d.date}</td>
+                                <td className="px-2 py-2">
+                                  <select
+                                    className="w-full rounded-md border px-3 py-2 text-sm"
+                                    value={d.technicianId || ""}
+                                    onChange={(e) =>
+                                      setDraftTechnician(
+                                        d.buildingId,
+                                        d.date,
+                                        e.target.value ? e.target.value : null
+                                      )
+                                    }
+                                  >
+                                    <option value="">Sin asignar</option>
+                                    {technicians.map((t) => (
+                                      <option key={t.id} value={t.id}>
+                                        {safeName(t.full_name) || t.id}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="mt-6 rounded-lg border bg-slate-50 p-3">
+              <div className="text-sm font-semibold">Técnicos externos (opcional)</div>
+              <div className="text-sm text-slate-600">
+                Modo: <span className="font-medium">{externalStoreMode === "db" ? "BD" : "Local"}</span>
+              </div>
+
+              {externalTechnicians.length === 0 ? (
+                <div className="mt-2 text-sm text-slate-500">
+                  No se encontraron técnicos externos.
+                </div>
+              ) : (
+                <div className="mt-2 text-sm text-slate-600">
+                  {externalTechnicians.map((t) => (
+                    <div key={t.id}>{safeName(t.full_name)}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
