@@ -1,10 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabase";
-import type { ServiceRequest } from "../../../types/serviceRequests";
 
-type ReqStatus = ServiceRequest["status"];
+type ServiceRequestRow = {
+  id: string;
+  title: string | null;
+  status: string;
+  priority: string | null;
+  request_type: string;
+  created_at: string;
 
-function statusLabel(s: ReqStatus) {
+  client_id: string | null;
+  building_name: string | null;
+};
+
+function labelStatus(s: string) {
   const map: Record<string, string> = {
     pending: "Pendiente",
     analyzing: "En análisis",
@@ -12,132 +21,123 @@ function statusLabel(s: ReqStatus) {
     rejected: "Rechazada",
     in_progress: "En progreso",
     completed: "Completada",
-    quotation_sent: "Cotización enviada",
     on_hold: "En espera",
+    quotation_sent: "Cotización enviada",
   };
-  return map[s] || String(s);
+  return map[s] ?? s;
 }
 
-function reqTypeLabel(t: ServiceRequest["request_type"]) {
+function labelType(t: string) {
   const map: Record<string, string> = {
     repair: "Reparación",
     parts: "Repuestos",
     support: "Soporte",
     inspection: "Inspección",
+    technical_visit: "Visita técnica",
+    certification: "Certificación",
+    rescue_training: "Inducción / Rescate",
   };
-  return map[t] || String(t);
+  return map[t] ?? t;
 }
 
-function mapRequestTypeToCalendarEventType(
-  t: ServiceRequest["request_type"]
-): "repair" | "parts" | "support" | "inspection" {
-  if (t === "repair") return "repair";
-  if (t === "parts") return "parts";
-  if (t === "support") return "support";
-  return "inspection";
+function mapToCalendarEventType(t: string) {
+  // Asegura que lo que guardamos en calendar_events sea consistente
+  const allowed = new Set([
+    "repair",
+    "parts",
+    "support",
+    "inspection",
+    "technical_visit",
+    "certification",
+    "rescue_training",
+  ]);
+  return allowed.has(t) ? t : "support";
 }
 
 export function CoordinationServiceRequestsTab() {
   const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<ServiceRequest[]>([]);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string>("");
 
-  const [planning, setPlanning] = useState<ServiceRequest | null>(null);
-  const [planDate, setPlanDate] = useState<string>("");
-  const [planBuildingName, setPlanBuildingName] = useState<string>("");
+  const [rows, setRows] = useState<ServiceRequestRow[]>([]);
 
-  const load = async () => {
+  // modal planificar
+  const [planning, setPlanning] = useState<ServiceRequestRow | null>(null);
+  const [planDate, setPlanDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [planBuilding, setPlanBuilding] = useState<string>("");
+  const [planTitle, setPlanTitle] = useState<string>("");
+
+  async function load() {
     setLoading(true);
     setError("");
     try {
       const { data, error } = await supabase
         .from("service_requests")
-        .select(
-          `
-          *,
-          clients:clients(company_name, building_name, address),
-          elevators:elevators(elevator_number, location_name, brand, model)
-        `
-        )
+        .select("id,title,status,priority,request_type,created_at,client_id,building_name")
         .in("status", ["pending", "analyzing", "approved"])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setRows((data ?? []) as ServiceRequest[]);
+      setRows((data ?? []) as ServiceRequestRow[]);
     } catch (e: any) {
-      setError(e?.message || "Error cargando solicitudes");
+      setError(e?.message || "Error cargando service_requests");
+      setRows([]);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
-    void load();
+    load();
   }, []);
 
-  const approve = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from("service_requests")
-        .update({ status: "approved", reviewed_at: new Date().toISOString() })
-        .eq("id", id);
+  const grouped = useMemo(() => {
+    const out: Record<string, ServiceRequestRow[]> = { pending: [], analyzing: [], approved: [] };
+    for (const r of rows) {
+      if (r.status === "pending") out.pending.push(r);
+      else if (r.status === "analyzing") out.analyzing.push(r);
+      else if (r.status === "approved") out.approved.push(r);
+    }
+    return out;
+  }, [rows]);
 
+  async function setStatus(id: string, status: string) {
+    try {
+      const { error } = await supabase.from("service_requests").update({ status }).eq("id", id);
       if (error) throw error;
       await load();
     } catch (e: any) {
-      alert(e?.message || "Error aprobando solicitud");
+      alert(e?.message || "Error actualizando status");
     }
-  };
+  }
 
-  const reject = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from("service_requests")
-        .update({ status: "rejected", reviewed_at: new Date().toISOString() })
-        .eq("id", id);
-
-      if (error) throw error;
-      await load();
-    } catch (e: any) {
-      alert(e?.message || "Error rechazando solicitud");
-    }
-  };
-
-  const openPlan = (r: ServiceRequest) => {
+  function openPlan(r: ServiceRequestRow) {
     setPlanning(r);
-    const today = new Date().toISOString().slice(0, 10);
-    setPlanDate(today);
-    setPlanBuildingName(r.clients?.building_name || r.title || "");
-  };
+    setPlanDate(new Date().toISOString().slice(0, 10));
+    setPlanBuilding(r.building_name || "");
+    setPlanTitle(r.title || `${labelType(r.request_type)} - ${r.building_name || ""}`.trim());
+  }
 
-  /**
-   * ✅ NUEVO: en vez de crear maintenance_assignments,
-   * creamos un evento consolidado en calendar_events,
-   * que Resumen lee vía v_calendar_events_month.
-   */
-  const createAssignmentFromRequest = async () => {
+  async function createCalendarEventFromRequest() {
     if (!planning) return;
-    if (!planDate) return alert("Selecciona una fecha");
-    if (!planning.client_id) return alert("Solicitud sin client_id");
-
-    const eventType = mapRequestTypeToCalendarEventType(planning.request_type);
-
-    // timestamps día completo
-    const start_at = `${planDate}T00:00:00`;
-    const end_at = `${planDate}T23:59:59`;
-
-    // id con patrón consistente (como maintenance:<uuid>)
-    const id = `${eventType}:${planning.id}`;
-
-    const title = `${reqTypeLabel(planning.request_type)} - ${planBuildingName || planning.title}`;
 
     try {
+      if (!planDate) throw new Error("Selecciona una fecha");
+      if (!planning.client_id) throw new Error("Esta solicitud no tiene client_id");
+      if (!planTitle.trim()) throw new Error("Escribe un título");
+
+      const event_type = mapToCalendarEventType(planning.request_type);
+      const start_at = `${planDate}T00:00:00`;
+      const end_at = `${planDate}T23:59:59`;
+
+      // id estable para evitar duplicados por error: <type>:<requestId>
+      const id = `${event_type}:${planning.id}`;
+
       const { error: insErr } = await supabase.from("calendar_events").insert({
         id,
-        event_type: eventType,
-        source_id: planning.id, // vinculamos al id de la solicitud
+        event_type,
+        source_id: planning.id,
         client_id: planning.client_id,
-        building_name: planBuildingName,
+        building_name: planBuilding || null,
         technician_id: null,
         is_external: false,
         external_personnel_name: null,
@@ -145,12 +145,12 @@ export function CoordinationServiceRequestsTab() {
         event_date: planDate,
         start_at,
         end_at,
-        title,
+        title: planTitle.trim(),
       });
 
       if (insErr) throw insErr;
 
-      // la solicitud pasa a "in_progress" cuando ya existe evento real
+      // solicitud pasa a in_progress cuando ya existe evento real
       const { error: updErr } = await supabase
         .from("service_requests")
         .update({ status: "in_progress" })
@@ -160,37 +160,24 @@ export function CoordinationServiceRequestsTab() {
 
       setPlanning(null);
       await load();
-      alert("Asignación creada desde solicitud ✅");
+      alert("Asignación creada ✅ (calendar_events)");
     } catch (e: any) {
-      alert(e?.message || "Error creando asignación");
+      alert(e?.message || "Error creando calendar_event");
     }
-  };
-
-  const grouped = useMemo(() => {
-    const by: Record<string, ServiceRequest[]> = {
-      pending: [],
-      analyzing: [],
-      approved: [],
-    };
-    rows.forEach((r) => {
-      if (r.status === "pending") by.pending.push(r);
-      else if (r.status === "analyzing") by.analyzing.push(r);
-      else if (r.status === "approved") by.approved.push(r);
-    });
-    return by;
-  }, [rows]);
+  }
 
   return (
     <div className="rounded-lg border bg-white p-4">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <div className="text-base font-semibold">Coordinación (solicitudes)</div>
           <div className="text-xs text-slate-500">
-            Admin revisa solicitudes del cliente y las convierte en asignaciones reales del calendario.
+            Aprueba / rechaza y convierte solicitudes en asignaciones reales del calendario.
           </div>
         </div>
+
         <button
-          className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white"
+          className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-60"
           onClick={load}
           disabled={loading}
         >
@@ -207,70 +194,71 @@ export function CoordinationServiceRequestsTab() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {(["pending", "analyzing", "approved"] as const).map((status) => (
           <div key={status} className="rounded-lg border p-3">
-            <div className="mb-2 text-sm font-semibold">{statusLabel(status)}</div>
+            <div className="mb-2 text-sm font-semibold">{labelStatus(status)}</div>
 
-            <div className="space-y-2">
-              {grouped[status].length === 0 ? (
-                <div className="text-xs text-slate-500">Sin solicitudes</div>
-              ) : (
-                grouped[status].map((r) => (
-                  <div key={r.id} className="rounded-lg border bg-white p-3">
+            {grouped[status].length === 0 ? (
+              <div className="text-xs text-slate-500">Sin solicitudes</div>
+            ) : (
+              <div className="space-y-2">
+                {grouped[status].map((r) => (
+                  <div key={r.id} className="rounded-lg border p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-sm font-semibold">{r.title}</div>
+                        <div className="text-sm font-semibold">{r.title || "(Sin título)"}</div>
                         <div className="mt-1 text-xs text-slate-600">
-                          Tipo: <b>{reqTypeLabel(r.request_type)}</b> · Prioridad:{" "}
-                          <b>{r.priority}</b>
+                          Tipo: <b>{labelType(r.request_type)}</b> · Prioridad: <b>{r.priority || "—"}</b>
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          Cliente: <b>{r.clients?.company_name || "—"}</b> · Edificio:{" "}
-                          <b>{r.clients?.building_name || "—"}</b>
+                          Edificio: <b>{r.building_name || "—"}</b>
                         </div>
                       </div>
 
                       <div className="flex flex-col gap-2">
-                        {r.status === "pending" || r.status === "analyzing" ? (
+                        {(r.status === "pending" || r.status === "analyzing") && (
                           <>
                             <button
                               className="rounded-md bg-emerald-600 px-2 py-1 text-xs text-white"
-                              onClick={() => approve(r.id)}
+                              onClick={() => setStatus(r.id, "approved")}
                             >
                               Aprobar
                             </button>
                             <button
                               className="rounded-md bg-rose-600 px-2 py-1 text-xs text-white"
-                              onClick={() => reject(r.id)}
+                              onClick={() => setStatus(r.id, "rejected")}
                             >
                               Rechazar
                             </button>
                           </>
-                        ) : null}
+                        )}
 
-                        {r.status === "approved" ? (
+                        {r.status === "approved" && (
                           <button
-                            className="rounded-md bg-emerald-600 px-2 py-1 text-xs text-white"
+                            className="rounded-md bg-slate-900 px-2 py-1 text-xs text-white"
                             onClick={() => openPlan(r)}
                           >
                             Planificar
                           </button>
-                        ) : null}
+                        )}
                       </div>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
 
+      {/* MODAL PLANIFICAR */}
       {planning ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
           <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow">
-            <div className="mb-2 text-base font-semibold">Planificar solicitud</div>
-            <div className="text-sm text-slate-600">{planning.title}</div>
+            <div className="text-base font-semibold">Planificar solicitud</div>
+            <div className="mt-1 text-sm text-slate-600">
+              {labelType(planning.request_type)} • {planning.title || "(Sin título)"}
+            </div>
 
-            <div className="mt-3 space-y-3">
+            <div className="mt-4 space-y-3">
               <div>
                 <div className="text-xs font-semibold text-slate-700">Fecha</div>
                 <input
@@ -282,14 +270,22 @@ export function CoordinationServiceRequestsTab() {
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-slate-700">
-                  Edificio / Identificador
-                </div>
+                <div className="text-xs font-semibold text-slate-700">Edificio / Identificador</div>
                 <input
                   className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                  value={planBuildingName}
-                  onChange={(e) => setPlanBuildingName(e.target.value)}
+                  value={planBuilding}
+                  onChange={(e) => setPlanBuilding(e.target.value)}
                   placeholder="Ej: Torre A - Edificio Los Robles"
+                />
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold text-slate-700">Título</div>
+                <input
+                  className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                  value={planTitle}
+                  onChange={(e) => setPlanTitle(e.target.value)}
+                  placeholder="Ej: Reparación - Torre A"
                 />
               </div>
 
@@ -302,15 +298,14 @@ export function CoordinationServiceRequestsTab() {
                 </button>
                 <button
                   className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white"
-                  onClick={createAssignmentFromRequest}
+                  onClick={createCalendarEventFromRequest}
                 >
                   Crear asignación
                 </button>
               </div>
 
               <div className="text-xs text-slate-500">
-                Nota: esto crea un evento real en <b>calendar_events</b> y pasa la solicitud a{" "}
-                <b>in_progress</b>.
+                Esto crea un evento real en <b>calendar_events</b> y cambia la solicitud a <b>in_progress</b>.
               </div>
             </div>
           </div>
