@@ -10,11 +10,8 @@ type Building = {
 type Technician = {
   id: string;
   full_name: string;
-};
-
-type ExternalTech = {
-  id: string;
-  full_name: string;
+  person_type: "internal" | "external";
+  company_name: string | null;
 };
 
 type AssignmentDraft = {
@@ -40,6 +37,15 @@ function safeName(s?: string | null) {
   return (s || "").trim();
 }
 
+function formatTechnicianLabel(t: Technician) {
+  const name = safeName(t.full_name) || t.id;
+  if (t.person_type === "external") {
+    const company = safeName(t.company_name);
+    return company ? `${name} (Externo - ${company})` : `${name} (Externo)`;
+  }
+  return name;
+}
+
 export function MaintenanceMassPlannerV2() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -48,8 +54,6 @@ export function MaintenanceMassPlannerV2() {
 
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
-  const [externalTechnicians, setExternalTechnicians] = useState<ExternalTech[]>([]);
-  const [externalStoreMode, setExternalStoreMode] = useState<"db" | "local">("local");
 
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<AssignmentDraft[]>([]);
@@ -94,7 +98,11 @@ export function MaintenanceMassPlannerV2() {
               .from("buildings")
               .select("id,name,clients(name)")
               .order("name", { ascending: true }),
-            supabase.from("profiles").select("id,full_name").order("full_name", { ascending: true }),
+            supabase
+              .from("profiles")
+              .select("id,full_name,person_type,company_name")
+              .eq("role", "technician")
+              .order("full_name", { ascending: true }),
           ]);
 
         if (buildingsErr) throw buildingsErr;
@@ -108,20 +116,6 @@ export function MaintenanceMassPlannerV2() {
 
         setBuildings(mappedBuildings);
         setTechnicians((techData || []) as Technician[]);
-
-        // External technicians (optional)
-        // If you have a table: external_technicians, load it; otherwise keep local-only
-        const { data: extData, error: extErr } = await supabase
-          .from("external_technicians")
-          .select("id,full_name")
-          .order("full_name", { ascending: true });
-
-        if (!extErr && extData) {
-          setExternalTechnicians(extData as ExternalTech[]);
-          setExternalStoreMode("db");
-        } else {
-          setExternalStoreMode("local");
-        }
       } catch (e: any) {
         console.error(e);
         setError(e?.message || "Error cargando datos");
@@ -131,20 +125,22 @@ export function MaintenanceMassPlannerV2() {
     })();
   }, []);
 
-  // Cargar qué edificios YA tienen asignación en el mes seleccionado (para ocultarlos del listado)
+  // ✅ Cargar qué edificios YA tienen asignación en el mes seleccionado (para ocultarlos del listado)
   useEffect(() => {
     const loadAssigned = async () => {
       try {
         const { data, error } = await supabase
           .from("maintenance_assignments")
-          .select("client_id")
+          .select("building_id")
           .eq("calendar_month", currentMonthKey);
 
         if (error) throw error;
 
-        const ids = new Set<string>((data || [])
-          .map((r: any) => r?.client_id)
-          .filter(Boolean));
+        const ids = new Set<string>(
+          (data || [])
+            .map((r: any) => r?.building_id)
+            .filter(Boolean)
+        );
 
         setAssignedBuildingIds(ids);
         setSelectedBuildings((prev) => prev.filter((id) => !ids.has(id)));
@@ -207,11 +203,7 @@ export function MaintenanceMassPlannerV2() {
   };
 
   const setDraftTitle = (buildingId: string, title: string) => {
-    setDrafts((prev) =>
-      prev.map((d) =>
-        d.buildingId === buildingId ? { ...d, title } : d
-      )
-    );
+    setDrafts((prev) => prev.map((d) => (d.buildingId === buildingId ? { ...d, title } : d)));
   };
 
   const selectedBuildingObjects = useMemo(() => {
@@ -242,12 +234,11 @@ export function MaintenanceMassPlannerV2() {
       }
 
       // Build rows for insertion
-      // Note: this table uses client_id as building/client reference in your project.
       const rows = drafts
         .filter((d) => selectedBuildings.includes(d.buildingId))
         .map((d) => ({
           calendar_month: currentMonthKey,
-          client_id: d.buildingId,
+          building_id: d.buildingId,
           event_date: d.date,
           technician_id: d.technicianId,
           title: d.title || "Mantención",
@@ -365,15 +356,24 @@ export function MaintenanceMassPlannerV2() {
                 <span className="font-semibold">{currentMonthKey}</span>.
               </div>
             ) : (
-              <div className="border rounded px-2 py-2 bg-white" style={{ maxHeight: 260, overflowY: "auto" }}>
+              <div
+                className="border rounded px-2 py-2 bg-white"
+                style={{ maxHeight: 260, overflowY: "auto" }}
+              >
                 <div className="flex items-center justify-between gap-2 mb-2 px-1">
                   <button
                     type="button"
                     className="text-xs font-semibold text-slate-700 underline"
-                    onClick={() => setSelectedBuildings(availableBuildings.map((b) => b.id))}
+                    onClick={() => {
+                      const ids = availableBuildings.map((b) => b.id);
+                      setSelectedBuildings(ids);
+                      // crear drafts para los que falten
+                      ids.forEach((id) => ensureDraftForBuilding(id));
+                    }}
                   >
                     Seleccionar todos
                   </button>
+
                   <button
                     type="button"
                     className="text-xs font-semibold text-slate-700 underline"
@@ -387,7 +387,10 @@ export function MaintenanceMassPlannerV2() {
                 </div>
 
                 {availableBuildings.map((b) => (
-                  <label key={b.id} className="flex items-center gap-2 py-1 px-1 rounded hover:bg-slate-50">
+                  <label
+                    key={b.id}
+                    className="flex items-center gap-2 py-1 px-1 rounded hover:bg-slate-50"
+                  >
                     <input
                       type="checkbox"
                       checked={selectedBuildings.includes(b.id)}
@@ -501,7 +504,7 @@ export function MaintenanceMassPlannerV2() {
                                     <option value="">Sin asignar</option>
                                     {technicians.map((t) => (
                                       <option key={t.id} value={t.id}>
-                                        {safeName(t.full_name) || t.id}
+                                        {formatTechnicianLabel(t)}
                                       </option>
                                     ))}
                                   </select>
@@ -516,25 +519,6 @@ export function MaintenanceMassPlannerV2() {
                 })}
               </div>
             )}
-
-            <div className="mt-6 rounded-lg border bg-slate-50 p-3">
-              <div className="text-sm font-semibold">Técnicos externos (opcional)</div>
-              <div className="text-sm text-slate-600">
-                Modo: <span className="font-medium">{externalStoreMode === "db" ? "BD" : "Local"}</span>
-              </div>
-
-              {externalTechnicians.length === 0 ? (
-                <div className="mt-2 text-sm text-slate-500">
-                  No se encontraron técnicos externos.
-                </div>
-              ) : (
-                <div className="mt-2 text-sm text-slate-600">
-                  {externalTechnicians.map((t) => (
-                    <div key={t.id}>{safeName(t.full_name)}</div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </div>
       )}

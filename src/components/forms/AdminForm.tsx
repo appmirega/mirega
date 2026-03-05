@@ -1,5 +1,6 @@
 // src/components/forms/AdminForm.tsx
 import { useState } from 'react';
+import { supabase } from '../../lib/supabase';
 import { Shield, User, Mail, Phone, Eye, EyeOff, Key, X, AlertCircle, CheckCircle } from 'lucide-react';
 import { safeJson } from '../../lib/safeJson';
 
@@ -31,15 +32,26 @@ export default function AdminForm({ onSuccess, onCancel }: AdminFormProps) {
     setMessage(null);
 
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) throw new Error('No hay sesión activa');
+
       const res = await fetch('/api/users/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           full_name: fullName,
           email,
-          phone,
+          phone: phone || null,
           password,
           role: 'admin',
+          person_type: 'internal',
+          company_name: null,
+          grant_access: true,
         }),
       });
 
@@ -145,11 +157,7 @@ export default function AdminForm({ onSuccess, onCancel }: AdminFormProps) {
             className="w-full outline-none bg-transparent"
             placeholder="Contraseña segura"
           />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="text-gray-400 hover:text-gray-600"
-          >
+          <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-gray-400 hover:text-gray-600">
             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
@@ -172,11 +180,7 @@ export default function AdminForm({ onSuccess, onCancel }: AdminFormProps) {
 
       <div className="flex justify-end gap-2 mt-4">
         {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-100"
-          >
+          <button type="button" onClick={onCancel} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-100">
             Cancelar
           </button>
         )}

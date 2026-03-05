@@ -12,6 +12,11 @@ export type Database = {
           phone: string | null;
           avatar_url: string | null;
           is_active: boolean;
+
+          // ✅ NUEVOS CAMPOS
+          person_type: 'internal' | 'external';
+          company_name: string | null;
+
           created_at: string;
           updated_at: string;
         };
@@ -23,6 +28,11 @@ export type Database = {
           phone?: string | null;
           avatar_url?: string | null;
           is_active?: boolean;
+
+          // ✅ NUEVOS CAMPOS
+          person_type?: 'internal' | 'external';
+          company_name?: string | null;
+
           created_at?: string;
           updated_at?: string;
         };
@@ -34,6 +44,11 @@ export type Database = {
           phone?: string | null;
           avatar_url?: string | null;
           is_active?: boolean;
+
+          // ✅ NUEVOS CAMPOS
+          person_type?: 'internal' | 'external';
+          company_name?: string | null;
+
           created_at?: string;
           updated_at?: string;
         };
