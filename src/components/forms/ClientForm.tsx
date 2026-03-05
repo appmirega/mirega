@@ -8,7 +8,7 @@ interface ClientFormProps {
   onCancel?: () => void
 }
 
-export default function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
+export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
 
   const defaultPassword = useMemo(() => {
     const year = new Date().getFullYear()
