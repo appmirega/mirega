@@ -1,7 +1,7 @@
 // src/components/forms/AdminForm.tsx
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Shield, User, Mail, Phone, Eye, EyeOff, Key, X, AlertCircle, CheckCircle } from 'lucide-react';
+import { Shield, User, Mail, Phone, X, AlertCircle, CheckCircle, KeyRound } from 'lucide-react';
 import { safeJson } from '../../lib/safeJson';
 
 export interface AdminFormProps {
@@ -13,20 +13,17 @@ export default function AdminForm({ onSuccess, onCancel }: AdminFormProps) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const defaultPassword = useMemo(() => {
+    const year = new Date().getFullYear();
+    return `Mirega${year}@@`;
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
-
-    if (password !== confirmPassword) {
-      setMessage({ type: 'error', text: 'Las contraseñas no coinciden' });
-      return;
-    }
 
     setLoading(true);
     setMessage(null);
@@ -47,7 +44,7 @@ export default function AdminForm({ onSuccess, onCancel }: AdminFormProps) {
           full_name: fullName,
           email,
           phone: phone || null,
-          password,
+          password: null, // ✅ autogenerada backend Mirega{AÑO}@@
           role: 'admin',
           person_type: 'internal',
           company_name: null,
@@ -60,12 +57,14 @@ export default function AdminForm({ onSuccess, onCancel }: AdminFormProps) {
         throw new Error(result?.error || 'No se pudo crear el administrador');
       }
 
-      setMessage({ type: 'success', text: `Administrador ${fullName} creado exitosamente` });
+      setMessage({
+        type: 'success',
+        text: `Administrador ${fullName} creado. Clave inicial: ${defaultPassword} (podrá cambiarla después).`,
+      });
+
       setFullName('');
       setEmail('');
       setPhone('');
-      setPassword('');
-      setConfirmPassword('');
       onSuccess?.();
     } catch (err: any) {
       setMessage({ type: 'error', text: err?.message || 'No se pudo crear el administrador' });
@@ -145,36 +144,13 @@ export default function AdminForm({ onSuccess, onCancel }: AdminFormProps) {
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium">Contraseña</label>
-        <div className="flex items-center border rounded p-2">
-          <Key className="w-4 h-4 mr-2 text-gray-400" />
-          <input
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="w-full outline-none bg-transparent"
-            placeholder="Contraseña segura"
-          />
-          <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-gray-400 hover:text-gray-600">
-            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
+      <div className="border-t pt-4 text-sm text-gray-600">
+        <div className="flex items-center gap-2 font-medium text-gray-800">
+          <KeyRound className="w-4 h-4" />
+          Credenciales de acceso
         </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium">Confirmar Contraseña</label>
-        <div className="flex items-center border rounded p-2">
-          <Key className="w-4 h-4 mr-2 text-gray-400" />
-          <input
-            type={showPassword ? 'text' : 'password'}
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            className="w-full outline-none bg-transparent"
-            placeholder="Repite la contraseña"
-          />
+        <div className="mt-1">
+          La contraseña inicial se generará automáticamente como <span className="font-semibold">{defaultPassword}</span>.
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 // src/components/forms/TechnicianForm.tsx
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { UserPlus, Mail, Phone, Key, X, Building2 } from 'lucide-react';
+import { UserPlus, Mail, Phone, X, Building2, KeyRound } from 'lucide-react';
 import { safeJson } from '../../lib/safeJson';
 
 interface TechnicianFormProps {
@@ -14,6 +14,7 @@ type PersonType = 'internal' | 'external';
 export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     full_name: '',
@@ -22,9 +23,23 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
     person_type: 'internal' as PersonType,
     company_name: '',
     grant_access: true,
-    password: '',
-    confirmPassword: '',
   });
+
+  const defaultPassword = useMemo(() => {
+    const year = new Date().getFullYear();
+    return `Mirega${year}@@`;
+  }, []);
+
+  const resetForm = () => {
+    setFormData({
+      full_name: '',
+      email: '',
+      phone: '',
+      person_type: 'internal',
+      company_name: '',
+      grant_access: true,
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,26 +47,12 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
-    // Validación person_type / company
     if (formData.person_type === 'external' && !formData.company_name.trim()) {
       setError('Para técnico externo debes indicar la empresa');
       setLoading(false);
       return;
-    }
-
-    // Validación credenciales solo si grant_access
-    if (formData.grant_access) {
-      if (formData.password !== formData.confirmPassword) {
-        setError('Las contraseñas no coinciden');
-        setLoading(false);
-        return;
-      }
-      if (formData.password.length < 8) {
-        setError('La contraseña debe tener al menos 8 caracteres');
-        setLoading(false);
-        return;
-      }
     }
 
     try {
@@ -68,7 +69,7 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
         },
         body: JSON.stringify({
           email: formData.email,
-          password: formData.grant_access ? formData.password : null,
+          password: null, // ✅ autogenerada backend Mirega{AÑO}@@
           full_name: formData.full_name,
           phone: formData.phone || null,
           role: 'technician',
@@ -83,18 +84,13 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
         throw new Error(result?.error || 'No se pudo crear el técnico');
       }
 
-      // Limpia y cierra
-      setFormData({
-        full_name: '',
-        email: '',
-        phone: '',
-        person_type: 'internal',
-        company_name: '',
-        grant_access: true,
-        password: '',
-        confirmPassword: '',
-      });
+      if (formData.grant_access) {
+        setSuccess(`Técnico creado. Clave inicial: ${defaultPassword} (el usuario podrá cambiarla después).`);
+      } else {
+        setSuccess('Técnico creado sin acceso (registrado para asignaciones).');
+      }
 
+      resetForm();
       onSuccess?.();
     } catch (err: any) {
       setError(err?.message || 'Error al crear el técnico');
@@ -111,17 +107,17 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
           <h2 className="text-2xl font-bold text-slate-900">Nuevo Técnico</h2>
         </div>
         {onCancel && (
-          <button onClick={onCancel} className="p-2 hover:bg-slate-100 rounded-lg transition">
+          <button onClick={onCancel} className="p-2 hover:bg-slate-100 rounded-lg transition" type="button">
             <X className="w-5 h-5 text-slate-600" />
           </button>
         )}
       </div>
 
       {error && <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>}
+      {success && <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700">{success}</div>}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Nombre */}
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-slate-700 mb-2">Nombre Completo *</label>
             <input
@@ -134,7 +130,6 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
             />
           </div>
 
-          {/* Tipo de persona */}
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-slate-700 mb-2">Tipo de persona *</label>
             <div className="flex gap-4">
@@ -143,14 +138,7 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
                   type="radio"
                   name="person_type"
                   checked={formData.person_type === 'internal'}
-                  onChange={() =>
-                    setFormData({
-                      ...formData,
-                      person_type: 'internal',
-                      company_name: '',
-                      grant_access: true, // internos por defecto con acceso
-                    })
-                  }
+                  onChange={() => setFormData({ ...formData, person_type: 'internal', company_name: '' })}
                 />
                 Técnico Interno
               </label>
@@ -160,20 +148,13 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
                   type="radio"
                   name="person_type"
                   checked={formData.person_type === 'external'}
-                  onChange={() =>
-                    setFormData({
-                      ...formData,
-                      person_type: 'external',
-                      grant_access: false, // externos por defecto sin acceso
-                    })
-                  }
+                  onChange={() => setFormData({ ...formData, person_type: 'external' })}
                 />
                 Técnico Externo
               </label>
             </div>
           </div>
 
-          {/* Empresa (solo externo) */}
           {formData.person_type === 'external' && (
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -191,7 +172,6 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
             </div>
           )}
 
-          {/* Email */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
               <Mail className="w-4 h-4 inline mr-1" />
@@ -207,7 +187,6 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
             />
           </div>
 
-          {/* Teléfono */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
               <Phone className="w-4 h-4 inline mr-1" />
@@ -223,7 +202,6 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
             />
           </div>
 
-          {/* Checkbox acceso */}
           <div className="md:col-span-2">
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
@@ -238,42 +216,16 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
             </p>
           </div>
 
-          {/* Credenciales (solo si grant_access) */}
           {formData.grant_access && (
-            <>
-              <div className="md:col-span-2 border-t border-slate-200 pt-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">
-                  <Key className="w-5 h-5 inline mr-2" />
-                  Credenciales de Acceso
-                </h3>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Contraseña *</label>
-                <input
-                  type="password"
-                  required
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Mínimo 8 caracteres"
-                  minLength={8}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Confirmar Contraseña *</label>
-                <input
-                  type="password"
-                  required
-                  value={formData.confirmPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Repetir contraseña"
-                  minLength={8}
-                />
-              </div>
-            </>
+            <div className="md:col-span-2 border-t border-slate-200 pt-6">
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                <KeyRound className="w-5 h-5 inline mr-2" />
+                Credenciales de Acceso
+              </h3>
+              <p className="text-sm text-slate-600">
+                La contraseña inicial se generará automáticamente como <span className="font-semibold">{defaultPassword}</span>. El usuario podrá cambiarla después.
+              </p>
+            </div>
           )}
         </div>
 

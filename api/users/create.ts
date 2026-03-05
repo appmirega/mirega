@@ -27,12 +27,10 @@ const SUPABASE_URL =
 
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY; // Debe estar en Vercel
 
-function randomPassword() {
-  return (
-    Math.random().toString(36).slice(2) +
-    Math.random().toString(36).slice(2) +
-    'A1!'
-  );
+// Password por defecto solicitado: Mirega{AÑO}@@ (ej: Mirega2026@@)
+function defaultPasswordForYear(date = new Date()) {
+  const year = date.getFullYear();
+  return `Mirega${year}@@`;
 }
 
 async function findUserByEmail(admin: any, email: string) {
@@ -113,8 +111,13 @@ export default async function handler(req: AnyReq, res: AnyRes) {
     // 1) Buscar usuario por email
     let user = await findUserByEmail(admin, email);
 
-    const effectivePassword =
-      grant_access && password ? password : randomPassword();
+    // Regla:
+    // - Si el frontend envía password explícita (no vacía), se usa.
+    // - Si no envía password, se usa la clave estándar del año.
+    const passwordProvided = typeof password === 'string' && password.trim().length > 0;
+    const effectivePassword = passwordProvided ? password.trim() : defaultPasswordForYear();
+
+    const isNewUser = !user;
 
     // 2) Crear si no existe
     if (!user) {
@@ -131,14 +134,15 @@ export default async function handler(req: AnyReq, res: AnyRes) {
 
       user = created?.user || null;
     } else {
-      // 2b) Si ya existe: actualizar metadata + (opcional) password si grant_access y se envió
+      // 2b) Si ya existe: actualizar metadata + (opcional) password si se envió explícita
       try {
         const updatePayload: any = {
           user_metadata: { full_name, phone, role, person_type, company_name },
         };
 
-        if (grant_access && password) {
-          updatePayload.password = password;
+        // Solo cambiamos password si el frontend envió una password explícita
+        if (passwordProvided) {
+          updatePayload.password = effectivePassword;
         }
 
         // Si ahora sí quieres dar acceso, intenta quitar baneo (si aplica)
@@ -148,8 +152,7 @@ export default async function handler(req: AnyReq, res: AnyRes) {
 
         const { error: updErr } = await admin.auth.admin.updateUserById(user.id, updatePayload);
         if (updErr) {
-          // no bloqueamos el flujo por esto, pero lo dejamos visible
-          // (muchas veces updateUserById funciona igual, depende de versión)
+          // no bloqueamos el flujo por esto
         }
       } catch {
         // Ignorar si la versión del SDK/Api difiere
@@ -203,6 +206,8 @@ export default async function handler(req: AnyReq, res: AnyRes) {
       ok: true,
       user_id: auth_id,
       profile,
+      // Solo informativo (si fue creado recién y no se envió password manual)
+      initial_password: isNewUser && grant_access && !passwordProvided ? effectivePassword : null,
       marker: 'USERS_CREATE_FINAL_v2_PERSON_TYPE',
     });
   } catch (e: any) {
