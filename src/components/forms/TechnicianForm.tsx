@@ -1,15 +1,11 @@
-// src/components/forms/TechnicianForm.tsx
-import { useMemo, useState } from 'react';
-import { supabase } from '../../lib/supabase';
-import { UserPlus, Mail, Phone, X, Building2, KeyRound } from 'lucide-react';
-import { safeJson } from '../../lib/safeJson';
+import React, { useMemo, useState } from 'react';
+
+type PersonType = 'internal' | 'external';
 
 interface TechnicianFormProps {
   onSuccess?: () => void;
   onCancel?: () => void;
 }
-
-type PersonType = 'internal' | 'external';
 
 export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormProps) {
   const [loading, setLoading] = useState(false);
@@ -23,229 +19,272 @@ export default function TechnicianForm({ onSuccess, onCancel }: TechnicianFormPr
     person_type: 'internal' as PersonType,
     company_name: '',
     grant_access: true,
+    password: '',
+    confirmPassword: '',
   });
 
-  const defaultPassword = useMemo(() => {
-    const year = new Date().getFullYear();
-    return `Mirega${year}@@`;
-  }, []);
+  const isExternal = formData.person_type === 'external';
 
-  const resetForm = () => {
-    setFormData({
-      full_name: '',
-      email: '',
-      phone: '',
-      person_type: 'internal',
-      company_name: '',
-      grant_access: true,
-    });
+  const canSubmit = useMemo(() => {
+    if (!formData.full_name.trim()) return false;
+    if (!formData.email.trim()) return false;
+
+    if (isExternal && !formData.company_name.trim()) return false;
+
+    if (formData.grant_access) {
+      if (formData.password.length < 8) return false;
+      if (formData.password !== formData.confirmPassword) return false;
+    }
+
+    return true;
+  }, [formData, isExternal]);
+
+  const handleChange = (key: keyof typeof formData, value: any) => {
+    setFormData((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const validate = () => {
+    if (!formData.full_name.trim()) return 'El nombre es obligatorio.';
+    if (!formData.email.trim()) return 'El email es obligatorio.';
+
+    if (isExternal && !formData.company_name.trim()) {
+      return 'Para técnico externo debes indicar la empresa.';
+    }
+
+    if (formData.grant_access) {
+      if (formData.password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
+      if (formData.password !== formData.confirmPassword) return 'Las contraseñas no coinciden.';
+    }
+
+    return null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loading) return;
-
-    setLoading(true);
     setError(null);
     setSuccess(null);
 
-    if (formData.person_type === 'external' && !formData.company_name.trim()) {
-      setError('Para técnico externo debes indicar la empresa');
-      setLoading(false);
+    const v = validate();
+    if (v) {
+      setError(v);
       return;
     }
 
+    setLoading(true);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) throw new Error('No hay sesión activa');
+      const payload = {
+        email: formData.email.trim(),
+        password: formData.grant_access ? formData.password : null,
+        full_name: formData.full_name.trim(),
+        phone: formData.phone.trim() ? formData.phone.trim() : null,
+        role: 'technician',
+        person_type: formData.person_type,
+        company_name: isExternal ? formData.company_name.trim() : null,
+        grant_access: formData.grant_access,
+      };
 
-      const resp = await fetch('/api/users/create', {
+      const res = await fetch('/api/users/create', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          password: null, // ✅ autogenerada backend Mirega{AÑO}@@
-          full_name: formData.full_name,
-          phone: formData.phone || null,
-          role: 'technician',
-          person_type: formData.person_type,
-          company_name: formData.person_type === 'external' ? formData.company_name.trim() : null,
-          grant_access: formData.grant_access,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
 
-      const result = await safeJson(resp);
-      if (!resp.ok || !result?.ok) {
-        throw new Error(result?.error || 'No se pudo crear el técnico');
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || 'Error creando técnico.');
       }
 
+      // ✅ Mensaje corregido (ya NO prometemos una contraseña fija)
       if (formData.grant_access) {
-        setSuccess(`Técnico creado. Clave inicial: ${defaultPassword} (el usuario podrá cambiarla después).`);
+        setSuccess('✅ Técnico creado con acceso a la plataforma.');
       } else {
-        setSuccess('Técnico creado sin acceso (registrado para asignaciones).');
+        setSuccess('✅ Técnico creado sin acceso (registrado para asignaciones).');
       }
 
-      resetForm();
+      // Limpieza del formulario
+      setFormData({
+        full_name: '',
+        email: '',
+        phone: '',
+        person_type: 'internal',
+        company_name: '',
+        grant_access: true,
+        password: '',
+        confirmPassword: '',
+      });
+
       onSuccess?.();
     } catch (err: any) {
-      setError(err?.message || 'Error al crear el técnico');
+      setError(err?.message || 'Error inesperado.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <UserPlus className="w-6 h-6 text-green-600" />
-          <h2 className="text-2xl font-bold text-slate-900">Nuevo Técnico</h2>
+    <div className="bg-white border border-slate-200 rounded-2xl p-6">
+      <h2 className="text-lg font-semibold text-slate-900 mb-4">Crear nuevo técnico</h2>
+
+      {error && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+          {error}
         </div>
-        {onCancel && (
-          <button onClick={onCancel} className="p-2 hover:bg-slate-100 rounded-lg transition" type="button">
-            <X className="w-5 h-5 text-slate-600" />
-          </button>
-        )}
-      </div>
+      )}
 
-      {error && <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>}
-      {success && <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700">{success}</div>}
+      {success && (
+        <div className="mb-4 p-3 rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm">
+          {success}
+        </div>
+      )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-slate-700 mb-2">Nombre Completo *</label>
-            <input
-              type="text"
-              required
-              value={formData.full_name}
-              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="Juan Pérez"
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-slate-700 mb-2">Tipo de persona *</label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="person_type"
-                  checked={formData.person_type === 'internal'}
-                  onChange={() => setFormData({ ...formData, person_type: 'internal', company_name: '' })}
-                />
-                Técnico Interno
-              </label>
-
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="person_type"
-                  checked={formData.person_type === 'external'}
-                  onChange={() => setFormData({ ...formData, person_type: 'external' })}
-                />
-                Técnico Externo
-              </label>
-            </div>
-          </div>
-
-          {formData.person_type === 'external' && (
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                <Building2 className="w-4 h-4 inline mr-1" />
-                Empresa *
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.company_name}
-                onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="Ascensores Ltda"
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              <Mail className="w-4 h-4 inline mr-1" />
-              Email *
-            </label>
-            <input
-              type="email"
-              required
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="tecnico@mirega.cl"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              <Phone className="w-4 h-4 inline mr-1" />
-              Teléfono *
-            </label>
-            <input
-              type="tel"
-              required
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="+56 9 1234 5678"
-            />
-          </div>
-
-          <div className="md:col-span-2">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Tipo */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Tipo de persona *</label>
+          <div className="flex gap-4">
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
-                type="checkbox"
-                checked={formData.grant_access}
-                onChange={(e) => setFormData({ ...formData, grant_access: e.target.checked })}
+                type="radio"
+                name="person_type"
+                checked={formData.person_type === 'internal'}
+                onChange={() => {
+                  handleChange('person_type', 'internal');
+                  handleChange('company_name', '');
+                  handleChange('grant_access', true);
+                }}
               />
-              Dar acceso a la plataforma (crear credenciales)
+              Técnico Interno
             </label>
-            <p className="text-xs text-slate-500 mt-1">
-              Si está desactivado, el técnico queda registrado (asignable) pero no podrá iniciar sesión.
-            </p>
+
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="person_type"
+                checked={formData.person_type === 'external'}
+                onChange={() => {
+                  handleChange('person_type', 'external');
+                  // externo por defecto sin acceso
+                  handleChange('grant_access', false);
+                }}
+              />
+              Técnico Externo
+            </label>
           </div>
+        </div>
+
+        {/* Nombre */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Nombre completo *</label>
+          <input
+            type="text"
+            value={formData.full_name}
+            onChange={(e) => handleChange('full_name', e.target.value)}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            placeholder="Ej: Juan Pérez"
+            required
+          />
+        </div>
+
+        {/* Email */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Email *</label>
+          <input
+            type="email"
+            value={formData.email}
+            onChange={(e) => handleChange('email', e.target.value)}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            placeholder="juan@correo.com"
+            required
+          />
+        </div>
+
+        {/* Teléfono */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Teléfono</label>
+          <input
+            type="tel"
+            value={formData.phone}
+            onChange={(e) => handleChange('phone', e.target.value)}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            placeholder="+56 9 1234 5678"
+          />
+        </div>
+
+        {/* Empresa (solo external) */}
+        {isExternal && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Empresa *</label>
+            <input
+              type="text"
+              value={formData.company_name}
+              onChange={(e) => handleChange('company_name', e.target.value)}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              placeholder="Ascensores Ltda"
+              required
+            />
+          </div>
+        )}
+
+        {/* Acceso */}
+        <div className="border border-slate-200 rounded-lg p-4 bg-slate-50">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={formData.grant_access}
+              onChange={(e) => handleChange('grant_access', e.target.checked)}
+            />
+            Dar acceso a la plataforma (crear credenciales)
+          </label>
+          <p className="text-xs text-slate-500 mt-1">
+            Si está desactivado, el técnico quedará registrado para asignaciones pero no podrá iniciar sesión.
+          </p>
 
           {formData.grant_access && (
-            <div className="md:col-span-2 border-t border-slate-200 pt-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">
-                <KeyRound className="w-5 h-5 inline mr-2" />
-                Credenciales de Acceso
-              </h3>
-              <p className="text-sm text-slate-600">
-                La contraseña inicial se generará automáticamente como <span className="font-semibold">{defaultPassword}</span>. El usuario podrá cambiarla después.
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Contraseña *</label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => handleChange('password', e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="Mínimo 8 caracteres"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Confirmar contraseña *</label>
+                <input
+                  type="password"
+                  value={formData.confirmPassword}
+                  onChange={(e) => handleChange('confirmPassword', e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="Repite la contraseña"
+                  required
+                />
+              </div>
             </div>
           )}
         </div>
 
-        <div className="flex gap-4 pt-4 border-t border-slate-200">
+        <div className="flex gap-3 justify-end pt-2">
           {onCancel && (
             <button
               type="button"
               onClick={onCancel}
+              className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50"
               disabled={loading}
-              className="flex-1 px-6 py-3 border border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50 transition disabled:opacity-50"
             >
               Cancelar
             </button>
           )}
           <button
             type="submit"
-            disabled={loading}
-            className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition disabled:opacity-50"
+            disabled={loading || !canSubmit}
+            className="px-5 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
           >
-            {loading ? 'Creando...' : 'Crear Técnico'}
+            {loading ? 'Creando...' : 'Crear técnico'}
           </button>
         </div>
       </form>

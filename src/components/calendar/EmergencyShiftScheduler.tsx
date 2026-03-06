@@ -1,26 +1,27 @@
 import { useState, useEffect } from 'react';
-import { getExternalTechnicians, addExternalTechnician } from '../../lib/external_technicians';
 import { supabase } from '../../lib/supabase';
-import { Calendar, Plus, Trash2, Users, AlertCircle, Clock } from 'lucide-react';
+import { Plus, Users, Clock } from 'lucide-react';
 
 interface Technician {
   technician_id: string;
   full_name: string;
   phone: string;
   email: string;
+  person_type: 'internal' | 'external';
+  company_name: string | null;
 }
 
 interface EmergencyShift {
   id: string;
-  technician_id?: string;
-  external_personnel_name?: string;
-  external_personnel_phone?: string;
+  technician_id?: string | null;
+  external_personnel_name?: string | null;
+  external_personnel_phone?: string | null;
   shift_start_date: string;
   shift_end_date: string;
-  shift_start_time?: string;
-  shift_end_time?: string;
-  is_24h_shift?: boolean;
-  shift_type: string;
+  shift_start_time?: string | null;
+  shift_end_time?: string | null;
+  is_24h_shift?: boolean | null;
+  shift_type?: string | null;
   is_primary: boolean;
 }
 
@@ -29,12 +30,9 @@ export function EmergencyShiftScheduler() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [externalList, setExternalList] = useState<any[]>([]);
+
   const [formData, setFormData] = useState({
     technician_id: '',
-    is_external: false,
-    external_personnel_name: '',
-    external_personnel_phone: '',
     shift_start_date: '',
     shift_end_date: '',
     is_24h_shift: true,
@@ -43,9 +41,6 @@ export function EmergencyShiftScheduler() {
     is_primary: true
   });
 
-  useEffect(() => {
-    setExternalList(getExternalTechnicians());
-  }, [showForm]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -80,7 +75,7 @@ export function EmergencyShiftScheduler() {
   const loadTechnicians = async () => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, phone, email')
+      .select('id, full_name, phone, email, person_type, company_name')
       .eq('role', 'technician')
       .order('full_name');
 
@@ -90,17 +85,23 @@ export function EmergencyShiftScheduler() {
     }
 
     setTechnicians(
-      (data || []).map(t => ({
+      (data || []).map((t: any) => ({
         technician_id: t.id,
         full_name: t.full_name,
         phone: t.phone || '',
-        email: t.email || ''
+        email: t.email || '',
+        person_type: (t.person_type || 'internal') as 'internal' | 'external',
+        company_name: t.company_name ?? null,
       }))
     );
   };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
+
+    if (!formData.technician_id) {
+      newErrors.technician_id = 'Seleccione un técnico';
+    }
 
     if (!formData.shift_start_date) {
       newErrors.shift_start_date = 'Seleccione fecha de inicio';
@@ -116,36 +117,23 @@ export function EmergencyShiftScheduler() {
       }
     }
 
-    if (!formData.is_external && !formData.technician_id) {
-      newErrors.technician_id = 'Seleccione un técnico';
-    }
-
-    if (formData.is_external) {
-      if (!formData.external_personnel_name) {
-        newErrors.external_personnel_name = 'Ingrese nombre del personal externo';
-      }
-      if (!formData.external_personnel_phone) {
-        newErrors.external_personnel_phone = 'Ingrese teléfono del personal externo';
-      }
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!validateForm()) return;
 
     try {
-      // Validar fechas como string local YYYY-MM-DD
       const shift_start_date = formData.shift_start_date;
       const shift_end_date = formData.shift_end_date;
+
       const payload: any = {
-        technician_id: formData.is_external ? null : formData.technician_id,
-        external_personnel_name: formData.is_external ? formData.external_personnel_name : null,
-        external_personnel_phone: formData.is_external ? formData.external_personnel_phone : null,
+        technician_id: formData.technician_id,
+        // mantenemos columnas externas en null para compatibilidad / histórico
+        external_personnel_name: null,
+        external_personnel_phone: null,
         shift_start_date,
         shift_end_date,
         is_primary: formData.is_primary,
@@ -153,20 +141,15 @@ export function EmergencyShiftScheduler() {
         shift_start_time: formData.is_24h_shift ? '00:00:00' : formData.shift_start_time + ':00',
         shift_end_time: formData.is_24h_shift ? '23:59:59' : formData.shift_end_time + ':00'
       };
-      // Eliminar shift_type si la tabla no lo requiere
-      const { error } = await supabase
-        .from('emergency_shifts')
-        .insert([payload]);
 
+      const { error } = await supabase.from('emergency_shifts').insert([payload]);
       if (error) throw error;
 
       alert('✅ Turno de emergencia asignado exitosamente');
       window.dispatchEvent(new CustomEvent('turno-emergencia-actualizado'));
+
       setFormData({
         technician_id: '',
-        is_external: false,
-        external_personnel_name: '',
-        external_personnel_phone: '',
         shift_start_date: '',
         shift_end_date: '',
         is_24h_shift: true,
@@ -174,6 +157,7 @@ export function EmergencyShiftScheduler() {
         shift_end_time: '17:59',
         is_primary: true
       });
+
       setShowForm(false);
       loadData();
     } catch (error: any) {
@@ -186,11 +170,7 @@ export function EmergencyShiftScheduler() {
     if (!confirm('¿Eliminar este turno de emergencia?')) return;
 
     try {
-      const { error } = await supabase
-        .from('emergency_shifts')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('emergency_shifts').delete().eq('id', id);
       if (error) throw error;
 
       alert('✅ Turno eliminado');
@@ -203,17 +183,21 @@ export function EmergencyShiftScheduler() {
   };
 
   const getShiftAssignee = (shift: EmergencyShift) => {
+    // Si hay legacy data guardada como externo manual, la mostramos
     if (shift.external_personnel_name) {
-      return `${shift.external_personnel_name} (Externo)`;
+      return `${shift.external_personnel_name} (Externo - legado)`;
     }
     const tech = technicians.find(t => t.technician_id === shift.technician_id);
-    return tech?.full_name || 'Sin asignar';
+    if (!tech) return 'Sin asignar';
+
+    if (tech.person_type === 'external') {
+      return `${tech.full_name} (Externo${tech.company_name ? ` - ${tech.company_name}` : ''})`;
+    }
+    return `${tech.full_name} (Interno)`;
   };
 
   const getShiftHours = (shift: EmergencyShift) => {
-    if (shift.is_24h_shift) {
-      return '24h completo';
-    }
+    if (shift.is_24h_shift) return '24h completo';
     if (shift.shift_start_time && shift.shift_end_time) {
       return `${shift.shift_start_time.substring(0, 5)} - ${shift.shift_end_time.substring(0, 5)}`;
     }
@@ -233,9 +217,6 @@ export function EmergencyShiftScheduler() {
 
   return (
     <div className="h-full flex flex-col bg-slate-50 relative">
-      {/* Botón X para cerrar modal (solo en el modal principal, no en el formulario) */}
-      {/* El botón X debe estar en el modal padre, no aquí. Elimino este botón. */}
-      {/* Header */}
       <div className="bg-white border-b border-slate-200 px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -257,162 +238,71 @@ export function EmergencyShiftScheduler() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        {/* Formulario */}
         {showForm && (
           <div className="bg-white border-b border-slate-200 p-6 m-4 rounded-lg max-h-[80vh] overflow-y-auto">
             <form onSubmit={handleSubmit} className="space-y-4 max-w-2xl">
               <h2 className="text-lg font-semibold text-slate-900 mb-4">Asignar Nuevo Turno</h2>
 
-              {/* Tipo de Personal */}
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    checked={!formData.is_external}
-                    onChange={() => setFormData({ ...formData, is_external: false })}
-                    className="w-4 h-4 text-blue-600"
-                  />
-                  <span className="text-sm text-slate-700">Técnico Interno</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    checked={formData.is_external}
-                    onChange={() => setFormData({ ...formData, is_external: true })}
-                    className="w-4 h-4 text-blue-600"
-                  />
-                  <span className="text-sm text-slate-700">Personal Externo</span>
-                </label>
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-2 block">Técnico *</label>
+                <select
+                  value={formData.technician_id}
+                  onChange={(e) => setFormData({ ...formData, technician_id: e.target.value })}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 ${
+                    errors.technician_id ? 'border-red-300' : 'border-slate-300'
+                  }`}
+                >
+                  <option value="">Seleccione técnico</option>
+                  {technicians.map((tech) => {
+                    const label =
+                      tech.person_type === 'external'
+                        ? `${tech.full_name} (Externo${tech.company_name ? ` - ${tech.company_name}` : ''})`
+                        : `${tech.full_name} (Interno)`;
+
+                    return (
+                      <option key={tech.technician_id} value={tech.technician_id}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+                {errors.technician_id && <p className="text-xs text-red-600 mt-1">{errors.technician_id}</p>}
               </div>
 
-              {/* Técnico */}
-              {!formData.is_external && (
-                <div>
-                  <label className="text-sm font-medium text-slate-700 mb-2 block">
-                    Técnico *
-                  </label>
-                  <select
-                    value={formData.technician_id}
-                    onChange={(e) => setFormData({ ...formData, technician_id: e.target.value })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 ${
-                      errors.technician_id ? 'border-red-300' : 'border-slate-300'
-                    }`}
-                  >
-                    <option value="">Seleccione técnico</option>
-                    {technicians.map(tech => (
-                      <option key={tech.technician_id} value={tech.technician_id}>
-                        {tech.full_name}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.technician_id && (
-                    <p className="text-xs text-red-600 mt-1">{errors.technician_id}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Personal Externo */}
-              {formData.is_external && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-slate-700 mb-2 block">
-                      Nombre *
-                    </label>
-                    <input
-                      type="text"
-                      list="external-tech-list"
-                      value={formData.external_personnel_name}
-                      onChange={(e) => {
-                        setFormData({ ...formData, external_personnel_name: e.target.value });
-                        // Guardar nuevo técnico externo si no existe
-                        if (e.target.value && !externalList.some(ext => ext.name === e.target.value)) {
-                          addExternalTechnician({ name: e.target.value });
-                          setExternalList(getExternalTechnicians());
-                        }
-                      }}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 ${
-                        errors.external_personnel_name ? 'border-red-300' : 'border-slate-300'
-                      }`}
-                      placeholder="Ej: Carlos García"
-                    />
-                    <datalist id="external-tech-list">
-                      {externalList.map(ext => (
-                        <option key={ext.id} value={ext.name} />
-                      ))}
-                    </datalist>
-                    {errors.external_personnel_name && (
-                      <p className="text-xs text-red-600 mt-1">{errors.external_personnel_name}</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700 mb-2 block">
-                      Teléfono *
-                    </label>
-                    <input
-                      type="tel"
-                      value={formData.external_personnel_phone}
-                      onChange={(e) =>
-                        setFormData({ ...formData, external_personnel_phone: e.target.value })
-                      }
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 ${
-                        errors.external_personnel_phone ? 'border-red-300' : 'border-slate-300'
-                      }`}
-                      placeholder="+56912345678"
-                    />
-                    {errors.external_personnel_phone && (
-                      <p className="text-xs text-red-600 mt-1">{errors.external_personnel_phone}</p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Fechas */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-slate-700 mb-2 block">
-                    Inicio Turno *
-                  </label>
+                  <label className="text-sm font-medium text-slate-700 mb-2 block">Inicio Turno *</label>
                   <input
                     type="date"
                     value={formData.shift_start_date}
-                    onChange={(e) =>
-                      setFormData({ ...formData, shift_start_date: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, shift_start_date: e.target.value })}
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 ${
                       errors.shift_start_date ? 'border-red-300' : 'border-slate-300'
                     }`}
                   />
-                  {errors.shift_start_date && (
-                    <p className="text-xs text-red-600 mt-1">{errors.shift_start_date}</p>
-                  )}
+                  {errors.shift_start_date && <p className="text-xs text-red-600 mt-1">{errors.shift_start_date}</p>}
                 </div>
+
                 <div>
-                  <label className="text-sm font-medium text-slate-700 mb-2 block">
-                    Fin Turno *
-                  </label>
+                  <label className="text-sm font-medium text-slate-700 mb-2 block">Fin Turno *</label>
                   <input
                     type="date"
                     value={formData.shift_end_date}
-                    onChange={(e) =>
-                      setFormData({ ...formData, shift_end_date: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, shift_end_date: e.target.value })}
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 ${
                       errors.shift_end_date ? 'border-red-300' : 'border-slate-300'
                     }`}
                   />
-                  {errors.shift_end_date && (
-                    <p className="text-xs text-red-600 mt-1">{errors.shift_end_date}</p>
-                  )}
+                  {errors.shift_end_date && <p className="text-xs text-red-600 mt-1">{errors.shift_end_date}</p>}
                 </div>
               </div>
 
-              {/* Configuración de Horario */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Clock className="w-5 h-5 text-blue-600" />
                   <h4 className="text-sm font-semibold text-blue-900">Horario del Turno</h4>
                 </div>
-                
+
                 <div className="space-y-3">
                   <label className="flex items-center gap-2">
                     <input
@@ -421,11 +311,9 @@ export function EmergencyShiftScheduler() {
                       onChange={() => setFormData({ ...formData, is_24h_shift: true })}
                       className="w-4 h-4 text-blue-600"
                     />
-                    <span className="text-sm text-slate-700 font-medium">
-                      Turno completo 24 horas (00:00 - 23:59)
-                    </span>
+                    <span className="text-sm text-slate-700 font-medium">Turno completo 24 horas (00:00 - 23:59)</span>
                   </label>
-                  
+
                   <label className="flex items-center gap-2">
                     <input
                       type="radio"
@@ -433,47 +321,36 @@ export function EmergencyShiftScheduler() {
                       onChange={() => setFormData({ ...formData, is_24h_shift: false })}
                       className="w-4 h-4 text-blue-600"
                     />
-                    <span className="text-sm text-slate-700 font-medium">
-                      Turno con horario específico
-                    </span>
+                    <span className="text-sm text-slate-700 font-medium">Turno con horario específico</span>
                   </label>
-                  
+
                   {!formData.is_24h_shift && (
                     <div className="grid grid-cols-2 gap-4 mt-3 pl-6">
                       <div>
-                        <label className="text-xs font-medium text-slate-600 mb-1 block">
-                          Hora Inicio
-                        </label>
+                        <label className="text-xs font-medium text-slate-600 mb-1 block">Hora Inicio</label>
                         <input
                           type="time"
                           value={formData.shift_start_time}
-                          onChange={(e) =>
-                            setFormData({ ...formData, shift_start_time: e.target.value })
-                          }
+                          onChange={(e) => setFormData({ ...formData, shift_start_time: e.target.value })}
                           className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
-                        <p className="text-xs text-slate-500 mt-1">Ej: 08:30 (turno diurno)</p>
+                        <p className="text-xs text-slate-500 mt-1">Ej: 08:30</p>
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-slate-600 mb-1 block">
-                          Hora Fin
-                        </label>
+                        <label className="text-xs font-medium text-slate-600 mb-1 block">Hora Fin</label>
                         <input
                           type="time"
                           value={formData.shift_end_time}
-                          onChange={(e) =>
-                            setFormData({ ...formData, shift_end_time: e.target.value })
-                          }
+                          onChange={(e) => setFormData({ ...formData, shift_end_time: e.target.value })}
                           className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
-                        <p className="text-xs text-slate-500 mt-1">Ej: 17:59 (turno diurno)</p>
+                        <p className="text-xs text-slate-500 mt-1">Ej: 17:59</p>
                       </div>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Tipo de Turno */}
               <div>
                 <label className="flex items-center gap-2">
                   <input
@@ -482,9 +359,7 @@ export function EmergencyShiftScheduler() {
                     onChange={() => setFormData({ ...formData, is_primary: true })}
                     className="w-4 h-4 text-blue-600"
                   />
-                  <span className="text-sm text-slate-700">
-                    Turno Primario (responsable principal de emergencias)
-                  </span>
+                  <span className="text-sm text-slate-700">Turno Primario (responsable principal de emergencias)</span>
                 </label>
                 <label className="flex items-center gap-2 mt-2">
                   <input
@@ -497,12 +372,8 @@ export function EmergencyShiftScheduler() {
                 </label>
               </div>
 
-              {/* Botones */}
               <div className="flex gap-3 pt-4 border-t border-slate-200">
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                >
+                <button type="submit" className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
                   Crear Turno
                 </button>
                 <button
@@ -517,79 +388,48 @@ export function EmergencyShiftScheduler() {
           </div>
         )}
 
-        {/* Lista de Turnos */}
-        <div className="p-6">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <div className="flex gap-2">
-              <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
-              <div className="text-sm text-blue-800">
-                <strong>Nota:</strong> Los turnos de emergencia son 24/7. El técnico o personal externo debe estar disponible durante todo el período asignado para atender cualquier emergencia en los edificios.
-              </div>
+        <div className="p-4">
+          {shifts.length === 0 ? (
+            <div className="bg-white rounded-lg border border-slate-200 p-6 text-slate-600">
+              No hay turnos registrados.
             </div>
-          </div>
-
-          <div className="grid gap-4">
-            {shifts.length === 0 ? (
-              <div className="text-center py-12">
-                <Users className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                <p className="text-slate-600">No hay turnos de emergencia asignados</p>
-                <button
-                  onClick={() => setShowForm(true)}
-                  className="mt-4 text-red-600 hover:text-red-700 font-medium"
-                >
-                  Asignar primer turno
-                </button>
-              </div>
-            ) : (
-              shifts.map(shift => (
-                <div
-                  key={shift.id}
-                  className="bg-white border border-slate-200 rounded-lg p-4 hover:shadow-md transition"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="text-lg font-semibold text-slate-900">
-                          {getShiftAssignee(shift)}
-                        </h3>
-                        <span
-                          className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                            shift.is_primary
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-orange-100 text-orange-800'
-                          }`}
+          ) : (
+            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="text-left px-4 py-3 border-b">Asignado</th>
+                    <th className="text-left px-4 py-3 border-b">Inicio</th>
+                    <th className="text-left px-4 py-3 border-b">Fin</th>
+                    <th className="text-left px-4 py-3 border-b">Horario</th>
+                    <th className="text-left px-4 py-3 border-b">Tipo</th>
+                    <th className="text-right px-4 py-3 border-b">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shifts.map((shift) => (
+                    <tr key={shift.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 border-b">{getShiftAssignee(shift)}</td>
+                      <td className="px-4 py-3 border-b">{shift.shift_start_date}</td>
+                      <td className="px-4 py-3 border-b">{shift.shift_end_date}</td>
+                      <td className="px-4 py-3 border-b">{getShiftHours(shift)}</td>
+                      <td className="px-4 py-3 border-b">
+                        {shift.is_primary ? 'Primario' : 'Backup'}
+                      </td>
+                      <td className="px-4 py-3 border-b text-right">
+                        <button
+                          onClick={() => handleDelete(shift.id)}
+                          className="text-red-600 hover:underline"
                         >
-                          {shift.is_primary ? 'Primario' : 'Backup'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-slate-600">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="w-4 h-4" />
-                          {new Date(shift.shift_start_date).toLocaleDateString('es-CL')} hasta{' '}
-                          {new Date(shift.shift_end_date).toLocaleDateString('es-CL')}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-4 h-4" />
-                          <span className="font-medium">{getShiftHours(shift)}</span>
-                        </div>
-                      </div>
-                      {shift.external_personnel_phone && (
-                        <p className="text-sm text-slate-600 mt-2">
-                          📞 {shift.external_personnel_phone}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleDelete(shift.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded transition"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+                          Eliminar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { getExternalTechnicians } from '../../lib/external_technicians';
 
 interface BreakdownEvent {
   id: string | number;
@@ -33,7 +32,6 @@ const eventTypeLabels: Record<string, string> = {
   turno_emergencia: 'Turno Emergencia',
   turno: 'Turno',
 
-  // tipos que vienen de tu CalendarEvent
   maintenance: 'Mantenimiento',
   work_order: 'Solicitud',
   emergency_visit: 'Emergencia',
@@ -44,14 +42,13 @@ const eventTypeLabels: Record<string, string> = {
 export const ProfessionalBreakdown = ({ events = [], selectedMonth, selectedYear }: ProfessionalBreakdownProps) => {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
-  // Estado para edición
   const [editEvent, setEditEvent] = useState<BreakdownEvent | null>(null);
   const [editDesc, setEditDesc] = useState('');
   const [editBuilding, setEditBuilding] = useState('');
   const [editPerson, setEditPerson] = useState('');
   const [editDate, setEditDate] = useState('');
+
   const [tecnicos, setTecnicos] = useState<any[]>([]);
-  const [externalTechnicians, setExternalTechnicians] = useState<any[]>([]);
   const [edificios, setEdificios] = useState<any[]>([]);
 
   const grouped = useMemo(() => {
@@ -70,16 +67,15 @@ export const ProfessionalBreakdown = ({ events = [], selectedMonth, selectedYear
   useEffect(() => {
     supabase
       .from('profiles')
-      .select('id, full_name')
+      .select('id, full_name, person_type, company_name')
       .eq('role', 'technician')
+      .order('full_name')
       .then(({ data }) => setTecnicos(data || []));
 
     supabase
       .from('clients')
       .select('id, company_name, address')
       .then(({ data }) => setEdificios(data || []));
-
-    setExternalTechnicians(getExternalTechnicians());
   }, []);
 
   const handleDelete = async (ev: BreakdownEvent) => {
@@ -107,7 +103,7 @@ export const ProfessionalBreakdown = ({ events = [], selectedMonth, selectedYear
         description: editDesc,
         building_name: editBuilding,
         person: editPerson,
-        date: editDate, // ✅ era event_date (eso te puede dar 400)
+        date: editDate,
       })
       .eq('id', editEvent.id);
 
@@ -196,24 +192,26 @@ export const ProfessionalBreakdown = ({ events = [], selectedMonth, selectedYear
             </div>
 
             <div className="mb-2">
-              <label className="block text-sm font-semibold mb-1">Técnico/Empresa</label>
+              <label className="block text-sm font-semibold mb-1">Técnico</label>
               <select
                 className="border rounded px-2 py-1 w-full"
                 value={editPerson}
                 onChange={(e) => setEditPerson(e.target.value)}
               >
-                <option value="">Selecciona técnico interno o empresa externa</option>
-                {tecnicos.map((t: any) => (
-                  <option key={t.id} value={t.full_name}>
-                    {t.full_name} (Interno)
-                  </option>
-                ))}
-                {externalTechnicians.length > 0 && <option disabled>──────────</option>}
-                {externalTechnicians.map((ext: any) => (
-                  <option key={ext.id} value={ext.name}>
-                    {ext.name} (Externo)
-                  </option>
-                ))}
+                <option value="">Selecciona técnico</option>
+                {tecnicos.map((t: any) => {
+                  const label =
+                    t.person_type === 'external'
+                      ? `${t.full_name} (Externo${t.company_name ? ` - ${t.company_name}` : ''})`
+                      : `${t.full_name} (Interno)`;
+
+                  // Guardamos en calendar_events.person el full_name (como ya lo venías haciendo)
+                  return (
+                    <option key={t.id} value={t.full_name}>
+                      {label}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 

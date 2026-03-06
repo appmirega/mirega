@@ -1,216 +1,152 @@
-// api/users/create.ts
-import { createClient } from '@supabase/supabase-js';
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
 
-type AnyReq = any;
-type AnyRes = any;
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-type Role = 'admin' | 'technician' | 'client';
-type PersonType = 'internal' | 'external';
-
-function setCORS(res: AnyRes) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Client-Info, Apikey');
+function json(res: VercelResponse, status: number, body: any) {
+  res.status(status).setHeader('Content-Type', 'application/json')
+  res.end(JSON.stringify(body))
 }
 
-function json(res: AnyRes, status: number, body: unknown) {
-  setCORS(res);
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.end(JSON.stringify(body));
-}
+type PersonType = 'internal' | 'external'
 
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  process.env.VITE_DATABASE_URL ||
-  process.env.SUPABASE_URL;
-
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY; // Debe estar en Vercel
-
-// Password por defecto solicitado: Mirega{AÑO}@@ (ej: Mirega2026@@)
-function defaultPasswordForYear(date = new Date()) {
-  const year = date.getFullYear();
-  return `Mirega${year}@@`;
-}
-
-async function findUserByEmail(admin: any, email: string) {
-  const target = email.toLowerCase();
-  let page = 1;
-  const perPage = 1000;
-
-  for (let i = 0; i < 50; i++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) throw new Error(`ListUsers: ${error.message}`);
-
-    const found =
-      data?.users?.find((u: any) => u?.email && u.email.toLowerCase() === target) || null;
-
-    if (found) return found;
-
-    // Si vienen menos de perPage, ya no hay más
-    if (!data?.users || data.users.length < perPage) break;
-    page += 1;
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return json(res, 405, { ok: false, error: 'Method not allowed' })
   }
 
-  return null;
-}
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+    return json(res, 500, {
+      ok: false,
+      error: 'Missing Supabase env vars (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).',
+    })
+  }
 
-export default async function handler(req: AnyReq, res: AnyRes) {
+  let body: any = {}
   try {
-    setCORS(res);
+    body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
+  } catch {
+    return json(res, 400, { ok: false, error: 'Invalid JSON body' })
+  }
 
-    if (req.method === 'OPTIONS') return json(res, 200, { ok: true });
-    if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'Method Not Allowed' });
+  const {
+    email,
+    password,
+    full_name,
+    phone = null,
+    role = 'technician',
+    person_type = 'internal',
+    company_name = null,
+    grant_access = true,
+  } = body as {
+    email: string
+    password: string | null
+    full_name: string
+    phone?: string | null
+    role?: string
+    person_type?: PersonType
+    company_name?: string | null
+    grant_access?: boolean
+  }
 
-    if (!SUPABASE_URL || !SERVICE_ROLE) {
-      return json(res, 500, {
-        ok: false,
-        error: 'Faltan variables SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY en Vercel.',
-      });
-    }
+  if (!email || !full_name) {
+    return json(res, 400, { ok: false, error: 'Faltan campos obligatorios: email, full_name' })
+  }
 
-    const body =
-      typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+  const normalizedPersonType: PersonType = person_type === 'external' ? 'external' : 'internal'
 
-    const {
-      email,
-      password,
-      full_name,
-      phone = null,
-      role,
-      person_type = 'internal',
-      company_name = null,
-      grant_access = true,
-    } = body as {
-      email: string;
-      password?: string | null;
-      full_name: string;
-      phone?: string | null;
-      role: Role;
-      person_type?: PersonType;
-      company_name?: string | null;
-      grant_access?: boolean;
-    };
+  if (normalizedPersonType === 'external' && !company_name) {
+    return json(res, 400, { ok: false, error: 'Para técnico externo falta company_name.' })
+  }
 
-    if (!email || !full_name || !role) {
-      return json(res, 400, { ok: false, error: 'Faltan campos: email, full_name, role.' });
-    }
+  // ✅ Password segura cuando NO se entrega acceso
+  const effectivePassword =
+    grant_access && password
+      ? password
+      : `${crypto.randomUUID()}Aa1!`
 
-    if (person_type !== 'internal' && person_type !== 'external') {
-      return json(res, 400, { ok: false, error: 'person_type inválido (internal|external).' });
-    }
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 
-    if (person_type === 'external' && !company_name) {
-      return json(res, 400, { ok: false, error: 'Para técnico externo falta company_name.' });
-    }
+  try {
+    // 1) Buscar si ya existe usuario por email
+    // Nota: listUsers es paginado; para la mayoría de proyectos chicos/medios sirve bien.
+    // Si tu proyecto tiene miles de usuarios, lo hacemos con otra estrategia.
+    const { data: listData, error: listErr } = await admin.auth.admin.listUsers({ page: 1, perPage: 2000 })
+    if (listErr) throw listErr
 
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
-      auth: { persistSession: false },
-    });
+    const existing = listData?.users?.find((u) => (u.email || '').toLowerCase() === email.toLowerCase())
+    let userId: string
 
-    // 1) Buscar usuario por email
-    let user = await findUserByEmail(admin, email);
-
-    // Regla:
-    // - Si el frontend envía password explícita (no vacía), se usa.
-    // - Si no envía password, se usa la clave estándar del año.
-    const passwordProvided = typeof password === 'string' && password.trim().length > 0;
-    const effectivePassword = passwordProvided ? password.trim() : defaultPasswordForYear();
-
-    const isNewUser = !user;
-
-    // 2) Crear si no existe
-    if (!user) {
+    if (!existing) {
+      // 2) Crear usuario auth
       const { data: created, error: createErr } = await admin.auth.admin.createUser({
         email,
         password: effectivePassword,
         email_confirm: true,
-        user_metadata: { full_name, phone, role, person_type, company_name },
-      });
+        user_metadata: {
+          full_name,
+          phone,
+          role,
+          person_type: normalizedPersonType,
+          company_name: normalizedPersonType === 'external' ? company_name : null,
+        },
+      })
 
-      if (createErr) {
-        return json(res, 500, { ok: false, error: `CreateUser: ${createErr.message}` });
-      }
+      if (createErr) throw createErr
+      if (!created?.user?.id) throw new Error('No se pudo crear el usuario (sin id).')
 
-      user = created?.user || null;
+      userId = created.user.id
     } else {
-      // 2b) Si ya existe: actualizar metadata + (opcional) password si se envió explícita
-      try {
-        const updatePayload: any = {
-          user_metadata: { full_name, phone, role, person_type, company_name },
-        };
+      userId = existing.id
 
-        // Solo cambiamos password si el frontend envió una password explícita
-        if (passwordProvided) {
-          updatePayload.password = effectivePassword;
-        }
-
-        // Si ahora sí quieres dar acceso, intenta quitar baneo (si aplica)
-        if (grant_access) {
-          updatePayload.banned_until = null;
-        }
-
-        const { error: updErr } = await admin.auth.admin.updateUserById(user.id, updatePayload);
-        if (updErr) {
-          // no bloqueamos el flujo por esto
-        }
-      } catch {
-        // Ignorar si la versión del SDK/Api difiere
-      }
+      // 3) Si ya existía, actualizamos metadata y (si grant_access=true) actualizamos password
+      await admin.auth.admin.updateUserById(userId, {
+        email,
+        ...(grant_access ? { password: effectivePassword } : {}),
+        user_metadata: {
+          full_name,
+          phone,
+          role,
+          person_type: normalizedPersonType,
+          company_name: normalizedPersonType === 'external' ? company_name : null,
+        },
+      } as any)
     }
 
-    if (!user?.id) {
-      return json(res, 500, { ok: false, error: 'No se obtuvo id de usuario (Auth).' });
-    }
-
-    const auth_id = user.id;
-
-    // 3) Si NO se entrega acceso: bloquear (ban largo)
+    // 4) Control acceso: ban/unban
     if (!grant_access) {
-      try {
-        await admin.auth.admin.updateUserById(auth_id, {
-          banned_until: '2999-12-31T00:00:00Z',
-        } as any);
-      } catch {
-        // Si no soporta banned_until, igual queda is_active=false en profiles
-      }
+      await admin.auth.admin.updateUserById(userId, {
+        banned_until: '2999-12-31T00:00:00Z',
+      } as any)
+    } else {
+      await admin.auth.admin.updateUserById(userId, {
+        banned_until: null,
+      } as any)
     }
 
-    // 4) Upsert en profiles
-    const { data: profile, error: upsertErr } = await admin
-      .from('profiles')
-      .upsert(
-        [
-          {
-            id: auth_id,
-            email,
-            full_name,
-            phone,
-            role,
-            is_active: !!grant_access,
-            person_type,
-            company_name: person_type === 'external' ? company_name : null,
-            updated_at: new Date().toISOString(),
-          },
-        ],
-        { onConflict: 'id' }
-      )
-      .select('*')
-      .single();
-
-    if (upsertErr) {
-      return json(res, 500, { ok: false, error: `Upsert profile: ${upsertErr.message}` });
+    // 5) Upsert en profiles (FUENTE ÚNICA)
+    const profilePayload = {
+      id: userId,
+      email,
+      full_name,
+      phone,
+      role,
+      is_active: !!grant_access,
+      person_type: normalizedPersonType,
+      company_name: normalizedPersonType === 'external' ? company_name : null,
+      updated_at: new Date().toISOString(),
     }
 
-    return json(res, 200, {
-      ok: true,
-      user_id: auth_id,
-      profile,
-      // Solo informativo (si fue creado recién y no se envió password manual)
-      initial_password: isNewUser && grant_access && !passwordProvided ? effectivePassword : null,
-      marker: 'USERS_CREATE_FINAL_v2_PERSON_TYPE',
-    });
-  } catch (e: any) {
-    return json(res, 500, { ok: false, error: e?.message || 'Error inesperado en endpoint' });
+    const { error: upsertErr } = await admin.from('profiles').upsert(profilePayload, { onConflict: 'id' })
+    if (upsertErr) throw upsertErr
+
+    return json(res, 200, { ok: true, user_id: userId })
+  } catch (err: any) {
+    console.error('create user error:', err)
+    return json(res, 500, { ok: false, error: err?.message || 'Unknown error' })
   }
 }
