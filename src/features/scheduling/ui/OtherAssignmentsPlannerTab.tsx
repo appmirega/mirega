@@ -1,72 +1,108 @@
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../../lib/supabaseClient";
+import { supabase } from "../../../lib/supabase";
 
-type OtherAssignmentType =
+type AssignmentType =
   | "repair"
-  | "certification_visit"
-  | "rescue_induction"
+  | "technical_visit"
+  | "inspection"
+  | "certification"
   | "rescue_training"
-  | "technical_visit";
+  | "other";
 
-const TYPE_LABEL: Record<OtherAssignmentType, string> = {
+const TYPE_LABEL: Record<AssignmentType, string> = {
   repair: "Reparación",
-  certification_visit: "Visita certificación",
-  rescue_induction: "Inducción rescate",
-  rescue_training: "Capacitación rescate",
   technical_visit: "Visita técnica",
+  inspection: "Inspección",
+  certification: "Certificación",
+  rescue_training: "Capacitación / rescate",
+  other: "Otro",
 };
 
 type TechnicianOption = {
   id: string;
-  full_name: string;
+  full_name: string | null;
+  person_type?: "internal" | "external" | null;
+  company_name?: string | null;
 };
 
-export default function OtherAssignmentsPlannerTab() {
-  const [type, setType] = useState<OtherAssignmentType>("repair");
-  const [date, setDate] = useState<string>("");
+type ClientOption = {
+  id: string;
+  company_name: string;
+};
+
+function safeText(value?: string | null) {
+  return (value ?? "").trim();
+}
+
+function technicianLabel(tech: TechnicianOption) {
+  const base = safeText(tech.full_name) || tech.id;
+  if (tech.person_type === "external") {
+    const company = safeText(tech.company_name);
+    return company ? `${base} (Externo - ${company})` : `${base} (Externo)`;
+  }
+  return base;
+}
+
+export function OtherAssignmentsPlannerTab() {
+  const [type, setType] = useState<AssignmentType>("repair");
+  const [eventDate, setEventDate] = useState<string>("");
   const [title, setTitle] = useState<string>("");
+  const [buildingName, setBuildingName] = useState<string>("");
+  const [clientId, setClientId] = useState<string>("");
   const [technicianId, setTechnicianId] = useState<string>("");
-  const [techs, setTechs] = useState<TechnicianOption[]>([]);
-  const [loadingTechs, setLoadingTechs] = useState<boolean>(false);
+  const [description, setDescription] = useState<string>("");
+
+  const [technicians, setTechnicians] = useState<TechnicianOption[]>([]);
+  const [clients, setClients] = useState<ClientOption[]>([]);
+
+  const [loadingBase, setLoadingBase] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
-    null
-  );
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const canSubmit = useMemo(() => {
-    return Boolean(date) && Boolean(title.trim());
-  }, [date, title]);
+    return Boolean(eventDate) && Boolean(title.trim());
+  }, [eventDate, title]);
 
   useEffect(() => {
     let mounted = true;
 
-    const loadTechs = async () => {
-      setLoadingTechs(true);
+    const loadBaseData = async () => {
+      setLoadingBase(true);
       setMsg(null);
 
-      // Ajusta este select según tu tabla real.
-      // En muchos proyectos "profiles" tiene full_name / display_name.
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .order("full_name", { ascending: true });
+      try {
+        const [{ data: technicianData, error: technicianError }, { data: clientData, error: clientError }] =
+          await Promise.all([
+            supabase
+              .from("profiles")
+              .select("id, full_name, role, person_type, company_name")
+              .in("role", ["technician", "Technician", "tecnico", "técnico"])
+              .order("full_name", { ascending: true }),
+            supabase
+              .from("clients")
+              .select("id, company_name")
+              .order("company_name", { ascending: true }),
+          ]);
 
-      if (!mounted) return;
+        if (technicianError) throw technicianError;
+        if (clientError) throw clientError;
 
-      if (error) {
-        setTechs([]);
+        if (!mounted) return;
+
+        setTechnicians((technicianData ?? []) as TechnicianOption[]);
+        setClients((clientData ?? []) as ClientOption[]);
+      } catch (error: any) {
+        if (!mounted) return;
         setMsg({
           kind: "err",
-          text: `No pude cargar técnicos (profiles): ${error.message}`,
+          text: error?.message || "No fue posible cargar técnicos y clientes.",
         });
-      } else {
-        setTechs((data ?? []).filter(Boolean) as TechnicianOption[]);
+      } finally {
+        if (mounted) setLoadingBase(false);
       }
-
-      setLoadingTechs(false);
     };
 
-    loadTechs();
+    void loadBaseData();
 
     return () => {
       mounted = false;
@@ -86,39 +122,58 @@ export default function OtherAssignmentsPlannerTab() {
 
     setSaving(true);
 
-    // Creamos un evento genérico en calendar_events (si tu app usa otra tabla, dime cuál y lo ajusto).
-    // Campos comunes: type, title, event_date, technician_id
-    const payload: any = {
-      type,
-      title: title.trim(),
-      event_date: date, // yyyy-mm-dd
-      technician_id: technicianId || null,
-      source: "manual_other_assignments",
-    };
+    try {
+      const start_at = `${eventDate}T00:00:00`;
+      const end_at = `${eventDate}T23:59:59`;
 
-    const { error } = await supabase.from("calendar_events").insert(payload);
+      const payload = {
+        event_type: type,
+        source_id: null,
+        client_id: clientId || null,
+        building_name: buildingName.trim() || null,
+        technician_id: technicianId || null,
+        is_external: false,
+        external_personnel_name: null,
+        status: "scheduled",
+        event_date: eventDate,
+        start_at,
+        end_at,
+        title: title.trim(),
+        description: description.trim() || null,
+      };
 
-    if (error) {
+      const { error } = await supabase.from("calendar_events").insert(payload);
+
+      if (error) throw error;
+
+      setMsg({
+        kind: "ok",
+        text: "Asignación operativa creada correctamente.",
+      });
+
+      setTitle("");
+      setBuildingName("");
+      setClientId("");
+      setTechnicianId("");
+      setDescription("");
+    } catch (error: any) {
       setMsg({
         kind: "err",
-        text: `No se pudo crear la asignación: ${error.message}`,
+        text: error?.message || "No se pudo crear la asignación operativa.",
       });
+    } finally {
       setSaving(false);
-      return;
     }
-
-    setMsg({ kind: "ok", text: "Asignación creada correctamente." });
-    setTitle("");
-    setTechnicianId("");
-    setSaving(false);
   };
 
   return (
-    <div className="bg-white border rounded-xl p-4">
-      <h2 className="text-lg font-semibold">Crear asignación manual</h2>
-      <p className="text-sm text-slate-500 mb-4">
-        Registra reparaciones, inducciones/capacitaciones y otras actividades.
-      </p>
+    <div className="rounded-lg border bg-white p-4">
+      <div className="mb-4">
+        <div className="text-base font-semibold">Asignaciones operativas</div>
+        <div className="text-sm text-slate-500">
+          Programa trabajos que no corresponden a mantenciones ni a turnos de emergencia.
+        </div>
+      </div>
 
       {msg && (
         <div
@@ -132,19 +187,17 @@ export default function OtherAssignmentsPlannerTab() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
           <label className="text-sm font-medium">Tipo</label>
           <select
-            className="mt-1 w-full border rounded-lg px-3 py-2"
+            className="mt-1 w-full rounded-lg border px-3 py-2"
             value={type}
-            onChange={(e) => setType(e.target.value as OtherAssignmentType)}
+            onChange={(e) => setType(e.target.value as AssignmentType)}
           >
-            {(
-              Object.keys(TYPE_LABEL) as Array<keyof typeof TYPE_LABEL>
-            ).map((k) => (
-              <option key={k} value={k}>
-                {TYPE_LABEL[k]}
+            {(Object.keys(TYPE_LABEL) as AssignmentType[]).map((key) => (
+              <option key={key} value={key}>
+                {TYPE_LABEL[key]}
               </option>
             ))}
           </select>
@@ -153,40 +206,75 @@ export default function OtherAssignmentsPlannerTab() {
         <div>
           <label className="text-sm font-medium">Fecha</label>
           <input
-            className="mt-1 w-full border rounded-lg px-3 py-2"
+            className="mt-1 w-full rounded-lg border px-3 py-2"
             type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
+            value={eventDate}
+            onChange={(e) => setEventDate(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="text-sm font-medium">Cliente</label>
+          <select
+            className="mt-1 w-full rounded-lg border px-3 py-2"
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            disabled={loadingBase}
+          >
+            <option value="">Sin cliente seleccionado</option>
+            {clients.map((client) => (
+              <option key={client.id} value={client.id}>
+                {client.company_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium">Edificio / Identificador</label>
+          <input
+            className="mt-1 w-full rounded-lg border px-3 py-2"
+            placeholder="Ej: Torre A - Edificio Los Robles"
+            value={buildingName}
+            onChange={(e) => setBuildingName(e.target.value)}
           />
         </div>
 
         <div>
           <label className="text-sm font-medium">Técnico</label>
           <select
-            className="mt-1 w-full border rounded-lg px-3 py-2"
+            className="mt-1 w-full rounded-lg border px-3 py-2"
             value={technicianId}
             onChange={(e) => setTechnicianId(e.target.value)}
-            disabled={loadingTechs}
+            disabled={loadingBase}
           >
             <option value="">Sin asignar</option>
-            {techs.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.full_name}
+            {technicians.map((tech) => (
+              <option key={tech.id} value={tech.id}>
+                {technicianLabel(tech)}
               </option>
             ))}
           </select>
-          {loadingTechs && (
-            <p className="text-xs text-slate-500 mt-1">Cargando técnicos…</p>
-          )}
         </div>
 
         <div>
           <label className="text-sm font-medium">Título</label>
           <input
-            className="mt-1 w-full border rounded-lg px-3 py-2"
-            placeholder="Ej: Reparación motor / Inducción rescate edificio X"
+            className="mt-1 w-full rounded-lg border px-3 py-2"
+            placeholder="Ej: Reparación tablero - Torre B"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+          />
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="text-sm font-medium">Descripción / notas</label>
+          <textarea
+            className="mt-1 w-full rounded-lg border px-3 py-2"
+            rows={4}
+            placeholder="Detalle del trabajo programado"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
           />
         </div>
       </div>
@@ -196,13 +284,13 @@ export default function OtherAssignmentsPlannerTab() {
           type="button"
           onClick={createAssignment}
           disabled={saving || !canSubmit}
-          className={`px-4 py-2 rounded-lg text-white ${
+          className={`rounded-lg px-4 py-2 text-white ${
             saving || !canSubmit
               ? "bg-slate-400"
               : "bg-slate-900 hover:bg-slate-800"
           }`}
         >
-          {saving ? "Creando..." : "Crear asignación"}
+          {saving ? "Creando..." : "Crear asignación operativa"}
         </button>
       </div>
     </div>

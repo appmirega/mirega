@@ -24,19 +24,14 @@ const EmergencyShiftScheduler = lazyNamed(
   "EmergencyShiftScheduler"
 );
 
-const EmergencyShiftsMonthlyView = lazyNamed(
-  () => import("../calendar/EmergencyShiftsMonthlyView"),
-  "EmergencyShiftsMonthlyView"
+const OtherAssignmentsPlannerTab = lazyNamed(
+  () => import("../../features/scheduling/ui/OtherAssignmentsPlannerTab"),
+  "OtherAssignmentsPlannerTab"
 );
 
-const TechnicianAbsenceForm = lazyNamed(
-  () => import("../calendar/TechnicianAbsenceForm"),
-  "TechnicianAbsenceForm"
-);
-
-const AdminTechnicianAvailabilityTool = lazyNamed(
-  () => import("../calendar/AdminTechnicianAvailabilityTool"),
-  "AdminTechnicianAvailabilityTool"
+const AdminAvailabilityAndAbsenceTab = lazyNamed(
+  () => import("../calendar/AdminAvailabilityAndAbsenceTab"),
+  "AdminAvailabilityAndAbsenceTab"
 );
 
 class ToolErrorBoundary extends React.Component<
@@ -84,10 +79,9 @@ type TabId =
   | "summary"
   | "mass_planner"
   | "emergency_scheduler"
-  | "emergency_monthly"
+  | "operational_assignments"
   | "coordination"
-  | "availability"
-  | "absence";
+  | "availability_absence";
 
 export default function AdminCalendarDashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("summary");
@@ -100,11 +94,6 @@ export default function AdminCalendarDashboard() {
 
   const monthEnd = useMemo(
     () => format(endOfMonth(selectedDate), "yyyy-MM-dd"),
-    [selectedDate]
-  );
-
-  const targetMonth = useMemo(
-    () => format(startOfMonth(selectedDate), "yyyy-MM"),
     [selectedDate]
   );
 
@@ -134,10 +123,9 @@ export default function AdminCalendarDashboard() {
         <TabButton id="summary" label="Resumen (maestro)" />
         <TabButton id="mass_planner" label="Planificador de mantenciones" />
         <TabButton id="emergency_scheduler" label="Turnos emergencia" />
-        <TabButton id="emergency_monthly" label="Emergencias mensual" />
+        <TabButton id="operational_assignments" label="Asignaciones operativas" />
         <TabButton id="coordination" label="Coordinación (solicitudes)" />
-        <TabButton id="availability" label="Disponibilidad técnicos" />
-        <TabButton id="absence" label="Ausencias" />
+        <TabButton id="availability_absence" label="Disponibilidad y ausencias" />
       </div>
 
       {activeTab === "summary" && (
@@ -156,12 +144,9 @@ export default function AdminCalendarDashboard() {
           >
             {activeTab === "mass_planner" && <MaintenanceMassPlannerV2 />}
             {activeTab === "emergency_scheduler" && <EmergencyShiftScheduler />}
-            {activeTab === "emergency_monthly" && (
-              <EmergencyShiftsMonthlyView targetMonth={targetMonth} />
-            )}
+            {activeTab === "operational_assignments" && <OtherAssignmentsPlannerTab />}
             {activeTab === "coordination" && <CoordinationServiceRequestsTab />}
-            {activeTab === "availability" && <AdminTechnicianAvailabilityTool />}
-            {activeTab === "absence" && <TechnicianAbsenceForm />}
+            {activeTab === "availability_absence" && <AdminAvailabilityAndAbsenceTab />}
           </Suspense>
         </ToolErrorBoundary>
       )}

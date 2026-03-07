@@ -1,52 +1,49 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { endOfMonth, format, startOfMonth } from "date-fns";
 import { supabase } from "../../lib/supabase";
 
 type Building = {
   id: string;
   name: string;
+  address?: string | null;
+  client_id?: string | null;
   client_name?: string | null;
 };
 
 type Technician = {
   id: string;
-  full_name: string;
+  full_name: string | null;
   person_type: "internal" | "external" | null;
   company_name?: string | null;
+  is_active?: boolean | null;
 };
 
 type MonthAssignmentRow = {
   id: string;
-  building_id: string;
-  event_date: string;
-  technician_id: string | null;
-  title: string | null;
+  building_id: string | null;
+  assigned_technician_id: string | null;
+  scheduled_date: string;
+  status?: string | null;
 };
 
 type AssignmentDraft = {
   buildingId: string;
-  date: string;
+  scheduledDate: string;
   technicianId: string;
-  title: string;
 };
 
 function safeText(value?: string | null) {
   return (value ?? "").trim();
 }
 
-function monthKey(year: number, monthIndex: number) {
-  return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
-}
-
-function firstDateOfMonth(year: number, monthIndex: number) {
-  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
-}
-
 function formatTechnicianLabel(technician: Technician) {
   const name = safeText(technician.full_name) || technician.id;
+
   if (technician.person_type === "external") {
     const company = safeText(technician.company_name);
     return company ? `${name} (Externo - ${company})` : `${name} (Externo)`;
   }
+
   return name;
 }
 
@@ -63,9 +60,10 @@ export function MaintenanceMassPlannerV2() {
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, AssignmentDraft>>({});
 
-  const [bulkDate, setBulkDate] = useState<string>(firstDateOfMonth(now.getFullYear(), now.getMonth()));
+  const [bulkDate, setBulkDate] = useState<string>(
+    format(startOfMonth(now), "yyyy-MM-dd")
+  );
   const [bulkTechnicianId, setBulkTechnicianId] = useState<string>("");
-  const [bulkTitle, setBulkTitle] = useState<string>("Mantención");
 
   const [search, setSearch] = useState<string>("");
   const [loadingBase, setLoadingBase] = useState<boolean>(false);
@@ -74,8 +72,20 @@ export function MaintenanceMassPlannerV2() {
   const [error, setError] = useState<string>("");
   const [success, setSuccess] = useState<string>("");
 
-  const currentMonthKey = useMemo(() => monthKey(year, month), [year, month]);
-  const monthDefaultDate = useMemo(() => firstDateOfMonth(year, month), [year, month]);
+  const monthStart = useMemo(
+    () => format(startOfMonth(new Date(year, month, 1)), "yyyy-MM-dd"),
+    [year, month]
+  );
+
+  const monthEnd = useMemo(
+    () => format(endOfMonth(new Date(year, month, 1)), "yyyy-MM-dd"),
+    [year, month]
+  );
+
+  const monthLabel = useMemo(
+    () => format(new Date(year, month, 1), "yyyy-MM"),
+    [year, month]
+  );
 
   const buildingsById = useMemo(() => {
     const map = new Map<string, Building>();
@@ -89,10 +99,13 @@ export function MaintenanceMassPlannerV2() {
     return map;
   }, [technicians]);
 
-  const assignedBuildingIds = useMemo(
-    () => new Set(monthAssignments.map((assignment) => assignment.building_id)),
-    [monthAssignments]
-  );
+  const assignedBuildingIds = useMemo(() => {
+    return new Set(
+      monthAssignments
+        .map((assignment) => assignment.building_id)
+        .filter(Boolean) as string[]
+    );
+  }, [monthAssignments]);
 
   const pendingBuildings = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -102,13 +115,17 @@ export function MaintenanceMassPlannerV2() {
 
       if (!term) return true;
 
-      const haystack = [safeText(building.name), safeText(building.client_name)]
+      const haystack = [
+        safeText(building.name),
+        safeText(building.address),
+        safeText(building.client_name),
+      ]
         .join(" ")
         .toLowerCase();
 
       return haystack.includes(term);
     });
-  }, [buildings, assignedBuildingIds, search]);
+  }, [assignedBuildingIds, buildings, search]);
 
   const selectedBuildingObjects = useMemo(() => {
     const selectedSet = new Set(selectedBuildings);
@@ -117,21 +134,24 @@ export function MaintenanceMassPlannerV2() {
 
   const plannedAssignments = useMemo(() => {
     return [...monthAssignments].sort((a, b) => {
-      if (a.event_date !== b.event_date) return a.event_date.localeCompare(b.event_date);
+      if (a.scheduled_date !== b.scheduled_date) {
+        return a.scheduled_date.localeCompare(b.scheduled_date);
+      }
 
-      const buildingA = safeText(buildingsById.get(a.building_id)?.name);
-      const buildingB = safeText(buildingsById.get(b.building_id)?.name);
-      return buildingA.localeCompare(buildingB);
+      const aName = safeText(buildingsById.get(a.building_id || "")?.name);
+      const bName = safeText(buildingsById.get(b.building_id || "")?.name);
+
+      return aName.localeCompare(bName);
     });
   }, [monthAssignments, buildingsById]);
 
   useEffect(() => {
-    setBulkDate(monthDefaultDate);
+    setBulkDate(monthStart);
     setSelectedBuildings([]);
     setDrafts({});
-    setSuccess("");
     setError("");
-  }, [monthDefaultDate]);
+    setSuccess("");
+  }, [monthStart]);
 
   useEffect(() => {
     const loadBaseData = async () => {
@@ -139,33 +159,46 @@ export function MaintenanceMassPlannerV2() {
       setError("");
 
       try {
-        const [{ data: buildingsData, error: buildingsError }, { data: techniciansData, error: techniciansError }] =
+        const [{ data: buildingsData, error: buildingsError }, { data: clientsData, error: clientsError }, { data: techniciansData, error: techniciansError }] =
           await Promise.all([
             supabase
               .from("buildings")
-              .select("id, name, clients(name)")
+              .select("id, name, address, client_id, is_active")
+              .eq("is_active", true)
               .order("name", { ascending: true }),
             supabase
+              .from("clients")
+              .select("id, company_name")
+              .order("company_name", { ascending: true }),
+            supabase
               .from("profiles")
-              .select("id, full_name, person_type, company_name")
-              .eq("role", "technician")
+              .select("id, full_name, role, person_type, company_name, is_active")
+              .in("role", ["technician", "Technician", "tecnico", "técnico"])
               .order("full_name", { ascending: true }),
           ]);
 
         if (buildingsError) throw buildingsError;
+        if (clientsError) throw clientsError;
         if (techniciansError) throw techniciansError;
+
+        const clientsMap = new Map<string, string>();
+        (clientsData ?? []).forEach((client: any) => {
+          clientsMap.set(client.id, client.company_name);
+        });
 
         const mappedBuildings: Building[] = (buildingsData ?? []).map((item: any) => ({
           id: item.id,
           name: item.name,
-          client_name: item.clients?.name ?? null,
+          address: item.address ?? null,
+          client_id: item.client_id ?? null,
+          client_name: item.client_id ? clientsMap.get(item.client_id) ?? null : null,
         }));
 
         setBuildings(mappedBuildings);
         setTechnicians((techniciansData ?? []) as Technician[]);
       } catch (err: any) {
         console.error(err);
-        setError(err?.message || "No fue posible cargar edificios y técnicos.");
+        setError(err?.message || "No fue posible cargar edificios, clientes y técnicos.");
       } finally {
         setLoadingBase(false);
       }
@@ -182,9 +215,10 @@ export function MaintenanceMassPlannerV2() {
       try {
         const { data, error } = await supabase
           .from("maintenance_assignments")
-          .select("id, building_id, event_date, technician_id, title")
-          .eq("calendar_month", currentMonthKey)
-          .order("event_date", { ascending: true });
+          .select("id, building_id, assigned_technician_id, scheduled_date, status")
+          .gte("scheduled_date", monthStart)
+          .lte("scheduled_date", monthEnd)
+          .order("scheduled_date", { ascending: true });
 
         if (error) throw error;
 
@@ -199,7 +233,7 @@ export function MaintenanceMassPlannerV2() {
     };
 
     void loadAssignmentsForMonth();
-  }, [currentMonthKey]);
+  }, [monthEnd, monthStart]);
 
   const ensureDraft = (buildingId: string) => {
     setDrafts((prev) => {
@@ -209,9 +243,8 @@ export function MaintenanceMassPlannerV2() {
         ...prev,
         [buildingId]: {
           buildingId,
-          date: bulkDate || monthDefaultDate,
+          scheduledDate: bulkDate || monthStart,
           technicianId: bulkTechnicianId,
-          title: bulkTitle || "Mantención",
         },
       };
     });
@@ -226,8 +259,8 @@ export function MaintenanceMassPlannerV2() {
   };
 
   const toggleBuilding = (buildingId: string) => {
-    setSuccess("");
     setError("");
+    setSuccess("");
 
     setSelectedBuildings((prev) => {
       const exists = prev.includes(buildingId);
@@ -244,9 +277,8 @@ export function MaintenanceMassPlannerV2() {
     setDrafts((prev) => {
       const current = prev[buildingId] ?? {
         buildingId,
-        date: bulkDate || monthDefaultDate,
+        scheduledDate: bulkDate || monthStart,
         technicianId: bulkTechnicianId,
-        title: bulkTitle || "Mantención",
       };
 
       return {
@@ -265,16 +297,17 @@ export function MaintenanceMassPlannerV2() {
 
     setDrafts((prev) => {
       const next = { ...prev };
+
       ids.forEach((id) => {
         if (!next[id]) {
           next[id] = {
             buildingId: id,
-            date: bulkDate || monthDefaultDate,
+            scheduledDate: bulkDate || monthStart,
             technicianId: bulkTechnicianId,
-            title: bulkTitle || "Mantención",
           };
         }
       });
+
       return next;
     });
   };
@@ -282,8 +315,8 @@ export function MaintenanceMassPlannerV2() {
   const handleClearSelection = () => {
     setSelectedBuildings([]);
     setDrafts({});
-    setSuccess("");
     setError("");
+    setSuccess("");
   };
 
   const applyBulkValues = () => {
@@ -297,14 +330,15 @@ export function MaintenanceMassPlannerV2() {
 
     setDrafts((prev) => {
       const next = { ...prev };
+
       selectedBuildings.forEach((buildingId) => {
         next[buildingId] = {
           buildingId,
-          date: bulkDate || monthDefaultDate,
+          scheduledDate: bulkDate || monthStart,
           technicianId: bulkTechnicianId,
-          title: bulkTitle || "Mantención",
         };
       });
+
       return next;
     });
   };
@@ -326,7 +360,7 @@ export function MaintenanceMassPlannerV2() {
           throw new Error("Hay edificios seleccionados sin datos de asignación.");
         }
 
-        if (!draft.date) {
+        if (!draft.scheduledDate) {
           throw new Error("Cada edificio debe tener una fecha asignada.");
         }
 
@@ -335,13 +369,16 @@ export function MaintenanceMassPlannerV2() {
         }
 
         return {
-          calendar_month: currentMonthKey,
           building_id: buildingId,
-          event_date: draft.date,
-          technician_id: draft.technicianId,
-          title: draft.title || "Mantención",
-          source: "mass_planner",
-          created_at: new Date().toISOString(),
+          assigned_technician_id: draft.technicianId,
+          scheduled_date: draft.scheduledDate,
+          scheduled_time_start: "09:00",
+          scheduled_time_end: "11:00",
+          estimated_duration_hours: 2,
+          is_fixed: false,
+          assignment_type: "mantenimiento",
+          status: "pending",
+          notes: null,
         };
       });
 
@@ -350,16 +387,19 @@ export function MaintenanceMassPlannerV2() {
 
       const { data: refreshedData, error: refreshError } = await supabase
         .from("maintenance_assignments")
-        .select("id, building_id, event_date, technician_id, title")
-        .eq("calendar_month", currentMonthKey)
-        .order("event_date", { ascending: true });
+        .select("id, building_id, assigned_technician_id, scheduled_date, status")
+        .gte("scheduled_date", monthStart)
+        .lte("scheduled_date", monthEnd)
+        .order("scheduled_date", { ascending: true });
 
       if (refreshError) throw refreshError;
 
       setMonthAssignments((refreshedData ?? []) as MonthAssignmentRow[]);
       setSelectedBuildings([]);
       setDrafts({});
-      setSuccess("Mantenciones asignadas correctamente. Los edificios ya salieron del listado pendiente de este mes.");
+      setSuccess(
+        "Mantenciones asignadas correctamente. Los edificios ya salieron del listado pendiente de este mes."
+      );
     } catch (err: any) {
       console.error(err);
       setError(err?.message || "No fue posible guardar las asignaciones.");
@@ -374,7 +414,7 @@ export function MaintenanceMassPlannerV2() {
         <div className="text-base font-semibold">Planificador de mantenciones</div>
         <div className="text-sm text-slate-500">
           Muestra los edificios pendientes del mes seleccionado. Al asignar fecha y técnico,
-          el edificio sale del listado de pendientes solo para ese mes.
+          el edificio sale del listado pendiente solo para ese mes.
         </div>
       </div>
 
@@ -424,13 +464,13 @@ export function MaintenanceMassPlannerV2() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-            placeholder="Nombre del edificio o cliente"
+            placeholder="Nombre del edificio, dirección o cliente"
           />
         </div>
 
         <div className="rounded-lg border bg-slate-50 px-3 py-2 text-sm text-slate-700">
           <div>
-            Mes seleccionado: <span className="font-semibold">{currentMonthKey}</span>
+            Mes seleccionado: <span className="font-semibold">{monthLabel}</span>
           </div>
           <div>
             Pendientes: <span className="font-semibold">{pendingBuildings.length}</span>
@@ -460,12 +500,10 @@ export function MaintenanceMassPlannerV2() {
       {!loadingBase && !loadingAssignments && (
         <div className="mt-4 grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
           <div className="rounded-lg border bg-slate-50 p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div>
-                <div className="font-medium text-slate-900">Edificios pendientes</div>
-                <div className="text-xs text-slate-500">
-                  Estos edificios volverán a aparecer completos al cambiar al mes siguiente.
-                </div>
+            <div className="mb-2">
+              <div className="font-medium text-slate-900">Edificios pendientes</div>
+              <div className="text-xs text-slate-500">
+                Estos edificios volverán a aparecer completos al cambiar al mes siguiente.
               </div>
             </div>
 
@@ -491,7 +529,7 @@ export function MaintenanceMassPlannerV2() {
 
             {pendingBuildings.length === 0 ? (
               <div className="rounded-md border bg-white p-3 text-sm text-slate-600">
-                No hay edificios pendientes para {currentMonthKey}.
+                No hay edificios pendientes para {monthLabel}.
               </div>
             ) : (
               <div className="max-h-[500px] space-y-1 overflow-y-auto rounded-md border bg-white p-2">
@@ -507,10 +545,13 @@ export function MaintenanceMassPlannerV2() {
                       onChange={() => toggleBuilding(building.id)}
                     />
                     <div className="min-w-0 text-sm">
-                      <div className="font-medium text-slate-900">{safeText(building.name) || "Edificio"}</div>
-                      {safeText(building.client_name) && (
-                        <div className="truncate text-xs text-slate-500">{safeText(building.client_name)}</div>
-                      )}
+                      <div className="font-medium text-slate-900">
+                        {safeText(building.name) || "Edificio"}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {safeText(building.client_name) || "Sin cliente"}{" "}
+                        {safeText(building.address) ? `· ${safeText(building.address)}` : ""}
+                      </div>
                     </div>
                   </label>
                 ))}
@@ -538,7 +579,7 @@ export function MaintenanceMassPlannerV2() {
                 </button>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium">Fecha</label>
                   <input
@@ -563,17 +604,6 @@ export function MaintenanceMassPlannerV2() {
                       </option>
                     ))}
                   </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium">Título</label>
-                  <input
-                    type="text"
-                    value={bulkTitle}
-                    onChange={(event) => setBulkTitle(event.target.value)}
-                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                    placeholder="Mantención"
-                  />
                 </div>
               </div>
             </div>
@@ -609,7 +639,6 @@ export function MaintenanceMassPlannerV2() {
                         <th className="px-3 py-2">Cliente</th>
                         <th className="px-3 py-2">Fecha</th>
                         <th className="px-3 py-2">Técnico</th>
-                        <th className="px-3 py-2">Título</th>
                         <th className="px-3 py-2"></th>
                       </tr>
                     </thead>
@@ -617,27 +646,34 @@ export function MaintenanceMassPlannerV2() {
                       {selectedBuildingObjects.map((building) => {
                         const draft = drafts[building.id] ?? {
                           buildingId: building.id,
-                          date: bulkDate || monthDefaultDate,
+                          scheduledDate: bulkDate || monthStart,
                           technicianId: bulkTechnicianId,
-                          title: bulkTitle || "Mantención",
                         };
 
                         return (
                           <tr key={building.id} className="border-b">
-                            <td className="px-3 py-2 font-medium text-slate-900">{safeText(building.name) || "Edificio"}</td>
-                            <td className="px-3 py-2 text-slate-600">{safeText(building.client_name) || "—"}</td>
+                            <td className="px-3 py-2 font-medium text-slate-900">
+                              {safeText(building.name) || "Edificio"}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {safeText(building.client_name) || "—"}
+                            </td>
                             <td className="px-3 py-2">
                               <input
                                 type="date"
-                                value={draft.date}
-                                onChange={(event) => updateDraft(building.id, { date: event.target.value })}
+                                value={draft.scheduledDate}
+                                onChange={(event) =>
+                                  updateDraft(building.id, { scheduledDate: event.target.value })
+                                }
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                               />
                             </td>
                             <td className="px-3 py-2">
                               <select
                                 value={draft.technicianId}
-                                onChange={(event) => updateDraft(building.id, { technicianId: event.target.value })}
+                                onChange={(event) =>
+                                  updateDraft(building.id, { technicianId: event.target.value })
+                                }
                                 className="w-full rounded-md border px-3 py-2 text-sm"
                               >
                                 <option value="">Seleccionar técnico</option>
@@ -647,14 +683,6 @@ export function MaintenanceMassPlannerV2() {
                                   </option>
                                 ))}
                               </select>
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="text"
-                                value={draft.title}
-                                onChange={(event) => updateDraft(building.id, { title: event.target.value })}
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                              />
                             </td>
                             <td className="px-3 py-2 text-right">
                               <button
@@ -675,10 +703,14 @@ export function MaintenanceMassPlannerV2() {
             </div>
 
             <div className="rounded-lg border bg-white p-4">
-              <div className="mb-3 font-medium text-slate-900">Ya planificados en {currentMonthKey}</div>
+              <div className="mb-3 font-medium text-slate-900">
+                Ya planificados en {monthLabel}
+              </div>
 
               {plannedAssignments.length === 0 ? (
-                <div className="text-sm text-slate-500">Todavía no hay mantenciones planificadas para este mes.</div>
+                <div className="text-sm text-slate-500">
+                  Todavía no hay mantenciones planificadas para este mes.
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[720px] border-collapse text-sm">
@@ -688,25 +720,33 @@ export function MaintenanceMassPlannerV2() {
                         <th className="px-3 py-2">Edificio</th>
                         <th className="px-3 py-2">Cliente</th>
                         <th className="px-3 py-2">Técnico</th>
-                        <th className="px-3 py-2">Título</th>
+                        <th className="px-3 py-2">Estado</th>
                       </tr>
                     </thead>
                     <tbody>
                       {plannedAssignments.map((assignment) => {
-                        const building = buildingsById.get(assignment.building_id);
-                        const technician = assignment.technician_id
-                          ? techniciansById.get(assignment.technician_id)
+                        const building = buildingsById.get(assignment.building_id || "");
+                        const technician = assignment.assigned_technician_id
+                          ? techniciansById.get(assignment.assigned_technician_id)
                           : undefined;
 
                         return (
                           <tr key={assignment.id} className="border-b">
-                            <td className="px-3 py-2 whitespace-nowrap">{assignment.event_date}</td>
-                            <td className="px-3 py-2 font-medium text-slate-900">{safeText(building?.name) || "—"}</td>
-                            <td className="px-3 py-2 text-slate-600">{safeText(building?.client_name) || "—"}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {assignment.scheduled_date}
+                            </td>
+                            <td className="px-3 py-2 font-medium text-slate-900">
+                              {safeText(building?.name) || "—"}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {safeText(building?.client_name) || "—"}
+                            </td>
                             <td className="px-3 py-2 text-slate-600">
                               {technician ? formatTechnicianLabel(technician) : "—"}
                             </td>
-                            <td className="px-3 py-2 text-slate-600">{safeText(assignment.title) || "Mantención"}</td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {safeText(assignment.status) || "pending"}
+                            </td>
                           </tr>
                         );
                       })}
