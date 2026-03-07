@@ -37,15 +37,13 @@ const typeLabel: Record<string, string> = {
   repair: "Reparación",
   inspection: "Inspección",
   training: "Capacitación",
-  visit: "Visita técnica",
+  visit: "Visita",
   technical_visit: "Visita técnica",
   certification: "Certificación",
-  rescue_training: "Inducción / Rescate",
-  work_order: "Solicitud",
+  rescue_training: "Capacitación rescate",
+  work_order: "Orden de trabajo",
   calendar_event: "Evento",
   other: "Otro",
-  support: "Soporte",
-  parts: "Repuestos",
 };
 
 type UIEvent = RBCEvent & {
@@ -54,6 +52,11 @@ type UIEvent = RBCEvent & {
 
 function safeText(value?: string | null) {
   return value == null || value === "" ? "—" : String(value);
+}
+
+function normalizeDateString(value?: string | null) {
+  if (!value) return "";
+  return String(value).slice(0, 10);
 }
 
 export function SummaryMonthView(props: {
@@ -70,7 +73,12 @@ export function SummaryMonthView(props: {
   });
 
   const [approvedAbsences, setApprovedAbsences] = useState<
-    Array<{ technician_id: string; start_date: string; end_date: string }>
+    Array<{
+      technician_id: string;
+      start_date: string;
+      end_date: string;
+      source: "availability" | "leave";
+    }>
   >([]);
   const [absError, setAbsError] = useState<string>("");
 
@@ -79,44 +87,47 @@ export function SummaryMonthView(props: {
       setAbsError("");
 
       try {
-        const { data, error } = await supabase
-          .from("technician_leaves")
-          .select("technician_id, start_date, end_date")
-          .lte("start_date", monthEnd)
-          .gte("end_date", monthStart);
-
-        if (error) throw error;
-
-        setApprovedAbsences((data ?? []) as Array<{
-          technician_id: string;
-          start_date: string;
-          end_date: string;
-        }>);
-      } catch (err: any) {
-        console.warn("No fue posible cargar technician_leaves, se intentará con technician_availability", err);
-
-        try {
-          const fallback = await supabase
+        const [availabilityResult, leavesResult] = await Promise.all([
+          supabase
             .from("technician_availability")
-            .select("technician_id, start_date, end_date")
+            .select("technician_id, start_date, end_date, status")
             .eq("status", "approved")
             .lte("start_date", monthEnd)
-            .gte("end_date", monthStart);
+            .gte("end_date", monthStart),
+          supabase
+            .from("technician_leaves")
+            .select("technician_id, start_date, end_date, status")
+            .eq("status", "approved")
+            .lte("start_date", monthEnd)
+            .gte("end_date", monthStart),
+        ]);
 
-          if (fallback.error) throw fallback.error;
+        if (availabilityResult.error) throw availabilityResult.error;
+        if (leavesResult.error) throw leavesResult.error;
 
-          setApprovedAbsences((fallback.data ?? []) as Array<{
-            technician_id: string;
-            start_date: string;
-            end_date: string;
-          }>);
-        } catch (fallbackError: any) {
-          console.error(fallbackError);
-          setAbsError(
-            fallbackError?.message || "No fue posible cargar las ausencias aprobadas."
-          );
-          setApprovedAbsences([]);
-        }
+        const availabilityRows =
+          (availabilityResult.data ?? []).map((row: any) => ({
+            technician_id: row.technician_id,
+            start_date: row.start_date,
+            end_date: row.end_date,
+            source: "availability" as const,
+          })) ?? [];
+
+        const leaveRows =
+          (leavesResult.data ?? []).map((row: any) => ({
+            technician_id: row.technician_id,
+            start_date: row.start_date,
+            end_date: row.end_date,
+            source: "leave" as const,
+          })) ?? [];
+
+        setApprovedAbsences([...availabilityRows, ...leaveRows]);
+      } catch (err: any) {
+        console.error(err);
+        setAbsError(
+          err?.message || "No fue posible cargar las ausencias aprobadas."
+        );
+        setApprovedAbsences([]);
       }
     };
 
@@ -127,8 +138,8 @@ export function SummaryMonthView(props: {
     const output = new Set<string>();
 
     approvedAbsences.forEach((absence) => {
-      const start = new Date(`${absence.start_date}T00:00:00`);
-      const end = new Date(`${absence.end_date}T00:00:00`);
+      const start = new Date(`${normalizeDateString(absence.start_date)}T00:00:00`);
+      const end = new Date(`${normalizeDateString(absence.end_date)}T00:00:00`);
 
       eachDayOfInterval({ start, end }).forEach((day) => {
         output.add(format(day, "yyyy-MM-dd"));
@@ -140,12 +151,18 @@ export function SummaryMonthView(props: {
 
   const events: UIEvent[] = useMemo(() => {
     return (data ?? []).map((row) => {
-      const start = new Date(row.start_at || `${row.event_date}T00:00:00`);
-      const end = new Date(row.end_at || `${row.event_date}T23:59:59`);
+      const eventDate = normalizeDateString(row.event_date);
+      const start = new Date(row.start_at || `${eventDate}T00:00:00`);
+      const end = new Date(row.end_at || `${eventDate}T23:59:59`);
       const label = typeLabel[row.event_type] || row.event_type;
 
+      const summary =
+        safeText(row.title) !== "—"
+          ? safeText(row.title)
+          : safeText(row.description);
+
       return {
-        title: `${label} • ${safeText(row.building_name)} • ${safeText(row.title)}`,
+        title: `${label} • ${safeText(row.building_name)} • ${summary}`,
         start,
         end,
         allDay: true,
@@ -174,7 +191,7 @@ export function SummaryMonthView(props: {
         <div>
           <div className="text-base font-semibold">Resumen mensual (maestro)</div>
           <div className="text-xs text-slate-500">
-            Solo lectura. Consolida lo ya programado en el sistema.
+            Solo lectura. Consolida mantenciones, turnos y asignaciones operativas.
           </div>
         </div>
 

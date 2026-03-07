@@ -6,8 +6,13 @@ type Building = {
   id: string;
   name: string;
   address?: string | null;
-  client_id?: string | null;
   client_name?: string | null;
+};
+
+type Client = {
+  id: string;
+  company_name: string | null;
+  building_name: string | null;
 };
 
 type Technician = {
@@ -21,6 +26,7 @@ type Technician = {
 type MonthAssignmentRow = {
   id: string;
   building_id: string | null;
+  building_name: string | null;
   assigned_technician_id: string | null;
   scheduled_date: string;
   status?: string | null;
@@ -34,6 +40,10 @@ type AssignmentDraft = {
 
 function safeText(value?: string | null) {
   return (value ?? "").trim();
+}
+
+function normalizeText(value?: string | null) {
+  return safeText(value).toLowerCase();
 }
 
 function formatTechnicianLabel(technician: Technician) {
@@ -138,8 +148,12 @@ export function MaintenanceMassPlannerV2() {
         return a.scheduled_date.localeCompare(b.scheduled_date);
       }
 
-      const aName = safeText(buildingsById.get(a.building_id || "")?.name);
-      const bName = safeText(buildingsById.get(b.building_id || "")?.name);
+      const aName =
+        safeText(buildingsById.get(a.building_id || "")?.name) ||
+        safeText(a.building_name);
+      const bName =
+        safeText(buildingsById.get(b.building_id || "")?.name) ||
+        safeText(b.building_name);
 
       return aName.localeCompare(bName);
     });
@@ -159,46 +173,55 @@ export function MaintenanceMassPlannerV2() {
       setError("");
 
       try {
-        const [{ data: buildingsData, error: buildingsError }, { data: clientsData, error: clientsError }, { data: techniciansData, error: techniciansError }] =
-          await Promise.all([
-            supabase
-              .from("buildings")
-              .select("id, name, address, client_id, is_active")
-              .eq("is_active", true)
-              .order("name", { ascending: true }),
-            supabase
-              .from("clients")
-              .select("id, company_name")
-              .order("company_name", { ascending: true }),
-            supabase
-              .from("profiles")
-              .select("id, full_name, role, person_type, company_name, is_active")
-              .in("role", ["technician", "Technician", "tecnico", "técnico"])
-              .order("full_name", { ascending: true }),
-          ]);
+        const [
+          { data: buildingsData, error: buildingsError },
+          { data: clientsData, error: clientsError },
+          { data: techniciansData, error: techniciansError },
+        ] = await Promise.all([
+          supabase
+            .from("buildings")
+            .select("id, name, address")
+            .order("name", { ascending: true }),
+          supabase
+            .from("clients")
+            .select("id, company_name, building_name")
+            .order("company_name", { ascending: true }),
+          supabase
+            .from("profiles")
+            .select("id, full_name, role, person_type, company_name, is_active")
+            .eq("role", "technician")
+            .order("full_name", { ascending: true }),
+        ]);
 
         if (buildingsError) throw buildingsError;
         if (clientsError) throw clientsError;
         if (techniciansError) throw techniciansError;
 
-        const clientsMap = new Map<string, string>();
-        (clientsData ?? []).forEach((client: any) => {
-          clientsMap.set(client.id, client.company_name);
-        });
+        const clients = (clientsData ?? []) as Client[];
 
-        const mappedBuildings: Building[] = (buildingsData ?? []).map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          address: item.address ?? null,
-          client_id: item.client_id ?? null,
-          client_name: item.client_id ? clientsMap.get(item.client_id) ?? null : null,
-        }));
+        const mappedBuildings: Building[] = (buildingsData ?? []).map((item: any) => {
+          const matchingClient =
+            clients.find(
+              (client) =>
+                normalizeText(client.building_name) === normalizeText(item.name)
+            ) ?? null;
+
+          return {
+            id: item.id,
+            name: item.name,
+            address: item.address ?? null,
+            client_name: matchingClient?.company_name ?? null,
+          };
+        });
 
         setBuildings(mappedBuildings);
         setTechnicians((techniciansData ?? []) as Technician[]);
       } catch (err: any) {
         console.error(err);
-        setError(err?.message || "No fue posible cargar edificios, clientes y técnicos.");
+        setError(
+          err?.message ||
+            "No fue posible cargar edificios, clientes y técnicos."
+        );
       } finally {
         setLoadingBase(false);
       }
@@ -215,7 +238,9 @@ export function MaintenanceMassPlannerV2() {
       try {
         const { data, error } = await supabase
           .from("maintenance_assignments")
-          .select("id, building_id, assigned_technician_id, scheduled_date, status")
+          .select(
+            "id, building_id, building_name, assigned_technician_id, scheduled_date, status"
+          )
           .gte("scheduled_date", monthStart)
           .lte("scheduled_date", monthEnd)
           .order("scheduled_date", { ascending: true });
@@ -355,6 +380,7 @@ export function MaintenanceMassPlannerV2() {
 
       const rows = selectedBuildings.map((buildingId) => {
         const draft = drafts[buildingId];
+        const building = buildingsById.get(buildingId);
 
         if (!draft) {
           throw new Error("Hay edificios seleccionados sin datos de asignación.");
@@ -370,14 +396,14 @@ export function MaintenanceMassPlannerV2() {
 
         return {
           building_id: buildingId,
+          building_name: building?.name ?? null,
           assigned_technician_id: draft.technicianId,
           scheduled_date: draft.scheduledDate,
           scheduled_time_start: "09:00",
           scheduled_time_end: "11:00",
-          estimated_duration_hours: 2,
+          status: "scheduled",
           is_fixed: false,
-          assignment_type: "mantenimiento",
-          status: "pending",
+          is_external: false,
           notes: null,
         };
       });
@@ -387,7 +413,9 @@ export function MaintenanceMassPlannerV2() {
 
       const { data: refreshedData, error: refreshError } = await supabase
         .from("maintenance_assignments")
-        .select("id, building_id, assigned_technician_id, scheduled_date, status")
+        .select(
+          "id, building_id, building_name, assigned_technician_id, scheduled_date, status"
+        )
         .gte("scheduled_date", monthStart)
         .lte("scheduled_date", monthEnd)
         .order("scheduled_date", { ascending: true });
@@ -549,8 +577,8 @@ export function MaintenanceMassPlannerV2() {
                         {safeText(building.name) || "Edificio"}
                       </div>
                       <div className="text-xs text-slate-500">
-                        {safeText(building.client_name) || "Sin cliente"}{" "}
-                        {safeText(building.address) ? `· ${safeText(building.address)}` : ""}
+                        {safeText(building.client_name) || "Sin cliente"}
+                        {safeText(building.address) ? ` · ${safeText(building.address)}` : ""}
                       </div>
                     </div>
                   </label>
@@ -736,7 +764,7 @@ export function MaintenanceMassPlannerV2() {
                               {assignment.scheduled_date}
                             </td>
                             <td className="px-3 py-2 font-medium text-slate-900">
-                              {safeText(building?.name) || "—"}
+                              {safeText(building?.name) || safeText(assignment.building_name) || "—"}
                             </td>
                             <td className="px-3 py-2 text-slate-600">
                               {safeText(building?.client_name) || "—"}
@@ -745,7 +773,7 @@ export function MaintenanceMassPlannerV2() {
                               {technician ? formatTechnicianLabel(technician) : "—"}
                             </td>
                             <td className="px-3 py-2 text-slate-600">
-                              {safeText(assignment.status) || "pending"}
+                              {safeText(assignment.status) || "scheduled"}
                             </td>
                           </tr>
                         );

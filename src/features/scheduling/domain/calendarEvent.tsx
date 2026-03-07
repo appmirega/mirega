@@ -13,16 +13,18 @@ export type CalendarEventType =
   | "work_order"
   | "calendar_event"
   | "other"
-  | "parts"
-  | "support"
   | string;
 
 export type CalendarEventStatus =
   | "scheduled"
   | "pending"
+  | "approved"
+  | "analyzing"
   | "in_progress"
   | "done"
+  | "completed"
   | "cancelled"
+  | "rejected"
   | string;
 
 export interface CalendarEventRow {
@@ -31,11 +33,8 @@ export interface CalendarEventRow {
   status?: CalendarEventStatus | null;
   source_id?: string | null;
   client_id?: string | null;
-  client_name?: string | null;
-  building_id?: string | null;
   building_name?: string | null;
   technician_id?: string | null;
-  technician_name?: string | null;
   external_person?: string | null;
   is_external?: boolean | null;
   event_date: string;

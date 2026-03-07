@@ -25,9 +25,9 @@ type TechnicianOption = {
   company_name?: string | null;
 };
 
-type ClientOption = {
+type BuildingOption = {
   id: string;
-  company_name: string;
+  name: string;
 };
 
 function safeText(value?: string | null) {
@@ -48,12 +48,11 @@ export function OtherAssignmentsPlannerTab() {
   const [eventDate, setEventDate] = useState<string>("");
   const [title, setTitle] = useState<string>("");
   const [buildingName, setBuildingName] = useState<string>("");
-  const [clientId, setClientId] = useState<string>("");
   const [technicianId, setTechnicianId] = useState<string>("");
   const [description, setDescription] = useState<string>("");
 
   const [technicians, setTechnicians] = useState<TechnicianOption[]>([]);
-  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [buildings, setBuildings] = useState<BuildingOption[]>([]);
 
   const [loadingBase, setLoadingBase] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
@@ -71,31 +70,33 @@ export function OtherAssignmentsPlannerTab() {
       setMsg(null);
 
       try {
-        const [{ data: technicianData, error: technicianError }, { data: clientData, error: clientError }] =
-          await Promise.all([
-            supabase
-              .from("profiles")
-              .select("id, full_name, role, person_type, company_name")
-              .in("role", ["technician", "Technician", "tecnico", "técnico"])
-              .order("full_name", { ascending: true }),
-            supabase
-              .from("clients")
-              .select("id, company_name")
-              .order("company_name", { ascending: true }),
-          ]);
+        const [
+          { data: technicianData, error: technicianError },
+          { data: buildingData, error: buildingError },
+        ] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id, full_name, role, person_type, company_name")
+            .eq("role", "technician")
+            .order("full_name", { ascending: true }),
+          supabase
+            .from("buildings")
+            .select("id, name")
+            .order("name", { ascending: true }),
+        ]);
 
         if (technicianError) throw technicianError;
-        if (clientError) throw clientError;
+        if (buildingError) throw buildingError;
 
         if (!mounted) return;
 
         setTechnicians((technicianData ?? []) as TechnicianOption[]);
-        setClients((clientData ?? []) as ClientOption[]);
+        setBuildings((buildingData ?? []) as BuildingOption[]);
       } catch (error: any) {
         if (!mounted) return;
         setMsg({
           kind: "err",
-          text: error?.message || "No fue posible cargar técnicos y clientes.",
+          text: error?.message || "No fue posible cargar técnicos y edificios.",
         });
       } finally {
         if (mounted) setLoadingBase(false);
@@ -123,23 +124,24 @@ export function OtherAssignmentsPlannerTab() {
     setSaving(true);
 
     try {
-      const start_at = `${eventDate}T00:00:00`;
-      const end_at = `${eventDate}T23:59:59`;
+      const technician =
+        technicians.find((item) => item.id === technicianId) ?? null;
+
+      const person = technician ? safeText(technician.full_name) : "";
+
+      const finalDescription = [
+        title.trim(),
+        description.trim(),
+      ]
+        .filter(Boolean)
+        .join(" — ");
 
       const payload = {
         event_type: type,
-        source_id: null,
-        client_id: clientId || null,
-        building_name: buildingName.trim() || null,
-        technician_id: technicianId || null,
-        is_external: false,
-        external_personnel_name: null,
-        status: "scheduled",
         event_date: eventDate,
-        start_at,
-        end_at,
-        title: title.trim(),
-        description: description.trim() || null,
+        person: person || null,
+        description: finalDescription || title.trim(),
+        building_name: buildingName.trim() || null,
       };
 
       const { error } = await supabase.from("calendar_events").insert(payload);
@@ -153,7 +155,6 @@ export function OtherAssignmentsPlannerTab() {
 
       setTitle("");
       setBuildingName("");
-      setClientId("");
       setTechnicianId("");
       setDescription("");
     } catch (error: any) {
@@ -214,30 +215,19 @@ export function OtherAssignmentsPlannerTab() {
         </div>
 
         <div>
-          <label className="text-sm font-medium">Cliente</label>
-          <select
-            className="mt-1 w-full rounded-lg border px-3 py-2"
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            disabled={loadingBase}
-          >
-            <option value="">Sin cliente seleccionado</option>
-            {clients.map((client) => (
-              <option key={client.id} value={client.id}>
-                {client.company_name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-sm font-medium">Edificio / Identificador</label>
+          <label className="text-sm font-medium">Edificio</label>
           <input
+            list="buildings-list"
             className="mt-1 w-full rounded-lg border px-3 py-2"
-            placeholder="Ej: Torre A - Edificio Los Robles"
+            placeholder="Escribe o selecciona un edificio"
             value={buildingName}
             onChange={(e) => setBuildingName(e.target.value)}
           />
+          <datalist id="buildings-list">
+            {buildings.map((building) => (
+              <option key={building.id} value={building.name} />
+            ))}
+          </datalist>
         </div>
 
         <div>
@@ -257,7 +247,7 @@ export function OtherAssignmentsPlannerTab() {
           </select>
         </div>
 
-        <div>
+        <div className="md:col-span-2">
           <label className="text-sm font-medium">Título</label>
           <input
             className="mt-1 w-full rounded-lg border px-3 py-2"
