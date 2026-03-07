@@ -1,46 +1,46 @@
 export type CalendarEventType =
   | "maintenance"
-  | "work_order"
+  | "emergency"
   | "emergency_visit"
   | "emergency_shift"
-  | "calendar_event"
   | "repair"
-  | "parts"
-  | "support"
   | "inspection"
-  // ✅ nuevos tipos “otros trabajos”
+  | "training"
+  | "visit"
   | "technical_visit"
   | "certification"
-  | "rescue_training";
+  | "rescue_training"
+  | "work_order"
+  | "calendar_event"
+  | "other"
+  | "parts"
+  | "support"
+  | string;
 
-export type CalendarEventStatus = "scheduled" | "in_progress" | "done" | "cancelled";
+export type CalendarEventStatus =
+  | "scheduled"
+  | "pending"
+  | "in_progress"
+  | "done"
+  | "cancelled"
+  | string;
 
-export interface CalendarEvent {
+export interface CalendarEventRow {
   id: string;
   event_type: CalendarEventType;
-
-  // Origen (si viene de otra tabla/flujo)
+  status?: CalendarEventStatus | null;
   source_id?: string | null;
-
-  // Contexto
   client_id?: string | null;
+  client_name?: string | null;
+  building_id?: string | null;
   building_name?: string | null;
-
-  // Asignación
   technician_id?: string | null;
-
-  // Extras si trabajas con externos
+  technician_name?: string | null;
   external_person?: string | null;
   is_external?: boolean | null;
-
-  status: CalendarEventStatus;
-
-  // Fechas
-  event_date: string; // timestamptz o date según tu vista (lo tratamos como string ISO)
+  event_date: string;
   start_at?: string | null;
   end_at?: string | null;
-
-  // UI
-  title: string;
+  title?: string | null;
   description?: string | null;
 }

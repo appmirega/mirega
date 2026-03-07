@@ -1,16 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Calendar as RBCalendar,
-  dateFnsLocalizer,
   Views,
+  dateFnsLocalizer,
   type Event as RBCEvent,
 } from "react-big-calendar";
 import {
+  eachDayOfInterval,
   format,
+  getDay,
   parse,
   startOfWeek,
-  getDay,
-  eachDayOfInterval,
 } from "date-fns";
 import { es } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
@@ -29,37 +29,38 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
-function safe(v: any) {
-  return v == null || v === "" ? "—" : String(v);
-}
-
-/* ===============================
-   LABELS POR TIPO (ACTUALIZADO)
-================================ */
 const typeLabel: Record<string, string> = {
   maintenance: "Mantención",
-  work_order: "Solicitud",
+  emergency: "Emergencia",
   emergency_visit: "Emergencia",
   emergency_shift: "Turno emergencia",
-  calendar_event: "Evento",
   repair: "Reparación",
-  parts: "Repuestos",
-  support: "Soporte",
   inspection: "Inspección",
+  training: "Capacitación",
+  visit: "Visita técnica",
   technical_visit: "Visita técnica",
   certification: "Certificación",
   rescue_training: "Inducción / Rescate",
+  work_order: "Solicitud",
+  calendar_event: "Evento",
+  other: "Otro",
+  support: "Soporte",
+  parts: "Repuestos",
 };
 
 type UIEvent = RBCEvent & {
   _row: CalendarEventRow;
 };
 
+function safeText(value?: string | null) {
+  return value == null || value === "" ? "—" : String(value);
+}
+
 export function SummaryMonthView(props: {
   selectedDate: Date;
   monthStart: string;
   monthEnd: string;
-  onNavigate: (d: Date) => void;
+  onNavigate: (date: Date) => void;
 }) {
   const { selectedDate, monthStart, monthEnd, onNavigate } = props;
 
@@ -71,72 +72,91 @@ export function SummaryMonthView(props: {
   const [approvedAbsences, setApprovedAbsences] = useState<
     Array<{ technician_id: string; start_date: string; end_date: string }>
   >([]);
-  const [absError, setAbsError] = useState("");
+  const [absError, setAbsError] = useState<string>("");
 
-  /* ===============================
-     CARGAR AUSENCIAS APROBADAS
-  =============================== */
   useEffect(() => {
-    (async () => {
+    const loadApprovedAbsences = async () => {
       setAbsError("");
+
       try {
         const { data, error } = await supabase
-          .from("technician_availability")
+          .from("technician_leaves")
           .select("technician_id, start_date, end_date")
-          .eq("status", "approved")
           .lte("start_date", monthEnd)
           .gte("end_date", monthStart);
 
         if (error) throw error;
-        setApprovedAbsences((data ?? []) as any[]);
-      } catch (e: any) {
-        setAbsError(e?.message || "Error cargando ausencias aprobadas");
-        setApprovedAbsences([]);
-      }
-    })();
-  }, [monthStart, monthEnd]);
 
-  /* ===============================
-     DÍAS BLOQUEADOS
-  =============================== */
-  const blockedDays = useMemo(() => {
-    const out = new Set<string>();
-    for (const a of approvedAbsences) {
-      const start = new Date(`${a.start_date}T00:00:00`);
-      const end = new Date(`${a.end_date}T00:00:00`);
-      const days = eachDayOfInterval({ start, end });
-      for (const d of days) {
-        out.add(d.toISOString().slice(0, 10));
+        setApprovedAbsences((data ?? []) as Array<{
+          technician_id: string;
+          start_date: string;
+          end_date: string;
+        }>);
+      } catch (err: any) {
+        console.warn("No fue posible cargar technician_leaves, se intentará con technician_availability", err);
+
+        try {
+          const fallback = await supabase
+            .from("technician_availability")
+            .select("technician_id, start_date, end_date")
+            .eq("status", "approved")
+            .lte("start_date", monthEnd)
+            .gte("end_date", monthStart);
+
+          if (fallback.error) throw fallback.error;
+
+          setApprovedAbsences((fallback.data ?? []) as Array<{
+            technician_id: string;
+            start_date: string;
+            end_date: string;
+          }>);
+        } catch (fallbackError: any) {
+          console.error(fallbackError);
+          setAbsError(
+            fallbackError?.message || "No fue posible cargar las ausencias aprobadas."
+          );
+          setApprovedAbsences([]);
+        }
       }
-    }
-    return out;
+    };
+
+    void loadApprovedAbsences();
+  }, [monthEnd, monthStart]);
+
+  const blockedDays = useMemo(() => {
+    const output = new Set<string>();
+
+    approvedAbsences.forEach((absence) => {
+      const start = new Date(`${absence.start_date}T00:00:00`);
+      const end = new Date(`${absence.end_date}T00:00:00`);
+
+      eachDayOfInterval({ start, end }).forEach((day) => {
+        output.add(format(day, "yyyy-MM-dd"));
+      });
+    });
+
+    return output;
   }, [approvedAbsences]);
 
-  /* ===============================
-     MAPEO DE EVENTOS PARA CALENDAR
-  =============================== */
   const events: UIEvent[] = useMemo(() => {
-    return (data ?? []).map((r) => {
-      const start = new Date(r.start_at || r.event_date);
-      const end = new Date(r.end_at || r.event_date);
+    return (data ?? []).map((row) => {
+      const start = new Date(row.start_at || `${row.event_date}T00:00:00`);
+      const end = new Date(row.end_at || `${row.event_date}T23:59:59`);
+      const label = typeLabel[row.event_type] || row.event_type;
 
       return {
-        title: `${typeLabel[r.event_type] || r.event_type} • ${safe(
-          r.building_name
-        )} • ${safe(r.title)}`,
+        title: `${label} • ${safeText(row.building_name)} • ${safeText(row.title)}`,
         start,
         end,
         allDay: true,
-        _row: r,
-      } as UIEvent;
+        _row: row,
+      };
     });
   }, [data]);
 
-  /* ===============================
-     PINTAR DÍAS BLOQUEADOS
-  =============================== */
   const dayPropGetter = (date: Date) => {
-    const key = date.toISOString().slice(0, 10);
+    const key = format(date, "yyyy-MM-dd");
+
     if (blockedDays.has(key)) {
       return {
         style: {
@@ -144,6 +164,7 @@ export function SummaryMonthView(props: {
         },
       };
     }
+
     return {};
   };
 
@@ -151,11 +172,9 @@ export function SummaryMonthView(props: {
     <div className="rounded-lg border bg-white p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <div className="text-base font-semibold">
-            Resumen mensual (maestro)
-          </div>
+          <div className="text-base font-semibold">Resumen mensual (maestro)</div>
           <div className="text-xs text-slate-500">
-            Solo lectura. Muestra asignaciones confirmadas del mes.
+            Solo lectura. Consolida lo ya programado en el sistema.
           </div>
         </div>
 
@@ -228,14 +247,14 @@ export function SummaryMonthView(props: {
           views={[Views.MONTH]}
           defaultView={Views.MONTH}
           date={selectedDate}
-          onNavigate={(d) => onNavigate(d)}
+          onNavigate={(date) => onNavigate(date)}
           dayPropGetter={dayPropGetter}
           popup
         />
       </div>
 
       <div className="mt-3 text-xs text-slate-500">
-        Días con ausencias aprobadas se marcan en rojo suave.
+        Los días con ausencias aprobadas se marcan con fondo rojo suave.
       </div>
     </div>
   );

@@ -2,8 +2,8 @@ import { supabase } from "../../../lib/supabase";
 import type { CalendarEventRow } from "../domain/calendarEvent";
 
 export async function fetchMonthCalendarEvents(params: {
-  monthStart: string; // YYYY-MM-DD
-  monthEnd: string;   // YYYY-MM-DD
+  monthStart: string;
+  monthEnd: string;
 }) {
   const { monthStart, monthEnd } = params;
 
@@ -12,17 +12,17 @@ export async function fetchMonthCalendarEvents(params: {
     .select("*")
     .gte("event_date", monthStart)
     .lte("event_date", monthEnd)
-    // ✅ SOLO una orden estable
     .order("event_date", { ascending: true });
 
   if (error) {
     console.error("Supabase error fetchMonthCalendarEvents:", error);
-    const msg =
+    const message =
       (error as any)?.message ||
       (error as any)?.details ||
       (error as any)?.hint ||
-      "Error querying v_calendar_events_month";
-    throw new Error(msg);
+      "Error consultando v_calendar_events_month";
+
+    throw new Error(message);
   }
 
   return (data ?? []) as CalendarEventRow[];

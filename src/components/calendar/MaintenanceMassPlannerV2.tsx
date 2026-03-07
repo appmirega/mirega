@@ -10,37 +10,41 @@ type Building = {
 type Technician = {
   id: string;
   full_name: string;
-  person_type: "internal" | "external";
-  company_name: string | null;
+  person_type: "internal" | "external" | null;
+  company_name?: string | null;
+};
+
+type MonthAssignmentRow = {
+  id: string;
+  building_id: string;
+  event_date: string;
+  technician_id: string | null;
+  title: string | null;
 };
 
 type AssignmentDraft = {
   buildingId: string;
-  date: string; // YYYY-MM-DD
-  technicianId: string | null;
-  title?: string | null;
+  date: string;
+  technicianId: string;
+  title: string;
 };
+
+function safeText(value?: string | null) {
+  return (value ?? "").trim();
+}
 
 function monthKey(year: number, monthIndex: number) {
   return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
 }
 
-function getMonthDays(year: number, monthIndex: number) {
-  return new Date(year, monthIndex + 1, 0).getDate();
+function firstDateOfMonth(year: number, monthIndex: number) {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
 }
 
-function toISODate(year: number, monthIndex: number, day: number) {
-  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-function safeName(s?: string | null) {
-  return (s || "").trim();
-}
-
-function formatTechnicianLabel(t: Technician) {
-  const name = safeName(t.full_name) || t.id;
-  if (t.person_type === "external") {
-    const company = safeName(t.company_name);
+function formatTechnicianLabel(technician: Technician) {
+  const name = safeText(technician.full_name) || technician.id;
+  if (technician.person_type === "external") {
+    const company = safeText(technician.company_name);
     return company ? `${name} (Externo - ${company})` : `${name} (Externo)`;
   }
   return name;
@@ -48,184 +52,266 @@ function formatTechnicianLabel(t: Technician) {
 
 export function MaintenanceMassPlannerV2() {
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth()); // 0-11
-  const [monthDays, setMonthDays] = useState(() => getMonthDays(now.getFullYear(), now.getMonth()));
+
+  const [year, setYear] = useState<number>(now.getFullYear());
+  const [month, setMonth] = useState<number>(now.getMonth());
 
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [monthAssignments, setMonthAssignments] = useState<MonthAssignmentRow[]>([]);
 
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([]);
-  const [drafts, setDrafts] = useState<AssignmentDraft[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, AssignmentDraft>>({});
 
-  // ✅ Descontar edificios ya asignados en el mes seleccionado
-  const [assignedBuildingIds, setAssignedBuildingIds] = useState<Set<string>>(new Set());
+  const [bulkDate, setBulkDate] = useState<string>(firstDateOfMonth(now.getFullYear(), now.getMonth()));
+  const [bulkTechnicianId, setBulkTechnicianId] = useState<string>("");
+  const [bulkTitle, setBulkTitle] = useState<string>("Mantención");
 
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState("");
+  const [search, setSearch] = useState<string>("");
+  const [loadingBase, setLoadingBase] = useState<boolean>(false);
+  const [loadingAssignments, setLoadingAssignments] = useState<boolean>(false);
+  const [saving, setSaving] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
+  const [success, setSuccess] = useState<string>("");
 
   const currentMonthKey = useMemo(() => monthKey(year, month), [year, month]);
+  const monthDefaultDate = useMemo(() => firstDateOfMonth(year, month), [year, month]);
 
-  const availableBuildings = useMemo(() => {
-    if (!assignedBuildingIds || assignedBuildingIds.size === 0) return buildings;
-    return buildings.filter((b) => !assignedBuildingIds.has(b.id));
-  }, [buildings, assignedBuildingIds]);
+  const buildingsById = useMemo(() => {
+    const map = new Map<string, Building>();
+    buildings.forEach((building) => map.set(building.id, building));
+    return map;
+  }, [buildings]);
+
+  const techniciansById = useMemo(() => {
+    const map = new Map<string, Technician>();
+    technicians.forEach((technician) => map.set(technician.id, technician));
+    return map;
+  }, [technicians]);
+
+  const assignedBuildingIds = useMemo(
+    () => new Set(monthAssignments.map((assignment) => assignment.building_id)),
+    [monthAssignments]
+  );
+
+  const pendingBuildings = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    return buildings.filter((building) => {
+      if (assignedBuildingIds.has(building.id)) return false;
+
+      if (!term) return true;
+
+      const haystack = [safeText(building.name), safeText(building.client_name)]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(term);
+    });
+  }, [buildings, assignedBuildingIds, search]);
+
+  const selectedBuildingObjects = useMemo(() => {
+    const selectedSet = new Set(selectedBuildings);
+    return pendingBuildings.filter((building) => selectedSet.has(building.id));
+  }, [pendingBuildings, selectedBuildings]);
+
+  const plannedAssignments = useMemo(() => {
+    return [...monthAssignments].sort((a, b) => {
+      if (a.event_date !== b.event_date) return a.event_date.localeCompare(b.event_date);
+
+      const buildingA = safeText(buildingsById.get(a.building_id)?.name);
+      const buildingB = safeText(buildingsById.get(b.building_id)?.name);
+      return buildingA.localeCompare(buildingB);
+    });
+  }, [monthAssignments, buildingsById]);
 
   useEffect(() => {
-    setMonthDays(getMonthDays(year, month));
-  }, [year, month]);
+    setBulkDate(monthDefaultDate);
+    setSelectedBuildings([]);
+    setDrafts({});
+    setSuccess("");
+    setError("");
+  }, [monthDefaultDate]);
 
-  const monthDates = useMemo(() => {
-    const days = getMonthDays(year, month);
-    const arr: string[] = [];
-    for (let d = 1; d <= days; d++) {
-      arr.push(toISODate(year, month, d));
-    }
-    return arr;
-  }, [year, month]);
-
-  // --- Load base data ---
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
+    const loadBaseData = async () => {
+      setLoadingBase(true);
+      setError("");
+
       try {
-        const [{ data: buildingsData, error: buildingsErr }, { data: techData, error: techErr }] =
+        const [{ data: buildingsData, error: buildingsError }, { data: techniciansData, error: techniciansError }] =
           await Promise.all([
             supabase
               .from("buildings")
-              .select("id,name,clients(name)")
+              .select("id, name, clients(name)")
               .order("name", { ascending: true }),
             supabase
               .from("profiles")
-              .select("id,full_name,person_type,company_name")
+              .select("id, full_name, person_type, company_name")
               .eq("role", "technician")
               .order("full_name", { ascending: true }),
           ]);
 
-        if (buildingsErr) throw buildingsErr;
-        if (techErr) throw techErr;
+        if (buildingsError) throw buildingsError;
+        if (techniciansError) throw techniciansError;
 
-        const mappedBuildings: Building[] = (buildingsData || []).map((b: any) => ({
-          id: b.id,
-          name: b.name,
-          client_name: b.clients?.name ?? null,
+        const mappedBuildings: Building[] = (buildingsData ?? []).map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          client_name: item.clients?.name ?? null,
         }));
 
         setBuildings(mappedBuildings);
-        setTechnicians((techData || []) as Technician[]);
-      } catch (e: any) {
-        console.error(e);
-        setError(e?.message || "Error cargando datos");
+        setTechnicians((techniciansData ?? []) as Technician[]);
+      } catch (err: any) {
+        console.error(err);
+        setError(err?.message || "No fue posible cargar edificios y técnicos.");
       } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  // ✅ Cargar qué edificios YA tienen asignación en el mes seleccionado (para ocultarlos del listado)
-  useEffect(() => {
-    const loadAssigned = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("maintenance_assignments")
-          .select("building_id")
-          .eq("calendar_month", currentMonthKey);
-
-        if (error) throw error;
-
-        const ids = new Set<string>(
-          (data || [])
-            .map((r: any) => r?.building_id)
-            .filter(Boolean)
-        );
-
-        setAssignedBuildingIds(ids);
-        setSelectedBuildings((prev) => prev.filter((id) => !ids.has(id)));
-      } catch (e: any) {
-        console.warn("[MaintenanceMassPlannerV2] Could not load assigned buildings", e);
-        setAssignedBuildingIds(new Set());
+        setLoadingBase(false);
       }
     };
 
-    if (buildings.length === 0) {
-      setAssignedBuildingIds(new Set());
-      return;
-    }
+    void loadBaseData();
+  }, []);
 
-    loadAssigned();
-  }, [currentMonthKey, buildings.length]);
+  useEffect(() => {
+    const loadAssignmentsForMonth = async () => {
+      setLoadingAssignments(true);
+      setError("");
 
-  // Helpers for drafts
-  const ensureDraftForBuilding = (buildingId: string) => {
-    // Creates drafts for all dates with empty technician by default
-    const existing = drafts.filter((d) => d.buildingId === buildingId);
-    if (existing.length > 0) return;
+      try {
+        const { data, error } = await supabase
+          .from("maintenance_assignments")
+          .select("id, building_id, event_date, technician_id, title")
+          .eq("calendar_month", currentMonthKey)
+          .order("event_date", { ascending: true });
 
-    const newDrafts: AssignmentDraft[] = monthDates.map((date) => ({
-      buildingId,
-      date,
-      technicianId: null,
-      title: "Mantención",
-    }));
+        if (error) throw error;
 
-    setDrafts((prev) => [...prev, ...newDrafts]);
+        setMonthAssignments((data ?? []) as MonthAssignmentRow[]);
+      } catch (err: any) {
+        console.error(err);
+        setError(err?.message || "No fue posible cargar las asignaciones del mes.");
+        setMonthAssignments([]);
+      } finally {
+        setLoadingAssignments(false);
+      }
+    };
+
+    void loadAssignmentsForMonth();
+  }, [currentMonthKey]);
+
+  const ensureDraft = (buildingId: string) => {
+    setDrafts((prev) => {
+      if (prev[buildingId]) return prev;
+
+      return {
+        ...prev,
+        [buildingId]: {
+          buildingId,
+          date: bulkDate || monthDefaultDate,
+          technicianId: bulkTechnicianId,
+          title: bulkTitle || "Mantención",
+        },
+      };
+    });
   };
 
-  const removeDraftsForBuilding = (buildingId: string) => {
-    setDrafts((prev) => prev.filter((d) => d.buildingId !== buildingId));
+  const removeDraft = (buildingId: string) => {
+    setDrafts((prev) => {
+      const next = { ...prev };
+      delete next[buildingId];
+      return next;
+    });
   };
 
   const toggleBuilding = (buildingId: string) => {
     setSuccess("");
-    setError(null);
+    setError("");
 
     setSelectedBuildings((prev) => {
       const exists = prev.includes(buildingId);
       const next = exists ? prev.filter((id) => id !== buildingId) : [...prev, buildingId];
 
-      // Maintain drafts
-      if (!exists) ensureDraftForBuilding(buildingId);
-      else removeDraftsForBuilding(buildingId);
+      if (exists) removeDraft(buildingId);
+      else ensureDraft(buildingId);
 
       return next;
     });
   };
 
-  const setDraftTechnician = (buildingId: string, date: string, technicianId: string | null) => {
-    setDrafts((prev) =>
-      prev.map((d) =>
-        d.buildingId === buildingId && d.date === date ? { ...d, technicianId } : d
-      )
-    );
+  const updateDraft = (buildingId: string, patch: Partial<AssignmentDraft>) => {
+    setDrafts((prev) => {
+      const current = prev[buildingId] ?? {
+        buildingId,
+        date: bulkDate || monthDefaultDate,
+        technicianId: bulkTechnicianId,
+        title: bulkTitle || "Mantención",
+      };
+
+      return {
+        ...prev,
+        [buildingId]: {
+          ...current,
+          ...patch,
+        },
+      };
+    });
   };
 
-  const setDraftTitle = (buildingId: string, title: string) => {
-    setDrafts((prev) => prev.map((d) => (d.buildingId === buildingId ? { ...d, title } : d)));
+  const handleSelectAllPending = () => {
+    const ids = pendingBuildings.map((building) => building.id);
+    setSelectedBuildings(ids);
+
+    setDrafts((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => {
+        if (!next[id]) {
+          next[id] = {
+            buildingId: id,
+            date: bulkDate || monthDefaultDate,
+            technicianId: bulkTechnicianId,
+            title: bulkTitle || "Mantención",
+          };
+        }
+      });
+      return next;
+    });
   };
 
-  const selectedBuildingObjects = useMemo(() => {
-    const set = new Set(selectedBuildings);
-    return buildings.filter((b) => set.has(b.id));
-  }, [selectedBuildings, buildings]);
+  const handleClearSelection = () => {
+    setSelectedBuildings([]);
+    setDrafts({});
+    setSuccess("");
+    setError("");
+  };
 
-  const draftsByBuilding = useMemo(() => {
-    const map = new Map<string, AssignmentDraft[]>();
-    for (const d of drafts) {
-      const arr = map.get(d.buildingId) || [];
-      arr.push(d);
-      map.set(d.buildingId, arr);
+  const applyBulkValues = () => {
+    if (selectedBuildings.length === 0) {
+      setError("Selecciona al menos un edificio para aplicar la asignación masiva.");
+      return;
     }
-    // sort by date
-    map.forEach((arr) => arr.sort((a, b) => a.date.localeCompare(b.date)));
-    return map;
-  }, [drafts]);
+
+    setError("");
+    setSuccess("");
+
+    setDrafts((prev) => {
+      const next = { ...prev };
+      selectedBuildings.forEach((buildingId) => {
+        next[buildingId] = {
+          buildingId,
+          date: bulkDate || monthDefaultDate,
+          technicianId: bulkTechnicianId,
+          title: bulkTitle || "Mantención",
+        };
+      });
+      return next;
+    });
+  };
 
   const handleSave = async () => {
     setSaving(true);
-    setError(null);
+    setError("");
     setSuccess("");
 
     try {
@@ -233,43 +319,50 @@ export function MaintenanceMassPlannerV2() {
         throw new Error("Debes seleccionar al menos un edificio.");
       }
 
-      // Build rows for insertion
-      const rows = drafts
-        .filter((d) => selectedBuildings.includes(d.buildingId))
-        .map((d) => ({
+      const rows = selectedBuildings.map((buildingId) => {
+        const draft = drafts[buildingId];
+
+        if (!draft) {
+          throw new Error("Hay edificios seleccionados sin datos de asignación.");
+        }
+
+        if (!draft.date) {
+          throw new Error("Cada edificio debe tener una fecha asignada.");
+        }
+
+        if (!draft.technicianId) {
+          throw new Error("Cada edificio debe tener un técnico asignado.");
+        }
+
+        return {
           calendar_month: currentMonthKey,
-          building_id: d.buildingId,
-          event_date: d.date,
-          technician_id: d.technicianId,
-          title: d.title || "Mantención",
+          building_id: buildingId,
+          event_date: draft.date,
+          technician_id: draft.technicianId,
+          title: draft.title || "Mantención",
           source: "mass_planner",
           created_at: new Date().toISOString(),
-        }));
+        };
+      });
 
-      if (rows.length === 0) {
-        throw new Error("No hay asignaciones para guardar.");
-      }
+      const { error } = await supabase.from("maintenance_assignments").insert(rows);
+      if (error) throw error;
 
-      const { error: insertError } = await supabase.from("maintenance_assignments").insert(rows);
-      if (insertError) throw insertError;
+      const { data: refreshedData, error: refreshError } = await supabase
+        .from("maintenance_assignments")
+        .select("id, building_id, event_date, technician_id, title")
+        .eq("calendar_month", currentMonthKey)
+        .order("event_date", { ascending: true });
 
-      // ✅ Descuenta inmediatamente los edificios asignados en este mes
-      if (selectedBuildings.length > 0) {
-        setAssignedBuildingIds((prev) => {
-          const next = new Set(prev);
-          selectedBuildings.forEach((id) => next.add(id));
-          return next;
-        });
-      }
+      if (refreshError) throw refreshError;
 
-      // Limpia selección/drafts para evitar re-guardar lo mismo
+      setMonthAssignments((refreshedData ?? []) as MonthAssignmentRow[]);
       setSelectedBuildings([]);
-      setDrafts([]);
-
-      setSuccess("Asignaciones guardadas correctamente.");
-    } catch (e: any) {
-      console.error(e);
-      setError(e?.message || "Error guardando asignaciones");
+      setDrafts({});
+      setSuccess("Mantenciones asignadas correctamente. Los edificios ya salieron del listado pendiente de este mes.");
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "No fue posible guardar las asignaciones.");
     } finally {
       setSaving(false);
     }
@@ -277,30 +370,31 @@ export function MaintenanceMassPlannerV2() {
 
   return (
     <div className="rounded-lg border bg-white p-4">
-      <div className="mb-3">
-        <div className="text-base font-semibold">Planificador de mantenciones (masivo)</div>
+      <div className="mb-4">
+        <div className="text-base font-semibold">Planificador de mantenciones</div>
         <div className="text-sm text-slate-500">
-          Selecciona edificios y asigna técnicos por día para el mes completo.
+          Muestra los edificios pendientes del mes seleccionado. Al asignar fecha y técnico,
+          el edificio sale del listado de pendientes solo para ese mes.
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="grid gap-3 md:grid-cols-4">
         <div>
           <label className="block text-sm font-medium">Año</label>
           <input
             type="number"
-            className="mt-1 w-28 rounded-md border px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
             value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
+            onChange={(event) => setYear(Number(event.target.value))}
           />
         </div>
 
         <div>
           <label className="block text-sm font-medium">Mes</label>
           <select
-            className="mt-1 w-56 rounded-md border px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
             value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
+            onChange={(event) => setMonth(Number(event.target.value))}
           >
             {[
               "Enero",
@@ -315,91 +409,107 @@ export function MaintenanceMassPlannerV2() {
               "Octubre",
               "Noviembre",
               "Diciembre",
-            ].map((m, idx) => (
-              <option key={m} value={idx}>
-                {m}
+            ].map((label, index) => (
+              <option key={label} value={index}>
+                {label}
               </option>
             ))}
           </select>
         </div>
 
-        <div className="text-sm text-slate-600">
+        <div>
+          <label className="block text-sm font-medium">Buscar edificio</label>
+          <input
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+            placeholder="Nombre del edificio o cliente"
+          />
+        </div>
+
+        <div className="rounded-lg border bg-slate-50 px-3 py-2 text-sm text-slate-700">
           <div>
-            Mes: <span className="font-semibold">{currentMonthKey}</span>
+            Mes seleccionado: <span className="font-semibold">{currentMonthKey}</span>
           </div>
-          <div>Días: {monthDays}</div>
+          <div>
+            Pendientes: <span className="font-semibold">{pendingBuildings.length}</span>
+          </div>
+          <div>
+            Ya planificados: <span className="font-semibold">{plannedAssignments.length}</span>
+          </div>
         </div>
       </div>
 
-      {loading && <div className="mt-4 text-sm text-slate-500">Cargando datos...</div>}
+      {(loadingBase || loadingAssignments) && (
+        <div className="mt-4 text-sm text-slate-500">Cargando información...</div>
+      )}
 
-      {!loading && (
-        <div className="mt-4 flex flex-col gap-4 lg:flex-row">
-          {/* LEFT: Buildings list */}
-          <div className="w-full lg:w-80 flex-shrink-0">
-            <label className="block font-medium mb-1">Edificios</label>
+      {error && (
+        <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
-            <div className="text-xs text-slate-500 mb-2">
-              Pendientes este mes:{" "}
-              <span className="font-semibold text-slate-700">{availableBuildings.length}</span> /{" "}
-              {buildings.length}
-              {assignedBuildingIds.size > 0 ? " (se ocultan los ya asignados)" : ""}
+      {success && (
+        <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {success}
+        </div>
+      )}
+
+      {!loadingBase && !loadingAssignments && (
+        <div className="mt-4 grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <div className="font-medium text-slate-900">Edificios pendientes</div>
+                <div className="text-xs text-slate-500">
+                  Estos edificios volverán a aparecer completos al cambiar al mes siguiente.
+                </div>
+              </div>
             </div>
 
-            {buildings.length === 0 ? (
-              <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">
-                No hay edificios disponibles en la base de datos.
-              </div>
-            ) : availableBuildings.length === 0 ? (
-              <div className="text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 mt-2">
-                No hay edificios pendientes para asignar en{" "}
-                <span className="font-semibold">{currentMonthKey}</span>.
+            <div className="mb-3 flex items-center justify-between gap-2 text-xs">
+              <button
+                type="button"
+                className="font-semibold text-slate-700 underline"
+                onClick={handleSelectAllPending}
+                disabled={pendingBuildings.length === 0}
+              >
+                Seleccionar todos
+              </button>
+
+              <button
+                type="button"
+                className="font-semibold text-slate-700 underline"
+                onClick={handleClearSelection}
+                disabled={selectedBuildings.length === 0}
+              >
+                Limpiar selección
+              </button>
+            </div>
+
+            {pendingBuildings.length === 0 ? (
+              <div className="rounded-md border bg-white p-3 text-sm text-slate-600">
+                No hay edificios pendientes para {currentMonthKey}.
               </div>
             ) : (
-              <div
-                className="border rounded px-2 py-2 bg-white"
-                style={{ maxHeight: 260, overflowY: "auto" }}
-              >
-                <div className="flex items-center justify-between gap-2 mb-2 px-1">
-                  <button
-                    type="button"
-                    className="text-xs font-semibold text-slate-700 underline"
-                    onClick={() => {
-                      const ids = availableBuildings.map((b) => b.id);
-                      setSelectedBuildings(ids);
-                      // crear drafts para los que falten
-                      ids.forEach((id) => ensureDraftForBuilding(id));
-                    }}
-                  >
-                    Seleccionar todos
-                  </button>
-
-                  <button
-                    type="button"
-                    className="text-xs font-semibold text-slate-700 underline"
-                    onClick={() => {
-                      setSelectedBuildings([]);
-                      setDrafts([]);
-                    }}
-                  >
-                    Limpiar
-                  </button>
-                </div>
-
-                {availableBuildings.map((b) => (
+              <div className="max-h-[500px] space-y-1 overflow-y-auto rounded-md border bg-white p-2">
+                {pendingBuildings.map((building) => (
                   <label
-                    key={b.id}
-                    className="flex items-center gap-2 py-1 px-1 rounded hover:bg-slate-50"
+                    key={building.id}
+                    className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-slate-50"
                   >
                     <input
                       type="checkbox"
-                      checked={selectedBuildings.includes(b.id)}
-                      onChange={() => toggleBuilding(b.id)}
+                      className="mt-1"
+                      checked={selectedBuildings.includes(building.id)}
+                      onChange={() => toggleBuilding(building.id)}
                     />
-                    <div className="text-sm">
-                      <div className="font-medium">{safeName(b.name) || "Edificio"}</div>
-                      {safeName(b.client_name) && (
-                        <div className="text-xs text-slate-500">{safeName(b.client_name)}</div>
+                    <div className="min-w-0 text-sm">
+                      <div className="font-medium text-slate-900">{safeText(building.name) || "Edificio"}</div>
+                      {safeText(building.client_name) && (
+                        <div className="truncate text-xs text-slate-500">{safeText(building.client_name)}</div>
                       )}
                     </div>
                   </label>
@@ -408,117 +518,203 @@ export function MaintenanceMassPlannerV2() {
             )}
           </div>
 
-          {/* RIGHT: Drafts editor */}
-          <div className="flex-1">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <div className="font-medium">Asignaciones del mes</div>
-                <div className="text-sm text-slate-500">
-                  Define técnico por día (puedes dejar días en blanco y asignar después).
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-white p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium text-slate-900">Asignación masiva</div>
+                  <div className="text-sm text-slate-500">
+                    Aplica una fecha y un técnico a los edificios seleccionados. Luego puedes ajustar cada fila si lo necesitas.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="rounded-md border bg-white px-3 py-2 text-sm"
+                  onClick={applyBulkValues}
+                  disabled={selectedBuildings.length === 0}
+                >
+                  Aplicar a seleccionados
+                </button>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium">Fecha</label>
+                  <input
+                    type="date"
+                    value={bulkDate}
+                    onChange={(event) => setBulkDate(event.target.value)}
+                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium">Técnico</label>
+                  <select
+                    value={bulkTechnicianId}
+                    onChange={(event) => setBulkTechnicianId(event.target.value)}
+                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                  >
+                    <option value="">Seleccionar técnico</option>
+                    {technicians.map((technician) => (
+                      <option key={technician.id} value={technician.id}>
+                        {formatTechnicianLabel(technician)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium">Título</label>
+                  <input
+                    type="text"
+                    value={bulkTitle}
+                    onChange={(event) => setBulkTitle(event.target.value)}
+                    className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                    placeholder="Mantención"
+                  />
                 </div>
               </div>
-
-              <button
-                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-                disabled={saving || selectedBuildings.length === 0}
-                onClick={handleSave}
-              >
-                {saving ? "Guardando..." : "Guardar asignaciones"}
-              </button>
             </div>
 
-            {error && (
-              <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {error}
+            <div className="rounded-lg border bg-white p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium text-slate-900">Edificios seleccionados</div>
+                  <div className="text-sm text-slate-500">
+                    Cada edificio recibe una sola asignación de mantención dentro del mes seleccionado.
+                  </div>
+                </div>
+
+                <button
+                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  disabled={saving || selectedBuildings.length === 0}
+                  onClick={handleSave}
+                >
+                  {saving ? "Guardando..." : "Guardar mantenciones"}
+                </button>
               </div>
-            )}
 
-            {success && (
-              <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                {success}
-              </div>
-            )}
+              {selectedBuildingObjects.length === 0 ? (
+                <div className="rounded-md border border-dashed p-4 text-sm text-slate-500">
+                  Selecciona uno o más edificios desde la lista de pendientes.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b bg-slate-50 text-left">
+                        <th className="px-3 py-2">Edificio</th>
+                        <th className="px-3 py-2">Cliente</th>
+                        <th className="px-3 py-2">Fecha</th>
+                        <th className="px-3 py-2">Técnico</th>
+                        <th className="px-3 py-2">Título</th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedBuildingObjects.map((building) => {
+                        const draft = drafts[building.id] ?? {
+                          buildingId: building.id,
+                          date: bulkDate || monthDefaultDate,
+                          technicianId: bulkTechnicianId,
+                          title: bulkTitle || "Mantención",
+                        };
 
-            {selectedBuildingObjects.length === 0 ? (
-              <div className="mt-6 text-sm text-slate-500">
-                Selecciona uno o más edificios para comenzar.
-              </div>
-            ) : (
-              <div className="mt-4 space-y-4">
-                {selectedBuildingObjects.map((b) => {
-                  const list = draftsByBuilding.get(b.id) || [];
+                        return (
+                          <tr key={building.id} className="border-b">
+                            <td className="px-3 py-2 font-medium text-slate-900">{safeText(building.name) || "Edificio"}</td>
+                            <td className="px-3 py-2 text-slate-600">{safeText(building.client_name) || "—"}</td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="date"
+                                value={draft.date}
+                                onChange={(event) => updateDraft(building.id, { date: event.target.value })}
+                                className="w-full rounded-md border px-3 py-2 text-sm"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <select
+                                value={draft.technicianId}
+                                onChange={(event) => updateDraft(building.id, { technicianId: event.target.value })}
+                                className="w-full rounded-md border px-3 py-2 text-sm"
+                              >
+                                <option value="">Seleccionar técnico</option>
+                                {technicians.map((technician) => (
+                                  <option key={technician.id} value={technician.id}>
+                                    {formatTechnicianLabel(technician)}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                value={draft.title}
+                                onChange={(event) => updateDraft(building.id, { title: event.target.value })}
+                                className="w-full rounded-md border px-3 py-2 text-sm"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                className="rounded-md border bg-white px-3 py-2 text-sm"
+                                onClick={() => toggleBuilding(building.id)}
+                              >
+                                Quitar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
 
-                  return (
-                    <div key={b.id} className="rounded-lg border bg-white p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <div className="font-semibold">{safeName(b.name) || "Edificio"}</div>
-                          {safeName(b.client_name) && (
-                            <div className="text-xs text-slate-500">{safeName(b.client_name)}</div>
-                          )}
-                        </div>
+            <div className="rounded-lg border bg-white p-4">
+              <div className="mb-3 font-medium text-slate-900">Ya planificados en {currentMonthKey}</div>
 
-                        <div className="flex items-center gap-2">
-                          <input
-                            className="w-64 rounded-md border px-3 py-2 text-sm"
-                            placeholder="Título (ej: Mantención)"
-                            value={list[0]?.title || "Mantención"}
-                            onChange={(e) => setDraftTitle(b.id, e.target.value)}
-                          />
-                          <button
-                            type="button"
-                            className="rounded-md border bg-white px-3 py-2 text-sm"
-                            onClick={() => {
-                              toggleBuilding(b.id);
-                            }}
-                          >
-                            Quitar
-                          </button>
-                        </div>
-                      </div>
+              {plannedAssignments.length === 0 ? (
+                <div className="text-sm text-slate-500">Todavía no hay mantenciones planificadas para este mes.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b bg-slate-50 text-left">
+                        <th className="px-3 py-2">Fecha</th>
+                        <th className="px-3 py-2">Edificio</th>
+                        <th className="px-3 py-2">Cliente</th>
+                        <th className="px-3 py-2">Técnico</th>
+                        <th className="px-3 py-2">Título</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {plannedAssignments.map((assignment) => {
+                        const building = buildingsById.get(assignment.building_id);
+                        const technician = assignment.technician_id
+                          ? techniciansById.get(assignment.technician_id)
+                          : undefined;
 
-                      <div className="mt-3 overflow-x-auto">
-                        <table className="w-full min-w-[720px] border-collapse text-sm">
-                          <thead>
-                            <tr className="border-b bg-slate-50 text-left">
-                              <th className="px-2 py-2">Fecha</th>
-                              <th className="px-2 py-2">Técnico</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {list.map((d) => (
-                              <tr key={`${d.buildingId}-${d.date}`} className="border-b">
-                                <td className="px-2 py-2 whitespace-nowrap">{d.date}</td>
-                                <td className="px-2 py-2">
-                                  <select
-                                    className="w-full rounded-md border px-3 py-2 text-sm"
-                                    value={d.technicianId || ""}
-                                    onChange={(e) =>
-                                      setDraftTechnician(
-                                        d.buildingId,
-                                        d.date,
-                                        e.target.value ? e.target.value : null
-                                      )
-                                    }
-                                  >
-                                    <option value="">Sin asignar</option>
-                                    {technicians.map((t) => (
-                                      <option key={t.id} value={t.id}>
-                                        {formatTechnicianLabel(t)}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                        return (
+                          <tr key={assignment.id} className="border-b">
+                            <td className="px-3 py-2 whitespace-nowrap">{assignment.event_date}</td>
+                            <td className="px-3 py-2 font-medium text-slate-900">{safeText(building?.name) || "—"}</td>
+                            <td className="px-3 py-2 text-slate-600">{safeText(building?.client_name) || "—"}</td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {technician ? formatTechnicianLabel(technician) : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">{safeText(assignment.title) || "Mantención"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -5,10 +5,12 @@ import type { CalendarEventRow } from "../domain/calendarEvent";
 
 type DateLike = string | Date | undefined | null;
 
-function normalizeToYmd(d: DateLike): string {
-  if (!d) return "";
-  if (typeof d === "string") return d; // esperamos "YYYY-MM-DD"
-  if (d instanceof Date && !isNaN(d.getTime())) return format(d, "yyyy-MM-dd");
+function normalizeToYmd(value: DateLike): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return format(value, "yyyy-MM-dd");
+  }
   return "";
 }
 
@@ -17,14 +19,13 @@ export function useMonthCalendarEvents(params: {
   monthEnd: DateLike;
 }) {
   const [data, setData] = useState<CalendarEventRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
   const monthStart = useMemo(() => normalizeToYmd(params.monthStart), [params.monthStart]);
   const monthEnd = useMemo(() => normalizeToYmd(params.monthEnd), [params.monthEnd]);
 
   const reload = useCallback(async () => {
-    // ✅ si faltan parámetros, no dispares query
     if (!monthStart || !monthEnd) {
       setData([]);
       setError("");
@@ -33,22 +34,29 @@ export function useMonthCalendarEvents(params: {
 
     setLoading(true);
     setError("");
+
     try {
       const rows = await fetchMonthCalendarEvents({ monthStart, monthEnd });
       setData(rows);
-    } catch (e: any) {
-      // ✅ esto te mostrará el error real
-      console.error("Error fetching calendar events:", e);
-      setError(e?.message || "Error fetching calendar events");
+    } catch (err: any) {
+      console.error("Error fetching calendar events:", err);
+      setError(err?.message || "No fue posible cargar el resumen mensual.");
       setData([]);
     } finally {
       setLoading(false);
     }
-  }, [monthStart, monthEnd]);
+  }, [monthEnd, monthStart]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
-  return { data, loading, error, reload, monthStart, monthEnd };
+  return {
+    data,
+    loading,
+    error,
+    reload,
+    monthStart,
+    monthEnd,
+  };
 }
