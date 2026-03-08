@@ -2,17 +2,19 @@ import React, { useEffect, useMemo, useState } from "react";
 import { endOfMonth, format, startOfMonth } from "date-fns";
 import { supabase } from "../../lib/supabase";
 
-type Building = {
+type PlannerBuilding = {
   id: string;
   name: string;
   address?: string | null;
   client_name?: string | null;
+  source: "building" | "client";
 };
 
 type Client = {
   id: string;
   company_name: string | null;
   building_name: string | null;
+  address?: string | null;
 };
 
 type Technician = {
@@ -63,7 +65,7 @@ export function MaintenanceMassPlannerV2() {
   const [year, setYear] = useState<number>(now.getFullYear());
   const [month, setMonth] = useState<number>(now.getMonth());
 
-  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [plannerBuildings, setPlannerBuildings] = useState<PlannerBuilding[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [monthAssignments, setMonthAssignments] = useState<MonthAssignmentRow[]>([]);
 
@@ -97,11 +99,11 @@ export function MaintenanceMassPlannerV2() {
     [year, month]
   );
 
-  const buildingsById = useMemo(() => {
-    const map = new Map<string, Building>();
-    buildings.forEach((building) => map.set(building.id, building));
+  const plannerBuildingsById = useMemo(() => {
+    const map = new Map<string, PlannerBuilding>();
+    plannerBuildings.forEach((item) => map.set(item.id, item));
     return map;
-  }, [buildings]);
+  }, [plannerBuildings]);
 
   const techniciansById = useMemo(() => {
     const map = new Map<string, Technician>();
@@ -109,19 +111,23 @@ export function MaintenanceMassPlannerV2() {
     return map;
   }, [technicians]);
 
-  const assignedBuildingIds = useMemo(() => {
+  const assignedBuildingKeys = useMemo(() => {
     return new Set(
-      monthAssignments
-        .map((assignment) => assignment.building_id)
-        .filter(Boolean) as string[]
+      monthAssignments.map((assignment) => {
+        const byId = safeText(assignment.building_id);
+        const byName = safeText(assignment.building_name);
+        return byId || byName;
+      }).filter(Boolean)
     );
   }, [monthAssignments]);
 
   const pendingBuildings = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    return buildings.filter((building) => {
-      if (assignedBuildingIds.has(building.id)) return false;
+    return plannerBuildings.filter((building) => {
+      if (assignedBuildingKeys.has(building.id) || assignedBuildingKeys.has(building.name)) {
+        return false;
+      }
 
       if (!term) return true;
 
@@ -135,16 +141,34 @@ export function MaintenanceMassPlannerV2() {
 
       return haystack.includes(term);
     });
-  }, [assignedBuildingIds, buildings, search]);
+  }, [assignedBuildingKeys, plannerBuildings, search]);
 
   const plannedBuildingObjects = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    return buildings.filter((building) => {
-      if (!assignedBuildingIds.has(building.id)) return false;
+    const fromAssignments = monthAssignments.map((assignment) => {
+      const item =
+        (assignment.building_id && plannerBuildingsById.get(assignment.building_id)) ||
+        Array.from(plannerBuildingsById.values()).find(
+          (x) => normalizeText(x.name) === normalizeText(assignment.building_name)
+        );
 
-      if (!term) return true;
+      return {
+        id: safeText(assignment.building_id) || safeText(assignment.building_name) || assignment.id,
+        name: safeText(item?.name) || safeText(assignment.building_name) || "Edificio",
+        address: safeText(item?.address) || null,
+        client_name: safeText(item?.client_name) || null,
+        source: item?.source ?? "client",
+      };
+    });
 
+    const unique = fromAssignments.filter(
+      (item, index, arr) => arr.findIndex((x) => x.id === item.id) === index
+    );
+
+    if (!term) return unique;
+
+    return unique.filter((building) => {
       const haystack = [
         safeText(building.name),
         safeText(building.address),
@@ -155,7 +179,7 @@ export function MaintenanceMassPlannerV2() {
 
       return haystack.includes(term);
     });
-  }, [assignedBuildingIds, buildings, search]);
+  }, [monthAssignments, plannerBuildingsById, search]);
 
   const selectedBuildingObjects = useMemo(() => {
     const selectedSet = new Set(selectedBuildings);
@@ -168,16 +192,12 @@ export function MaintenanceMassPlannerV2() {
         return a.scheduled_date.localeCompare(b.scheduled_date);
       }
 
-      const aName =
-        safeText(buildingsById.get(a.building_id || "")?.name) ||
-        safeText(a.building_name);
-      const bName =
-        safeText(buildingsById.get(b.building_id || "")?.name) ||
-        safeText(b.building_name);
+      const aName = safeText(a.building_name);
+      const bName = safeText(b.building_name);
 
       return aName.localeCompare(bName);
     });
-  }, [monthAssignments, buildingsById]);
+  }, [monthAssignments]);
 
   useEffect(() => {
     setBulkDate(monthStart);
@@ -199,7 +219,7 @@ export function MaintenanceMassPlannerV2() {
           { data: techniciansData, error: techniciansError },
         ] = await Promise.all([
           supabase.from("buildings").select("id, name, address").order("name", { ascending: true }),
-          supabase.from("clients").select("id, company_name, building_name").order("company_name", { ascending: true }),
+          supabase.from("clients").select("id, company_name, building_name, address").order("company_name", { ascending: true }),
           supabase
             .from("profiles")
             .select("id, full_name, role, person_type, company_name, is_active")
@@ -211,28 +231,44 @@ export function MaintenanceMassPlannerV2() {
         if (clientsError) throw clientsError;
         if (techniciansError) throw techniciansError;
 
+        const buildings = (buildingsData ?? []) as Array<any>;
         const clients = (clientsData ?? []) as Client[];
 
-        const mappedBuildings: Building[] = (buildingsData ?? []).map((item: any) => {
-          const matchingClient =
-            clients.find(
-              (client) =>
-                normalizeText(client.building_name) === normalizeText(item.name)
-            ) ?? null;
+        let sourceRows: PlannerBuilding[] = [];
 
-          return {
-            id: item.id,
-            name: item.name,
-            address: item.address ?? null,
-            client_name: matchingClient?.company_name ?? null,
-          };
-        });
+        if (buildings.length > 0) {
+          sourceRows = buildings.map((item) => {
+            const matchingClient =
+              clients.find(
+                (client) =>
+                  normalizeText(client.building_name) === normalizeText(item.name)
+              ) ?? null;
 
-        setBuildings(mappedBuildings);
+            return {
+              id: item.id,
+              name: item.name,
+              address: item.address ?? null,
+              client_name: matchingClient?.company_name ?? null,
+              source: "building" as const,
+            };
+          });
+        } else {
+          sourceRows = clients
+            .filter((client) => safeText(client.building_name))
+            .map((client) => ({
+              id: client.id,
+              name: safeText(client.building_name),
+              address: client.address ?? null,
+              client_name: client.company_name ?? null,
+              source: "client" as const,
+            }));
+        }
+
+        setPlannerBuildings(sourceRows);
         setTechnicians((techniciansData ?? []) as Technician[]);
       } catch (err: any) {
         console.error(err);
-        setError(err?.message || "No fue posible cargar edificios, clientes y técnicos.");
+        setError(err?.message || "No fue posible cargar edificios/clientes y técnicos.");
       } finally {
         setLoadingBase(false);
       }
@@ -391,7 +427,7 @@ export function MaintenanceMassPlannerV2() {
 
       const rows = selectedBuildings.map((buildingId) => {
         const draft = drafts[buildingId];
-        const building = buildingsById.get(buildingId);
+        const building = plannerBuildingsById.get(buildingId);
 
         if (!draft) throw new Error("Hay edificios seleccionados sin datos de asignación.");
         if (!draft.scheduledDate) throw new Error("Cada edificio debe tener una fecha asignada.");
@@ -444,8 +480,7 @@ export function MaintenanceMassPlannerV2() {
       <div className="mb-4">
         <div className="text-base font-semibold">Planificador de mantenciones</div>
         <div className="text-sm text-slate-500">
-          Muestra los edificios pendientes del mes seleccionado. Al asignar fecha y técnico,
-          el edificio sale del listado pendiente solo para ese mes.
+          Usa edificios reales si existen. Si la tabla buildings está vacía, usa clients.building_name como fuente temporal.
         </div>
       </div>
 
@@ -517,7 +552,7 @@ export function MaintenanceMassPlannerV2() {
               <div className="mb-2">
                 <div className="font-medium text-slate-900">Edificios pendientes</div>
                 <div className="text-xs text-slate-500">
-                  Estos edificios volverán a aparecer completos al cambiar al mes siguiente.
+                  Fuente actual: {plannerBuildings.length > 0 ? plannerBuildings[0].source : "sin datos"}
                 </div>
               </div>
 
@@ -772,7 +807,12 @@ export function MaintenanceMassPlannerV2() {
                     </thead>
                     <tbody>
                       {plannedAssignments.map((assignment) => {
-                        const building = buildingsById.get(assignment.building_id || "");
+                        const plannerBuilding =
+                          (assignment.building_id && plannerBuildingsById.get(assignment.building_id)) ||
+                          Array.from(plannerBuildingsById.values()).find(
+                            (x) => normalizeText(x.name) === normalizeText(assignment.building_name)
+                          );
+
                         const technician = assignment.assigned_technician_id
                           ? techniciansById.get(assignment.assigned_technician_id)
                           : undefined;
@@ -783,10 +823,10 @@ export function MaintenanceMassPlannerV2() {
                               {assignment.scheduled_date}
                             </td>
                             <td className="px-3 py-2 font-medium text-slate-900">
-                              {safeText(building?.name) || safeText(assignment.building_name) || "—"}
+                              {safeText(plannerBuilding?.name) || safeText(assignment.building_name) || "—"}
                             </td>
                             <td className="px-3 py-2 text-slate-600">
-                              {safeText(building?.client_name) || "—"}
+                              {safeText(plannerBuilding?.client_name) || "—"}
                             </td>
                             <td className="px-3 py-2 text-slate-600">
                               {technician ? formatTechnicianLabel(technician) : "—"}
