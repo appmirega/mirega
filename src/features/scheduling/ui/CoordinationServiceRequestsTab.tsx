@@ -27,6 +27,7 @@ function RequestCard({
   onMove: (id: string, nextStatus: string) => void;
 }) {
   const id = row.id as string;
+
   const title =
     firstNonEmpty(row.title, row.subject, row.name, row.request_title) ||
     "Solicitud sin título";
@@ -68,7 +69,8 @@ function RequestCard({
           Tipo: <b>{requestType}</b> · Estado: <b>{statusLabel(status)}</b>
         </div>
         <div className="mt-1 text-xs text-slate-500">
-          Edificio: <b>{building}</b> · Prioridad: <b>{priority}</b> · Origen: <b>{source}</b>
+          Edificio: <b>{building}</b> · Prioridad: <b>{priority}</b> · Origen:{" "}
+          <b>{source}</b>
         </div>
         {createdAt && (
           <div className="mt-1 text-xs text-slate-500">
@@ -242,3 +244,5 @@ export function CoordinationServiceRequestsTab() {
     </div>
   );
 }
+
+export default CoordinationServiceRequestsTab;
