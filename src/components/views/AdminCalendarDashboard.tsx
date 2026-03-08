@@ -2,7 +2,7 @@ import React, { Suspense, useMemo, useState } from "react";
 import { endOfMonth, format, startOfMonth } from "date-fns";
 
 import { SummaryMonthView } from "../../features/scheduling/ui/SummaryMonthView";
-import { CoordinationServiceRequestsTab } from "../../features/scheduling/ui/CoordinationServiceRequestsTab";
+import CoordinationServiceRequestsTab from "../../features/scheduling/ui/CoordinationServiceRequestsTab";
 
 function lazyNamed<T extends React.ComponentType<any>>(
   factory: () => Promise<any>,
@@ -83,7 +83,13 @@ type TabId =
   | "coordination"
   | "availability_absence";
 
-export default function AdminCalendarDashboard() {
+type AdminCalendarDashboardProps = {
+  onNavigate?: (path: string) => void;
+};
+
+export default function AdminCalendarDashboard(
+  _props: AdminCalendarDashboardProps
+) {
   const [activeTab, setActiveTab] = useState<TabId>("summary");
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 

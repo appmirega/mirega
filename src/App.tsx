@@ -11,10 +11,8 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Ruta base para evitar pantalla en blanco */}
-        <Route path="/" element={<Navigate to="/technician/calendar" replace />} />
+        <Route path="/" element={<Navigate to="/technician/dashboard" replace />} />
 
-        {/* ADMIN */}
         <Route
           path="/admin/maintenances"
           element={<AdminMaintenancesDashboard />}
@@ -24,7 +22,6 @@ function App() {
           element={<AdminCalendarDashboard />}
         />
 
-        {/* TECHNICIAN */}
         <Route
           path="/technician/dashboard"
           element={<TechnicianDashboard />}
@@ -37,9 +34,6 @@ function App() {
           path="/technician/checklist"
           element={<TechnicianMaintenanceChecklistView />}
         />
-
-        {/* Fallback para cualquier ruta no encontrada */}
-        <Route path="*" element={<Navigate to="/technician/calendar" replace />} />
       </Routes>
     </Router>
   );
