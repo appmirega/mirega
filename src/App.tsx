@@ -9,15 +9,10 @@ import TechnicianCalendarView from "./components/views/TechnicianCalendarView";
 import { TechnicianMaintenanceChecklistView } from "./components/views/TechnicianMaintenanceChecklistView";
 import { TechnicianDashboard } from "./components/dashboards/TechnicianDashboard";
 
-import Login from "./components/auth/Login";
-
 function App() {
   return (
     <Router>
       <Routes>
-
-        {/* Login */}
-        <Route path="/" element={<Login />} />
 
         {/* ADMIN */}
         <Route
