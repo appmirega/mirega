@@ -137,6 +137,26 @@ export function MaintenanceMassPlannerV2() {
     });
   }, [assignedBuildingIds, buildings, search]);
 
+  const plannedBuildingObjects = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    return buildings.filter((building) => {
+      if (!assignedBuildingIds.has(building.id)) return false;
+
+      if (!term) return true;
+
+      const haystack = [
+        safeText(building.name),
+        safeText(building.address),
+        safeText(building.client_name),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(term);
+    });
+  }, [assignedBuildingIds, buildings, search]);
+
   const selectedBuildingObjects = useMemo(() => {
     const selectedSet = new Set(selectedBuildings);
     return pendingBuildings.filter((building) => selectedSet.has(building.id));
@@ -178,14 +198,8 @@ export function MaintenanceMassPlannerV2() {
           { data: clientsData, error: clientsError },
           { data: techniciansData, error: techniciansError },
         ] = await Promise.all([
-          supabase
-            .from("buildings")
-            .select("id, name, address")
-            .order("name", { ascending: true }),
-          supabase
-            .from("clients")
-            .select("id, company_name, building_name")
-            .order("company_name", { ascending: true }),
+          supabase.from("buildings").select("id, name, address").order("name", { ascending: true }),
+          supabase.from("clients").select("id, company_name, building_name").order("company_name", { ascending: true }),
           supabase
             .from("profiles")
             .select("id, full_name, role, person_type, company_name, is_active")
@@ -218,10 +232,7 @@ export function MaintenanceMassPlannerV2() {
         setTechnicians((techniciansData ?? []) as Technician[]);
       } catch (err: any) {
         console.error(err);
-        setError(
-          err?.message ||
-            "No fue posible cargar edificios, clientes y técnicos."
-        );
+        setError(err?.message || "No fue posible cargar edificios, clientes y técnicos.");
       } finally {
         setLoadingBase(false);
       }
@@ -382,17 +393,9 @@ export function MaintenanceMassPlannerV2() {
         const draft = drafts[buildingId];
         const building = buildingsById.get(buildingId);
 
-        if (!draft) {
-          throw new Error("Hay edificios seleccionados sin datos de asignación.");
-        }
-
-        if (!draft.scheduledDate) {
-          throw new Error("Cada edificio debe tener una fecha asignada.");
-        }
-
-        if (!draft.technicianId) {
-          throw new Error("Cada edificio debe tener un técnico asignado.");
-        }
+        if (!draft) throw new Error("Hay edificios seleccionados sin datos de asignación.");
+        if (!draft.scheduledDate) throw new Error("Cada edificio debe tener una fecha asignada.");
+        if (!draft.technicianId) throw new Error("Cada edificio debe tener un técnico asignado.");
 
         return {
           building_id: buildingId,
@@ -465,22 +468,10 @@ export function MaintenanceMassPlannerV2() {
             onChange={(event) => setMonth(Number(event.target.value))}
           >
             {[
-              "Enero",
-              "Febrero",
-              "Marzo",
-              "Abril",
-              "Mayo",
-              "Junio",
-              "Julio",
-              "Agosto",
-              "Septiembre",
-              "Octubre",
-              "Noviembre",
-              "Diciembre",
+              "Enero","Febrero","Marzo","Abril","Mayo","Junio",
+              "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
             ].map((label, index) => (
-              <option key={label} value={index}>
-                {label}
-              </option>
+              <option key={label} value={index}>{label}</option>
             ))}
           </select>
         </div>
@@ -497,15 +488,9 @@ export function MaintenanceMassPlannerV2() {
         </div>
 
         <div className="rounded-lg border bg-slate-50 px-3 py-2 text-sm text-slate-700">
-          <div>
-            Mes seleccionado: <span className="font-semibold">{monthLabel}</span>
-          </div>
-          <div>
-            Pendientes: <span className="font-semibold">{pendingBuildings.length}</span>
-          </div>
-          <div>
-            Ya planificados: <span className="font-semibold">{plannedAssignments.length}</span>
-          </div>
+          <div>Mes seleccionado: <span className="font-semibold">{monthLabel}</span></div>
+          <div>Pendientes: <span className="font-semibold">{pendingBuildings.length}</span></div>
+          <div>Ya planificados: <span className="font-semibold">{plannedAssignments.length}</span></div>
         </div>
       </div>
 
@@ -526,54 +511,88 @@ export function MaintenanceMassPlannerV2() {
       )}
 
       {!loadingBase && !loadingAssignments && (
-        <div className="mt-4 grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-          <div className="rounded-lg border bg-slate-50 p-3">
-            <div className="mb-2">
-              <div className="font-medium text-slate-900">Edificios pendientes</div>
-              <div className="text-xs text-slate-500">
-                Estos edificios volverán a aparecer completos al cambiar al mes siguiente.
+        <div className="mt-4 grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="mb-2">
+                <div className="font-medium text-slate-900">Edificios pendientes</div>
+                <div className="text-xs text-slate-500">
+                  Estos edificios volverán a aparecer completos al cambiar al mes siguiente.
+                </div>
               </div>
+
+              <div className="mb-3 flex items-center justify-between gap-2 text-xs">
+                <button
+                  type="button"
+                  className="font-semibold text-slate-700 underline"
+                  onClick={handleSelectAllPending}
+                  disabled={pendingBuildings.length === 0}
+                >
+                  Seleccionar todos
+                </button>
+
+                <button
+                  type="button"
+                  className="font-semibold text-slate-700 underline"
+                  onClick={handleClearSelection}
+                  disabled={selectedBuildings.length === 0}
+                >
+                  Limpiar selección
+                </button>
+              </div>
+
+              {pendingBuildings.length === 0 ? (
+                <div className="rounded-md border bg-white p-3 text-sm text-slate-600">
+                  No hay edificios pendientes para {monthLabel}.
+                </div>
+              ) : (
+                <div className="max-h-[260px] space-y-1 overflow-y-auto rounded-md border bg-white p-2">
+                  {pendingBuildings.map((building) => (
+                    <label
+                      key={building.id}
+                      className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={selectedBuildings.includes(building.id)}
+                        onChange={() => toggleBuilding(building.id)}
+                      />
+                      <div className="min-w-0 text-sm">
+                        <div className="font-medium text-slate-900">
+                          {safeText(building.name) || "Edificio"}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {safeText(building.client_name) || "Sin cliente"}
+                          {safeText(building.address) ? ` · ${safeText(building.address)}` : ""}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="mb-3 flex items-center justify-between gap-2 text-xs">
-              <button
-                type="button"
-                className="font-semibold text-slate-700 underline"
-                onClick={handleSelectAllPending}
-                disabled={pendingBuildings.length === 0}
-              >
-                Seleccionar todos
-              </button>
-
-              <button
-                type="button"
-                className="font-semibold text-slate-700 underline"
-                onClick={handleClearSelection}
-                disabled={selectedBuildings.length === 0}
-              >
-                Limpiar selección
-              </button>
-            </div>
-
-            {pendingBuildings.length === 0 ? (
-              <div className="rounded-md border bg-white p-3 text-sm text-slate-600">
-                No hay edificios pendientes para {monthLabel}.
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="mb-2">
+                <div className="font-medium text-slate-900">Ya planificados</div>
+                <div className="text-xs text-slate-500">
+                  Edificios que ya tienen mantención asignada dentro de este mes.
+                </div>
               </div>
-            ) : (
-              <div className="max-h-[500px] space-y-1 overflow-y-auto rounded-md border bg-white p-2">
-                {pendingBuildings.map((building) => (
-                  <label
-                    key={building.id}
-                    className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-slate-50"
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={selectedBuildings.includes(building.id)}
-                      onChange={() => toggleBuilding(building.id)}
-                    />
-                    <div className="min-w-0 text-sm">
-                      <div className="font-medium text-slate-900">
+
+              {plannedBuildingObjects.length === 0 ? (
+                <div className="rounded-md border bg-white p-3 text-sm text-slate-600">
+                  No hay edificios planificados en {monthLabel}.
+                </div>
+              ) : (
+                <div className="max-h-[260px] space-y-1 overflow-y-auto rounded-md border bg-white p-2">
+                  {plannedBuildingObjects.map((building) => (
+                    <div
+                      key={building.id}
+                      className="rounded-md px-2 py-2 border bg-slate-50"
+                    >
+                      <div className="text-sm font-medium text-slate-900">
                         {safeText(building.name) || "Edificio"}
                       </div>
                       <div className="text-xs text-slate-500">
@@ -581,10 +600,10 @@ export function MaintenanceMassPlannerV2() {
                         {safeText(building.address) ? ` · ${safeText(building.address)}` : ""}
                       </div>
                     </div>
-                  </label>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -732,7 +751,7 @@ export function MaintenanceMassPlannerV2() {
 
             <div className="rounded-lg border bg-white p-4">
               <div className="mb-3 font-medium text-slate-900">
-                Ya planificados en {monthLabel}
+                Detalle de mantenciones planificadas en {monthLabel}
               </div>
 
               {plannedAssignments.length === 0 ? (
