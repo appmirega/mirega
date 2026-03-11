@@ -7,6 +7,7 @@ import {
   FileText,
   Wrench,
   User,
+  Siren,
 } from "lucide-react";
 
 type ProfileRow = {
@@ -16,10 +17,10 @@ type ProfileRow = {
 };
 
 type DashboardStats = {
-  requestsThisMonth: number;
-  requestsPending: number;
-  emergenciesThisMonth: number;
   stoppedElevators: number;
+  emergenciesThisMonth: number;
+  myRequestsThisMonth: number;
+  myRequestsInProgress: number;
 };
 
 interface TechnicianDashboardProps {
@@ -31,10 +32,10 @@ export function TechnicianDashboard({
 }: TechnicianDashboardProps = {}) {
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [stats, setStats] = useState<DashboardStats>({
-    requestsThisMonth: 0,
-    requestsPending: 0,
-    emergenciesThisMonth: 0,
     stoppedElevators: 0,
+    emergenciesThisMonth: 0,
+    myRequestsThisMonth: 0,
+    myRequestsInProgress: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -73,47 +74,58 @@ export function TechnicianDashboard({
         lastDayOfMonth
       ).padStart(2, "0")}`;
 
+      const activeRequestStatuses = [
+        "pending",
+        "analyzing",
+        "quotation_sent",
+        "approved",
+        "in_progress",
+        "on_hold",
+      ];
+
       const [
-        { count: emergenciesMonthCount, error: emergencyError },
-        { count: requestsMonthCount, error: requestsMonthError },
-        { count: requestsPendingCount, error: requestsPendingError },
         { count: stoppedCount, error: stoppedError },
+        { count: emergenciesMonthCount, error: emergencyError },
+        { count: myRequestsMonthCount, error: myRequestsMonthError },
+        { count: myRequestsInProgressCount, error: myRequestsInProgressError },
       ] = await Promise.all([
         supabase
           .from("emergency_visits")
           .select("id", { count: "exact", head: true })
-          .eq("technician_id", typedProfile.id)
-          .gte("created_at", `${firstDayOfMonth}T00:00:00`)
-          .lte("created_at", `${lastDayStr}T23:59:59`),
-
-        supabase
-          .from("service_requests")
-          .select("id", { count: "exact", head: true })
-          .gte("created_at", `${firstDayOfMonth}T00:00:00`)
-          .lte("created_at", `${lastDayStr}T23:59:59`),
-
-        supabase
-          .from("service_requests")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "pending"),
+          .eq("final_status", "stopped")
+          .is("reactivation_date", null)
+          .eq("status", "completed"),
 
         supabase
           .from("emergency_visits")
           .select("id", { count: "exact", head: true })
-          .eq("final_status", "stopped")
-          .is("reactivation_date", null),
+          .gte("created_at", `${firstDayOfMonth}T00:00:00`)
+          .lte("created_at", `${lastDayStr}T23:59:59`),
+
+        supabase
+          .from("service_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("created_by_technician_id", typedProfile.id)
+          .gte("created_at", `${firstDayOfMonth}T00:00:00`)
+          .lte("created_at", `${lastDayStr}T23:59:59`),
+
+        supabase
+          .from("service_requests")
+          .select("id", { count: "exact", head: true })
+          .eq("created_by_technician_id", typedProfile.id)
+          .in("status", activeRequestStatuses),
       ]);
 
-      if (emergencyError) throw emergencyError;
-      if (requestsMonthError) throw requestsMonthError;
-      if (requestsPendingError) throw requestsPendingError;
       if (stoppedError) throw stoppedError;
+      if (emergencyError) throw emergencyError;
+      if (myRequestsMonthError) throw myRequestsMonthError;
+      if (myRequestsInProgressError) throw myRequestsInProgressError;
 
       setStats({
-        requestsThisMonth: requestsMonthCount || 0,
-        requestsPending: requestsPendingCount || 0,
-        emergenciesThisMonth: emergenciesMonthCount || 0,
         stoppedElevators: stoppedCount || 0,
+        emergenciesThisMonth: emergenciesMonthCount || 0,
+        myRequestsThisMonth: myRequestsMonthCount || 0,
+        myRequestsInProgress: myRequestsInProgressCount || 0,
       });
     } catch (err: any) {
       console.error("Error loading technician dashboard:", err);
@@ -142,6 +154,7 @@ export function TechnicianDashboard({
         <p className="mt-1 text-slate-600">
           Acceso rápido a calendario, checklist y alertas operativas.
         </p>
+
         {profile && (
           <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">
             <User className="h-4 w-4" />
@@ -156,8 +169,12 @@ export function TechnicianDashboard({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border-2 border-red-200 bg-gradient-to-br from-red-500 to-red-600 p-6 text-white shadow-lg">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <button
+          type="button"
+          onClick={() => onNavigate?.("emergencies")}
+          className="rounded-xl border-2 border-red-200 bg-gradient-to-br from-red-500 to-red-600 p-6 text-left text-white shadow-lg transition hover:scale-[1.01] hover:shadow-xl"
+        >
           <div className="mb-4 flex items-center justify-between">
             <div className="rounded-lg bg-white/20 p-3">
               <AlertTriangle className="h-6 w-6" />
@@ -168,42 +185,70 @@ export function TechnicianDashboard({
               </span>
             )}
           </div>
+
           <h3 className="mb-1 text-3xl font-bold">{stats.stoppedElevators}</h3>
           <p className="text-sm text-white/90">Ascensores detenidos</p>
-        </div>
+          <p className="mt-2 text-xs text-white/80">
+            Ver listado e historial de detenidos
+          </p>
+        </button>
 
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
+        <button
+          type="button"
+          onClick={() => onNavigate?.("emergencies")}
+          className="rounded-xl border bg-white p-6 text-left shadow-sm transition hover:scale-[1.01] hover:shadow-md"
+        >
           <div className="mb-4 w-fit rounded-lg bg-blue-500 p-3 text-white">
-            <Calendar className="h-6 w-6" />
+            <Siren className="h-6 w-6" />
           </div>
+
           <h3 className="mb-1 text-2xl font-bold text-slate-900">
             {stats.emergenciesThisMonth}
           </h3>
           <p className="text-sm text-slate-600">Emergencias del mes</p>
-        </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Ver historial mensual de emergencias
+          </p>
+        </button>
 
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
+        <button
+          type="button"
+          onClick={() => onNavigate?.("service-requests")}
+          className="rounded-xl border bg-white p-6 text-left shadow-sm transition hover:scale-[1.01] hover:shadow-md"
+        >
           <div className="mb-4 w-fit rounded-lg bg-orange-500 p-3 text-white">
             <FileText className="h-6 w-6" />
           </div>
-          <h3 className="mb-1 text-2xl font-bold text-slate-900">
-            {stats.requestsThisMonth}
-          </h3>
-          <p className="text-sm text-slate-600">Solicitudes del mes</p>
-        </div>
 
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
+          <h3 className="mb-1 text-2xl font-bold text-slate-900">
+            {stats.myRequestsThisMonth}
+          </h3>
+          <p className="text-sm text-slate-600">Mis solicitudes del mes</p>
+          <p className="mt-2 text-xs text-slate-500">
+            Ver todas mis solicitudes del período
+          </p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate?.("service-requests")}
+          className="rounded-xl border bg-white p-6 text-left shadow-sm transition hover:scale-[1.01] hover:shadow-md"
+        >
           <div className="mb-4 w-fit rounded-lg bg-amber-500 p-3 text-white">
             <Wrench className="h-6 w-6" />
           </div>
+
           <h3 className="mb-1 text-2xl font-bold text-slate-900">
-            {stats.requestsPending}
+            {stats.myRequestsInProgress}
           </h3>
-          <p className="text-sm text-slate-600">Solicitudes pendientes</p>
-        </div>
+          <p className="text-sm text-slate-600">Estado de mis solicitudes</p>
+          <p className="mt-2 text-xs text-slate-500">
+            Pendientes, en análisis, aprobadas o en curso
+          </p>
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <button
           type="button"
           onClick={() => onNavigate?.("calendar")}
@@ -239,28 +284,25 @@ export function TechnicianDashboard({
             Accede a tus checklists y tareas técnicas.
           </p>
         </button>
-      </div>
 
-      {stats.stoppedElevators > 0 && (
-        <div className="rounded-xl border-2 border-red-200 bg-red-50 p-6">
+        <button
+          type="button"
+          onClick={() => onNavigate?.("emergencies")}
+          className="rounded-xl border bg-white p-6 text-left shadow-sm transition hover:shadow-md"
+        >
           <div className="mb-3 flex items-center gap-3">
-            <AlertTriangle className="h-6 w-6 text-red-600" />
-            <h2 className="text-xl font-bold text-red-900">Alerta operativa</h2>
+            <div className="rounded-lg bg-red-100 p-3 text-red-700">
+              <Siren className="h-6 w-6" />
+            </div>
+            <div className="text-lg font-semibold text-slate-900">
+              Emergencias
+            </div>
           </div>
-          <p className="mb-4 text-red-800">
-            Hay {stats.stoppedElevators} ascensor(es) detenido(s) pendientes de
-            seguimiento.
+          <p className="text-sm text-slate-600">
+            Ingresa al historial, emergencias en curso y ascensores detenidos.
           </p>
-
-          <button
-            type="button"
-            className="rounded-lg bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700"
-            onClick={() => onNavigate?.("stopped-elevators")}
-          >
-            Ver alerta
-          </button>
-        </div>
-      )}
+        </button>
+      </div>
     </div>
   );
 }
