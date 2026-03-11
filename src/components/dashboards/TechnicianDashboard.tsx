@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import {
   Calendar,
@@ -27,7 +26,9 @@ interface TechnicianDashboardProps {
   onNavigate?: (path: string) => void;
 }
 
-export function TechnicianDashboard({ onNavigate }: TechnicianDashboardProps = {}) {
+export function TechnicianDashboard({
+  onNavigate,
+}: TechnicianDashboardProps = {}) {
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [stats, setStats] = useState<DashboardStats>({
     requestsThisMonth: 0,
@@ -172,7 +173,7 @@ export function TechnicianDashboard({ onNavigate }: TechnicianDashboardProps = {
         </div>
 
         <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <div className="mb-4 rounded-lg bg-blue-500 p-3 text-white w-fit">
+          <div className="mb-4 w-fit rounded-lg bg-blue-500 p-3 text-white">
             <Calendar className="h-6 w-6" />
           </div>
           <h3 className="mb-1 text-2xl font-bold text-slate-900">
@@ -182,7 +183,7 @@ export function TechnicianDashboard({ onNavigate }: TechnicianDashboardProps = {
         </div>
 
         <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <div className="mb-4 rounded-lg bg-orange-500 p-3 text-white w-fit">
+          <div className="mb-4 w-fit rounded-lg bg-orange-500 p-3 text-white">
             <FileText className="h-6 w-6" />
           </div>
           <h3 className="mb-1 text-2xl font-bold text-slate-900">
@@ -192,7 +193,7 @@ export function TechnicianDashboard({ onNavigate }: TechnicianDashboardProps = {
         </div>
 
         <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <div className="mb-4 rounded-lg bg-amber-500 p-3 text-white w-fit">
+          <div className="mb-4 w-fit rounded-lg bg-amber-500 p-3 text-white">
             <Wrench className="h-6 w-6" />
           </div>
           <h3 className="mb-1 text-2xl font-bold text-slate-900">
@@ -203,9 +204,10 @@ export function TechnicianDashboard({ onNavigate }: TechnicianDashboardProps = {
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        <Link
-          to="/technician/calendar"
-          className="rounded-xl border bg-white p-6 shadow-sm transition hover:shadow-md"
+        <button
+          type="button"
+          onClick={() => onNavigate?.("calendar")}
+          className="rounded-xl border bg-white p-6 text-left shadow-sm transition hover:shadow-md"
         >
           <div className="mb-3 flex items-center gap-3">
             <div className="rounded-lg bg-blue-100 p-3 text-blue-700">
@@ -218,11 +220,12 @@ export function TechnicianDashboard({ onNavigate }: TechnicianDashboardProps = {
           <p className="text-sm text-slate-600">
             Revisa tus asignaciones, permisos y vacaciones.
           </p>
-        </Link>
+        </button>
 
-        <Link
-          to="/technician/checklist"
-          className="rounded-xl border bg-white p-6 shadow-sm transition hover:shadow-md"
+        <button
+          type="button"
+          onClick={() => onNavigate?.("maintenance-checklist")}
+          className="rounded-xl border bg-white p-6 text-left shadow-sm transition hover:shadow-md"
         >
           <div className="mb-3 flex items-center gap-3">
             <div className="rounded-lg bg-green-100 p-3 text-green-700">
@@ -235,7 +238,7 @@ export function TechnicianDashboard({ onNavigate }: TechnicianDashboardProps = {
           <p className="text-sm text-slate-600">
             Accede a tus checklists y tareas técnicas.
           </p>
-        </Link>
+        </button>
       </div>
 
       {stats.stoppedElevators > 0 && (
@@ -245,10 +248,12 @@ export function TechnicianDashboard({ onNavigate }: TechnicianDashboardProps = {
             <h2 className="text-xl font-bold text-red-900">Alerta operativa</h2>
           </div>
           <p className="mb-4 text-red-800">
-            Hay {stats.stoppedElevators} ascensor(es) detenido(s) pendientes de seguimiento.
+            Hay {stats.stoppedElevators} ascensor(es) detenido(s) pendientes de
+            seguimiento.
           </p>
 
           <button
+            type="button"
             className="rounded-lg bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700"
             onClick={() => onNavigate?.("stopped-elevators")}
           >

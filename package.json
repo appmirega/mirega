@@ -24,7 +24,8 @@
     "react-big-calendar": "^1.19.4",
     "react-dom": "18.2.0",
     "react-router-dom": "^6.23.1",
-    "react-signature-canvas": "^1.1.0-alpha.2"
+    "react-signature-canvas": "^1.1.0-alpha.2",
+    "recharts": "^3.8.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.79",
