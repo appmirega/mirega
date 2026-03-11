@@ -1,10 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  endOfMonth,
-  format,
-  parseISO,
-  startOfMonth,
-} from "date-fns";
+import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
 import { supabase } from "../../lib/supabase";
 
@@ -64,11 +59,7 @@ function sourceLabel(source: "availability" | "leave") {
 }
 
 function absenceTypeLabel(row: AvailabilityAbsenceRow) {
-  return (
-    safeText(row.leave_type) ||
-    safeText(row.absence_type) ||
-    "Sin tipo"
-  );
+  return safeText(row.leave_type) || safeText(row.absence_type) || "Sin tipo";
 }
 
 export function AdminAvailabilityAndAbsenceTab() {
@@ -83,6 +74,7 @@ export function AdminAvailabilityAndAbsenceTab() {
   const [rows, setRows] = useState<AvailabilityAbsenceRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
+  const [actionLoadingId, setActionLoadingId] = useState<string>("");
 
   const monthStart = useMemo(() => {
     const date = parseISO(`${selectedMonth}-01T00:00:00`);
@@ -116,6 +108,15 @@ export function AdminAvailabilityAndAbsenceTab() {
     );
   }, [rows, monthStart, monthEnd]);
 
+  const filteredMonthlyRows = useMemo(() => {
+    if (!selectedTechnicianId) return monthlyRows;
+    return monthlyRows.filter((row) => row.technician_id === selectedTechnicianId);
+  }, [monthlyRows, selectedTechnicianId]);
+
+  const pendingRows = useMemo(() => {
+    return filteredMonthlyRows.filter((row) => row.status === "pending");
+  }, [filteredMonthlyRows]);
+
   const approvedMonthlyRows = useMemo(() => {
     return monthlyRows.filter((row) => row.status === "approved");
   }, [monthlyRows]);
@@ -139,14 +140,14 @@ export function AdminAvailabilityAndAbsenceTab() {
   const rowsByTechnician = useMemo(() => {
     const map = new Map<string, AvailabilityAbsenceRow[]>();
 
-    monthlyRows.forEach((row) => {
+    filteredMonthlyRows.forEach((row) => {
       const current = map.get(row.technician_id) ?? [];
       current.push(row);
       map.set(row.technician_id, current);
     });
 
     return map;
-  }, [monthlyRows]);
+  }, [filteredMonthlyRows]);
 
   const visibleTechnicians = useMemo(() => {
     if (selectedTechnicianId) {
@@ -172,10 +173,12 @@ export function AdminAvailabilityAndAbsenceTab() {
           .select("id, full_name, role, person_type, company_name")
           .eq("role", "technician")
           .order("full_name", { ascending: true }),
+
         supabase
           .from("technician_availability")
           .select("id, technician_id, start_date, end_date, absence_type, reason, status")
           .order("start_date", { ascending: false }),
+
         supabase
           .from("technician_leaves")
           .select("id, technician_id, leave_type, start_date, end_date, status, reason")
@@ -193,12 +196,12 @@ export function AdminAvailabilityAndAbsenceTab() {
         source: "availability",
       }));
 
-      const normalizedLeaves: AvailabilityAbsenceRow[] = (
-        leaveData ?? []
-      ).map((item: any) => ({
-        ...item,
-        source: "leave",
-      }));
+      const normalizedLeaves: AvailabilityAbsenceRow[] = (leaveData ?? []).map(
+        (item: any) => ({
+          ...item,
+          source: "leave",
+        })
+      );
 
       setTechnicians((techData ?? []) as Technician[]);
       setRows([...normalizedAvailability, ...normalizedLeaves]);
@@ -209,6 +212,35 @@ export function AdminAvailabilityAndAbsenceTab() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function updateRequestStatus(
+    row: AvailabilityAbsenceRow,
+    newStatus: "approved" | "rejected"
+  ) {
+    setActionLoadingId(`${row.source}-${row.id}`);
+    setError("");
+
+    try {
+      const table =
+        row.source === "availability"
+          ? "technician_availability"
+          : "technician_leaves";
+
+      const { error: updateError } = await supabase
+        .from(table)
+        .update({ status: newStatus })
+        .eq("id", row.id);
+
+      if (updateError) throw updateError;
+
+      await loadAll();
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "No fue posible actualizar la solicitud.");
+    } finally {
+      setActionLoadingId("");
     }
   }
 
@@ -301,9 +333,7 @@ export function AdminAvailabilityAndAbsenceTab() {
               </div>
 
               <div className="rounded-xl border bg-slate-50 p-4">
-                <div className="text-xs text-slate-500">
-                  Registros del mes
-                </div>
+                <div className="text-xs text-slate-500">Registros del mes</div>
                 <div className="mt-1 text-2xl font-bold text-slate-900">
                   {monthlyRows.length}
                 </div>
@@ -312,6 +342,84 @@ export function AdminAvailabilityAndAbsenceTab() {
           </>
         )}
       </div>
+
+      {!loading && (
+        <div className="rounded-lg border bg-white p-4">
+          <div className="mb-3 font-medium text-slate-900">
+            Solicitudes pendientes de validación
+          </div>
+
+          {pendingRows.length === 0 ? (
+            <div className="rounded-md border bg-slate-50 p-3 text-sm text-slate-500">
+              No hay solicitudes pendientes en el período seleccionado.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {pendingRows.map((row) => {
+                const tech = techniciansById.get(row.technician_id);
+                const rowKey = `${row.source}-${row.id}`;
+                const isBusy = actionLoadingId === rowKey;
+
+                return (
+                  <div key={rowKey} className="rounded-lg border bg-amber-50 p-4">
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                      <div>
+                        <div className="font-medium text-slate-900">
+                          {safeText(tech?.full_name) || row.technician_id}
+                        </div>
+
+                        <div className="mt-1 text-sm text-slate-600">
+                          <b>{absenceTypeLabel(row)}</b> ·{" "}
+                          {normalizeDateString(row.start_date)} al{" "}
+                          {normalizeDateString(row.end_date)}
+                        </div>
+
+                        <div className="mt-1 text-xs text-slate-500">
+                          Origen: {sourceLabel(row.source)}
+                        </div>
+
+                        {safeText(row.reason) && (
+                          <div className="mt-2 text-sm text-slate-700">
+                            {safeText(row.reason)}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => updateRequestStatus(row, "approved")}
+                          className={`rounded-md px-3 py-2 text-sm font-medium text-white ${
+                            isBusy
+                              ? "bg-slate-400"
+                              : "bg-emerald-600 hover:bg-emerald-700"
+                          }`}
+                        >
+                          Aprobar
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => updateRequestStatus(row, "rejected")}
+                          className={`rounded-md px-3 py-2 text-sm font-medium text-white ${
+                            isBusy
+                              ? "bg-slate-400"
+                              : "bg-rose-600 hover:bg-rose-700"
+                          }`}
+                        >
+                          Rechazar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {!loading && (
         <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
@@ -359,13 +467,15 @@ export function AdminAvailabilityAndAbsenceTab() {
                             {safeText(tech.full_name) || tech.id}
                           </div>
                           <div className="mt-2 space-y-1 text-xs text-slate-600">
-                            {techRows.map((row) => (
-                              <div key={`${row.source}-${row.id}`}>
-                                • {absenceTypeLabel(row)} del{" "}
-                                <b>{normalizeDateString(row.start_date)}</b> al{" "}
-                                <b>{normalizeDateString(row.end_date)}</b>
-                              </div>
-                            ))}
+                            {techRows
+                              .filter((row) => row.status === "approved")
+                              .map((row) => (
+                                <div key={`${row.source}-${row.id}`}>
+                                  • {absenceTypeLabel(row)} del{" "}
+                                  <b>{normalizeDateString(row.start_date)}</b> al{" "}
+                                  <b>{normalizeDateString(row.end_date)}</b>
+                                </div>
+                              ))}
                           </div>
                         </div>
                       );
@@ -389,7 +499,9 @@ export function AdminAvailabilityAndAbsenceTab() {
               ) : (
                 visibleTechnicians.map((tech) => {
                   const techRows = rowsByTechnician.get(tech.id) ?? [];
-                  const hasMonthlyAbsence = techRows.length > 0;
+                  const hasMonthlyAbsence = techRows.some(
+                    (row) => row.status === "approved"
+                  );
 
                   return (
                     <div key={tech.id} className="rounded-lg border p-4">
@@ -400,7 +512,7 @@ export function AdminAvailabilityAndAbsenceTab() {
                           </div>
                           <div className="text-xs text-slate-500">
                             {hasMonthlyAbsence
-                              ? "Tiene ausencias registradas en el mes"
+                              ? "Tiene ausencias aprobadas en el mes"
                               : "100% operativo durante el mes"}
                           </div>
                         </div>
@@ -452,6 +564,32 @@ export function AdminAvailabilityAndAbsenceTab() {
                               {safeText(row.reason) && (
                                 <div className="mt-2 text-sm text-slate-600">
                                   {safeText(row.reason)}
+                                </div>
+                              )}
+
+                              {row.status === "pending" && (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={actionLoadingId === `${row.source}-${row.id}`}
+                                    onClick={() =>
+                                      updateRequestStatus(row, "approved")
+                                    }
+                                    className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-slate-400"
+                                  >
+                                    Aprobar
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={actionLoadingId === `${row.source}-${row.id}`}
+                                    onClick={() =>
+                                      updateRequestStatus(row, "rejected")
+                                    }
+                                    className="rounded-md bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:bg-slate-400"
+                                  >
+                                    Rechazar
+                                  </button>
                                 </div>
                               )}
                             </div>
