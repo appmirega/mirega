@@ -5,9 +5,9 @@ import {
   ClipboardList,
   AlertTriangle,
   FileText,
-  Wrench,
   User,
   Siren,
+  ClipboardCheck,
 } from "lucide-react";
 
 type ProfileRow = {
@@ -20,7 +20,9 @@ type DashboardStats = {
   stoppedElevators: number;
   emergenciesThisMonth: number;
   myRequestsThisMonth: number;
-  myRequestsInProgress: number;
+  myRequestsManaged: number;
+  myWorkOrdersIssued: number;
+  myWorkOrdersCompleted: number;
 };
 
 interface TechnicianDashboardProps {
@@ -35,7 +37,9 @@ export function TechnicianDashboard({
     stoppedElevators: 0,
     emergenciesThisMonth: 0,
     myRequestsThisMonth: 0,
-    myRequestsInProgress: 0,
+    myRequestsManaged: 0,
+    myWorkOrdersIssued: 0,
+    myWorkOrdersCompleted: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -74,20 +78,26 @@ export function TechnicianDashboard({
         lastDayOfMonth
       ).padStart(2, "0")}`;
 
-      const activeRequestStatuses = [
-        "pending",
+      const managedStatuses = [
         "analyzing",
         "quotation_sent",
         "approved",
+        "scheduled",
         "in_progress",
-        "on_hold",
+        "completed",
+        "closed",
+        "rejected",
       ];
+
+      const completedWorkOrderStatuses = ["completed", "closed"];
 
       const [
         { count: stoppedCount, error: stoppedError },
         { count: emergenciesMonthCount, error: emergencyError },
         { count: myRequestsMonthCount, error: myRequestsMonthError },
-        { count: myRequestsInProgressCount, error: myRequestsInProgressError },
+        { count: myRequestsManagedCount, error: myRequestsManagedError },
+        { count: myWorkOrdersIssuedCount, error: myWorkOrdersIssuedError },
+        { count: myWorkOrdersCompletedCount, error: myWorkOrdersCompletedError },
       ] = await Promise.all([
         supabase
           .from("emergency_visits")
@@ -113,19 +123,34 @@ export function TechnicianDashboard({
           .from("service_requests")
           .select("id", { count: "exact", head: true })
           .eq("created_by_technician_id", typedProfile.id)
-          .in("status", activeRequestStatuses),
+          .in("status", managedStatuses),
+
+        supabase
+          .from("work_orders")
+          .select("id", { count: "exact", head: true })
+          .eq("assigned_technician_id", typedProfile.id),
+
+        supabase
+          .from("work_orders")
+          .select("id", { count: "exact", head: true })
+          .eq("assigned_technician_id", typedProfile.id)
+          .in("status", completedWorkOrderStatuses),
       ]);
 
       if (stoppedError) throw stoppedError;
       if (emergencyError) throw emergencyError;
       if (myRequestsMonthError) throw myRequestsMonthError;
-      if (myRequestsInProgressError) throw myRequestsInProgressError;
+      if (myRequestsManagedError) throw myRequestsManagedError;
+      if (myWorkOrdersIssuedError) throw myWorkOrdersIssuedError;
+      if (myWorkOrdersCompletedError) throw myWorkOrdersCompletedError;
 
       setStats({
         stoppedElevators: stoppedCount || 0,
         emergenciesThisMonth: emergenciesMonthCount || 0,
         myRequestsThisMonth: myRequestsMonthCount || 0,
-        myRequestsInProgress: myRequestsInProgressCount || 0,
+        myRequestsManaged: myRequestsManagedCount || 0,
+        myWorkOrdersIssued: myWorkOrdersIssuedCount || 0,
+        myWorkOrdersCompleted: myWorkOrdersCompletedCount || 0,
       });
     } catch (err: any) {
       console.error("Error loading technician dashboard:", err);
@@ -172,7 +197,7 @@ export function TechnicianDashboard({
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         <button
           type="button"
-          onClick={() => onNavigate?.("emergencies")}
+          onClick={() => onNavigate?.("stopped-elevators")}
           className="rounded-xl border-2 border-red-200 bg-gradient-to-br from-red-500 to-red-600 p-6 text-left text-white shadow-lg transition hover:scale-[1.01] hover:shadow-xl"
         >
           <div className="mb-4 flex items-center justify-between">
@@ -189,13 +214,13 @@ export function TechnicianDashboard({
           <h3 className="mb-1 text-3xl font-bold">{stats.stoppedElevators}</h3>
           <p className="text-sm text-white/90">Ascensores detenidos</p>
           <p className="mt-2 text-xs text-white/80">
-            Ver listado e historial de detenidos
+            Ver listado de ascensores detenidos
           </p>
         </button>
 
         <button
           type="button"
-          onClick={() => onNavigate?.("emergencies")}
+          onClick={() => onNavigate?.("emergency-history")}
           className="rounded-xl border bg-white p-6 text-left shadow-sm transition hover:scale-[1.01] hover:shadow-md"
         >
           <div className="mb-4 w-fit rounded-lg bg-blue-500 p-3 text-white">
@@ -221,29 +246,29 @@ export function TechnicianDashboard({
           </div>
 
           <h3 className="mb-1 text-2xl font-bold text-slate-900">
-            {stats.myRequestsThisMonth}
+            {stats.myRequestsManaged} / {stats.myRequestsThisMonth}
           </h3>
-          <p className="text-sm text-slate-600">Mis solicitudes del mes</p>
+          <p className="text-sm text-slate-600">Mis solicitudes</p>
           <p className="mt-2 text-xs text-slate-500">
-            Ver todas mis solicitudes del período
+            Gestionadas por admin / Total del mes
           </p>
         </button>
 
         <button
           type="button"
-          onClick={() => onNavigate?.("service-requests")}
+          onClick={() => onNavigate?.("work-orders")}
           className="rounded-xl border bg-white p-6 text-left shadow-sm transition hover:scale-[1.01] hover:shadow-md"
         >
           <div className="mb-4 w-fit rounded-lg bg-amber-500 p-3 text-white">
-            <Wrench className="h-6 w-6" />
+            <ClipboardCheck className="h-6 w-6" />
           </div>
 
           <h3 className="mb-1 text-2xl font-bold text-slate-900">
-            {stats.myRequestsInProgress}
+            {stats.myWorkOrdersCompleted} / {stats.myWorkOrdersIssued}
           </h3>
-          <p className="text-sm text-slate-600">Estado de mis solicitudes</p>
+          <p className="text-sm text-slate-600">Órdenes de trabajo</p>
           <p className="mt-2 text-xs text-slate-500">
-            Pendientes, en análisis, aprobadas o en curso
+            Completadas / Emitidas
           </p>
         </button>
       </div>
@@ -299,7 +324,7 @@ export function TechnicianDashboard({
             </div>
           </div>
           <p className="text-sm text-slate-600">
-            Ingresa al historial, emergencias en curso y ascensores detenidos.
+            Ingresa a la gestión general de emergencias.
           </p>
         </button>
       </div>

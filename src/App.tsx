@@ -155,6 +155,36 @@ function App() {
       }
       break;
 
+    case "stopped-elevators":
+      if (profile?.role === "technician") {
+        content = <TechnicianEmergencyView initialTab="stopped-elevators" />;
+      } else if (profile?.role === "admin" || profile?.role === "developer") {
+        content = (
+          <AdminEmergenciesDashboard initialTab="stopped-elevators" />
+        );
+      } else {
+        content = (
+          <div className="py-12 text-center">
+            Vista no disponible para este rol.
+          </div>
+        );
+      }
+      break;
+
+    case "emergency-history":
+      if (profile?.role === "technician") {
+        content = <TechnicianEmergencyView initialTab="history" />;
+      } else if (profile?.role === "admin" || profile?.role === "developer") {
+        content = <AdminEmergenciesDashboard initialTab="history" />;
+      } else {
+        content = (
+          <div className="py-12 text-center">
+            Vista no disponible para este rol.
+          </div>
+        );
+      }
+      break;
+
     case "work-orders":
       if (profile?.role === "technician") {
         content = <TechnicianWorkOrdersView />;
@@ -276,18 +306,6 @@ function App() {
     case "carpeta-cero":
       if (profile?.role === "client") {
         content = <CarpetaCeroView />;
-      } else {
-        content = (
-          <div className="py-12 text-center">
-            Vista no disponible para este rol.
-          </div>
-        );
-      }
-      break;
-
-    case "stopped-elevators":
-      if (profile?.role === "technician") {
-        content = <TechnicianEmergencyView />;
       } else {
         content = (
           <div className="py-12 text-center">
