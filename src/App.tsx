@@ -30,6 +30,8 @@ import { ClientTechnicalInfoView } from "./components/views/ClientTechnicalInfoV
 import { ClientEmergenciesView } from "./components/views/ClientEmergenciesView";
 import { RescueTrainingView } from "./components/views/RescueTrainingView";
 import { CarpetaCeroView } from "./components/views/CarpetaCeroView";
+import StoppedElevators from "./components/views/StoppedElevators";
+import EmergencyHistory from "./components/views/EmergencyHistory";
 
 function App() {
   const [currentView, setCurrentView] = useState("dashboard");
@@ -156,30 +158,32 @@ function App() {
       break;
 
     case "stopped-elevators":
-      if (profile?.role === "technician") {
-        content = <TechnicianEmergencyView initialTab="stopped-elevators" />;
-      } else if (profile?.role === "admin" || profile?.role === "developer") {
-        content = (
-          <AdminEmergenciesDashboard initialTab="stopped-elevators" />
-        );
+      if (
+        profile?.role === "technician" ||
+        profile?.role === "admin" ||
+        profile?.role === "developer"
+      ) {
+        content = <StoppedElevators />;
       } else {
         content = (
           <div className="py-12 text-center">
-            Vista no disponible para este rol.
+            Vista de ascensores detenidos no disponible para este rol.
           </div>
         );
       }
       break;
 
     case "emergency-history":
-      if (profile?.role === "technician") {
-        content = <TechnicianEmergencyView initialTab="history" />;
-      } else if (profile?.role === "admin" || profile?.role === "developer") {
-        content = <AdminEmergenciesDashboard initialTab="history" />;
+      if (
+        profile?.role === "technician" ||
+        profile?.role === "admin" ||
+        profile?.role === "developer"
+      ) {
+        content = <EmergencyHistory />;
       } else {
         content = (
           <div className="py-12 text-center">
-            Vista no disponible para este rol.
+            Vista de historial de emergencias no disponible para este rol.
           </div>
         );
       }
