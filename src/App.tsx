@@ -30,8 +30,9 @@ import { ClientTechnicalInfoView } from "./components/views/ClientTechnicalInfoV
 import { ClientEmergenciesView } from "./components/views/ClientEmergenciesView";
 import { RescueTrainingView } from "./components/views/RescueTrainingView";
 import { CarpetaCeroView } from "./components/views/CarpetaCeroView";
-import StoppedElevators from "./components/views/StoppedElevators";
-import EmergencyHistory from "./components/views/EmergencyHistory";
+
+import { StoppedElevators } from "./components/emergency/StoppedElevators";
+import { EmergencyHistory } from "./components/emergency/EmergencyHistory";
 
 function App() {
   const [currentView, setCurrentView] = useState("dashboard");
@@ -163,7 +164,9 @@ function App() {
         profile?.role === "admin" ||
         profile?.role === "developer"
       ) {
-        content = <StoppedElevators />;
+        content = (
+          <StoppedElevators onBack={() => handleNavigate("emergencies")} />
+        );
       } else {
         content = (
           <div className="py-12 text-center">
@@ -179,7 +182,9 @@ function App() {
         profile?.role === "admin" ||
         profile?.role === "developer"
       ) {
-        content = <EmergencyHistory />;
+        content = (
+          <EmergencyHistory onBack={() => handleNavigate("emergencies")} />
+        );
       } else {
         content = (
           <div className="py-12 text-center">
