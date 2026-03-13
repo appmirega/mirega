@@ -64,7 +64,7 @@ function App() {
   switch (currentView) {
     case "dashboard":
       if (profile?.role === "admin" || profile?.role === "developer") {
-        content = <AdminDashboard />;
+        content = <AdminDashboard onNavigate={handleNavigate} />;
       } else if (profile?.role === "technician") {
         content = <TechnicianDashboard onNavigate={handleNavigate} />;
       } else if (profile?.role === "client") {
