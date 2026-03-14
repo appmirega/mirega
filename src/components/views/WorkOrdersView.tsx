@@ -1,493 +1,1033 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import { Plus, FileText, Clock, CheckCircle, X, AlertCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "../../lib/supabase";
+import {
+  assignTechnicianToWorkOrder,
+  createWorkOrder,
+  getPartsCatalog,
+  getWorkOrderItems,
+  getWorkOrdersForAdmin,
+  saveWorkOrderItems,
+  updateWorkOrder,
+  type WorkOrderCreateInput,
+} from "../../lib/workOrdersService";
+import type { WorkOrderAdminRow } from "../../lib/workOrdersService";
+import type { WorkOrderItem, WorkOrderItemType } from "../../types/workOrderItems";
+import type { PartCatalogItem } from "../../types/parts";
 
-interface WorkOrder {
+type ClientRow = {
   id: string;
-  elevator_id: string;
-  created_at: string;
-  work_type: string;
+  company_name: string | null;
+};
+
+type BuildingRow = {
+  id: string;
+  name: string | null;
+  client_id: string | null;
+};
+
+type ElevatorRow = {
+  id: string;
+  internal_number: string | null;
+  model: string | null;
+  building_id: string | null;
+  client_id: string | null;
+};
+
+type TechnicianRow = {
+  id: string;
+  full_name: string | null;
+};
+
+type FormItem = {
+  localId: string;
+  item_type: WorkOrderItemType;
   description: string;
-  status: string;
-  assigned_technician_id?: string;
+  quantity: number;
+  unit: string;
+  part_catalog_id?: string;
+  warranty_months?: number;
+  notes: string;
+  sort_order: number;
+};
+
+type CreateFormState = {
+  title: string;
+  description: string;
+  client_id: string;
+  building_id: string;
+  elevator_id: string;
+  work_type: string;
+  quotation_number: string;
+  quotation_pdf_url: string;
+  estimated_days: string;
+  required_technicians: string;
+  is_internal: boolean;
+  valid_until: string;
   priority: string;
-  scheduled_date?: string;
-  completed_at?: string;
-  notes?: string;
-  elevators?: {
-    brand: string;
-    model: string;
-    serial_number: string;
-    clients?: {
-      business_name: string;
-    };
-  };
-  profiles?: {
-    full_name: string;
-  };
+};
+
+const emptyForm = (): CreateFormState => ({
+  title: "",
+  description: "",
+  client_id: "",
+  building_id: "",
+  elevator_id: "",
+  work_type: "repair",
+  quotation_number: "",
+  quotation_pdf_url: "",
+  estimated_days: "",
+  required_technicians: "1",
+  is_internal: true,
+  valid_until: "",
+  priority: "medium",
+});
+
+function formatDate(date?: string) {
+  if (!date) return "—";
+  try {
+    return new Date(date).toLocaleDateString("es-CL");
+  } catch {
+    return date;
+  }
 }
 
-type ViewMode = 'list' | 'create';
+function getStatusLabel(status?: string) {
+  switch (status) {
+    case "draft":
+      return "Borrador";
+    case "waiting_client_approval":
+      return "Esperando aprobación cliente";
+    case "approved":
+      return "Aprobada";
+    case "assigned":
+      return "Asignada";
+    case "in_progress":
+      return "En progreso";
+    case "completed":
+      return "Completada";
+    case "cancelled":
+      return "Cancelada";
+    case "expired":
+      return "Vencida";
+    default:
+      return status || "—";
+  }
+}
+
+function getApprovalLabel(status?: string) {
+  switch (status) {
+    case "pending":
+      return "Pendiente";
+    case "approved":
+      return "Aprobada";
+    case "rejected":
+      return "Rechazada";
+    case "approved_by_admin_override":
+      return "Aprobada por admin";
+    default:
+      return status || "—";
+  }
+}
 
 export function WorkOrdersView() {
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [formData, setFormData] = useState({
-    elevator_id: '',
-    work_type: 'maintenance',
-    description: '',
-    priority: 'medium',
-    assigned_technician_id: '',
-    scheduled_date: '',
-    notes: '',
-  });
-  const [elevators, setElevators] = useState<any[]>([]);
-  const [technicians, setTechnicians] = useState<any[]>([]);
-  const [submitting, setSubmitting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+
+  const [workOrders, setWorkOrders] = useState<WorkOrderAdminRow[]>([]);
+  const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
+  const [selectedItems, setSelectedItems] = useState<WorkOrderItem[]>([]);
+
+  const [clients, setClients] = useState<ClientRow[]>([]);
+  const [buildings, setBuildings] = useState<BuildingRow[]>([]);
+  const [elevators, setElevators] = useState<ElevatorRow[]>([]);
+  const [technicians, setTechnicians] = useState<TechnicianRow[]>([]);
+  const [partsCatalog, setPartsCatalog] = useState<PartCatalogItem[]>([]);
+
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [form, setForm] = useState<CreateFormState>(emptyForm());
+  const [items, setItems] = useState<FormItem[]>([]);
+  const [assignTechnicianMap, setAssignTechnicianMap] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string>("");
+
+  const selectedWorkOrder = useMemo(
+    () => workOrders.find((wo) => wo.id === selectedWorkOrderId) ?? null,
+    [workOrders, selectedWorkOrderId]
+  );
+
+  const filteredBuildings = useMemo(() => {
+    if (!form.client_id) return buildings;
+    return buildings.filter((b) => b.client_id === form.client_id);
+  }, [buildings, form.client_id]);
+
+  const filteredElevators = useMemo(() => {
+    if (form.elevator_id && form.building_id) {
+      return elevators.filter((e) => e.building_id === form.building_id);
+    }
+    if (form.building_id) {
+      return elevators.filter((e) => e.building_id === form.building_id);
+    }
+    if (form.client_id) {
+      return elevators.filter((e) => e.client_id === form.client_id);
+    }
+    return elevators;
+  }, [elevators, form.client_id, form.building_id, form.elevator_id]);
 
   useEffect(() => {
-    loadWorkOrders();
-    loadElevators();
-    loadTechnicians();
+    void loadAll();
   }, []);
 
-  const loadWorkOrders = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('work_orders')
-        .select(`
-          *,
-          elevators (
-            brand,
-            model,
-            serial_number,
-            clients (
-              business_name
-            )
-          ),
-          profiles (
-            full_name
-          )
-        `)
-        .order('created_at', { ascending: false });
+  useEffect(() => {
+    if (!selectedWorkOrderId) {
+      setSelectedItems([]);
+      return;
+    }
+    void loadItems(selectedWorkOrderId);
+  }, [selectedWorkOrderId]);
 
-      if (error) throw error;
-      setWorkOrders(data || []);
-    } catch (error) {
-      console.error('Error loading work orders:', error);
+  async function loadAll() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const [
+        workOrdersData,
+        clientsRes,
+        buildingsRes,
+        elevatorsRes,
+        techniciansRes,
+        partsData,
+      ] = await Promise.all([
+        getWorkOrdersForAdmin(),
+        supabase
+          .from("clients")
+          .select("id, company_name")
+          .order("company_name", { ascending: true }),
+        supabase
+          .from("buildings")
+          .select("id, name, client_id")
+          .order("name", { ascending: true }),
+        supabase
+          .from("elevators")
+          .select("id, internal_number, model, building_id, client_id")
+          .order("internal_number", { ascending: true }),
+        supabase
+          .from("profiles")
+          .select("id, full_name")
+          .eq("role", "technician")
+          .eq("is_active", true)
+          .order("full_name", { ascending: true }),
+        getPartsCatalog(),
+      ]);
+
+      if (clientsRes.error) throw clientsRes.error;
+      if (buildingsRes.error) throw buildingsRes.error;
+      if (elevatorsRes.error) throw elevatorsRes.error;
+      if (techniciansRes.error) throw techniciansRes.error;
+
+      setWorkOrders(workOrdersData);
+      setClients((clientsRes.data ?? []) as ClientRow[]);
+      setBuildings((buildingsRes.data ?? []) as BuildingRow[]);
+      setElevators((elevatorsRes.data ?? []) as ElevatorRow[]);
+      setTechnicians((techniciansRes.data ?? []) as TechnicianRow[]);
+      setPartsCatalog(partsData);
+
+      if (workOrdersData.length > 0 && !selectedWorkOrderId) {
+        setSelectedWorkOrderId(workOrdersData[0].id);
+      }
+    } catch (err: any) {
+      console.error("Error loading work orders:", err);
+      setError(err?.message || "No fue posible cargar las órdenes de trabajo.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const loadElevators = async () => {
+  async function loadItems(workOrderId: string) {
     try {
-      const { data, error } = await supabase
-        .from('elevators')
-        .select('id, brand, model, serial_number, clients(business_name)')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setElevators(data || []);
-    } catch (error) {
-      console.error('Error loading elevators:', error);
+      const data = await getWorkOrderItems(workOrderId);
+      setSelectedItems(data);
+    } catch (err) {
+      console.error("Error loading work order items:", err);
+      setSelectedItems([]);
     }
-  };
+  }
 
-  const loadTechnicians = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .eq('role', 'technician')
-        .eq('is_active', true)
-        .order('full_name');
+  function updateForm<K extends keyof CreateFormState>(key: K, value: CreateFormState[K]) {
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
 
-      if (error) throw error;
-      setTechnicians(data || []);
-    } catch (error) {
-      console.error('Error loading technicians:', error);
-    }
-  };
+      if (key === "client_id") {
+        next.building_id = "";
+        next.elevator_id = "";
+      }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
+      if (key === "building_id") {
+        next.elevator_id = "";
+      }
 
-    try {
-      const { error } = await supabase.from('work_orders').insert([
-        {
-          elevator_id: formData.elevator_id,
-          work_type: formData.work_type,
-          description: formData.description,
-          priority: formData.priority,
-          assigned_technician_id: formData.assigned_technician_id || null,
-          scheduled_date: formData.scheduled_date || null,
-          notes: formData.notes || null,
-          status: 'pending',
-        },
-      ]);
+      return next;
+    });
+  }
 
-      if (error) throw error;
+  function addItem(itemType: WorkOrderItemType) {
+    setItems((prev) => [
+      ...prev,
+      {
+        localId: crypto.randomUUID(),
+        item_type: itemType,
+        description: "",
+        quantity: 1,
+        unit: itemType === "labor" ? "servicio" : "unidad",
+        notes: "",
+        sort_order: prev.length,
+      },
+    ]);
+  }
 
-      alert('Orden de trabajo creada exitosamente');
-      setFormData({
-        elevator_id: '',
-        work_type: 'maintenance',
-        description: '',
-        priority: 'medium',
-        assigned_technician_id: '',
-        scheduled_date: '',
-        notes: '',
-      });
-      setViewMode('list');
-      loadWorkOrders();
-    } catch (error: any) {
-      console.error('Error creating work order:', error);
-      alert('Error al crear orden de trabajo: ' + error.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  function updateItem(localId: string, patch: Partial<FormItem>) {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.localId !== localId) return item;
 
-  const getStatusBadge = (status: string) => {
-    const badges = {
-      pending: 'bg-yellow-100 text-yellow-800',
-      assigned: 'bg-blue-100 text-blue-800',
-      in_progress: 'bg-orange-100 text-orange-800',
-      completed: 'bg-green-100 text-green-800',
-      cancelled: 'bg-red-100 text-red-800',
-    };
-    return badges[status as keyof typeof badges] || 'bg-gray-100 text-gray-800';
-  };
+        const next = { ...item, ...patch };
 
-  const getPriorityBadge = (priority: string) => {
-    const badges = {
-      low: 'bg-slate-100 text-slate-800',
-      medium: 'bg-yellow-100 text-yellow-800',
-      high: 'bg-orange-100 text-orange-800',
-      urgent: 'bg-red-100 text-red-800',
-    };
-    return badges[priority as keyof typeof badges] || 'bg-gray-100 text-gray-800';
-  };
+        if (patch.part_catalog_id) {
+          const selectedPart = partsCatalog.find((p) => p.id === patch.part_catalog_id);
+          if (selectedPart) {
+            next.description = selectedPart.name;
+            next.warranty_months = selectedPart.default_warranty_months ?? 0;
+            next.unit = "unidad";
+          }
+        }
 
-  const getWorkTypeLabel = (type: string) => {
-    const labels = {
-      maintenance: 'Mantenimiento',
-      repair: 'Reparación',
-      installation: 'Instalación',
-      inspection: 'Inspección',
-      emergency: 'Emergencia',
-    };
-    return labels[type as keyof typeof labels] || type;
-  };
-
-  const getPriorityLabel = (priority: string) => {
-    const labels = {
-      low: 'Baja',
-      medium: 'Media',
-      high: 'Alta',
-      urgent: 'Urgente',
-    };
-    return labels[priority as keyof typeof labels] || priority;
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
-      </div>
+        return next;
+      })
     );
   }
 
-  if (viewMode === 'create') {
+  function removeItem(localId: string) {
+    setItems((prev) =>
+      prev
+        .filter((item) => item.localId !== localId)
+        .map((item, index) => ({ ...item, sort_order: index }))
+    );
+  }
+
+  async function handleCreateWorkOrder() {
+    setSaving(true);
+    setError("");
+
+    try {
+      if (!form.title.trim()) {
+        throw new Error("Debes ingresar un título para la OT.");
+      }
+      if (!form.client_id) {
+        throw new Error("Debes seleccionar un cliente.");
+      }
+      if (!form.quotation_number.trim()) {
+        throw new Error("Debes ingresar el número de cotización.");
+      }
+      if (!form.quotation_pdf_url.trim()) {
+        throw new Error("Debes ingresar la URL o referencia del PDF de cotización.");
+      }
+      if (items.length === 0) {
+        throw new Error("Debes agregar al menos un ítem de trabajo.");
+      }
+
+      const createInput: WorkOrderCreateInput = {
+        title: form.title.trim(),
+        description: form.description.trim() || undefined,
+        client_id: form.client_id,
+        building_id: form.building_id || undefined,
+        elevator_id: form.elevator_id || undefined,
+        work_type: (form.work_type as WorkOrderCreateInput["work_type"]) || "repair",
+        quotation_number: form.quotation_number.trim(),
+        quotation_pdf_url: form.quotation_pdf_url.trim(),
+        estimated_days: form.estimated_days ? Number(form.estimated_days) : null,
+        required_technicians: form.required_technicians
+          ? Number(form.required_technicians)
+          : 1,
+        is_internal: form.is_internal,
+        valid_until: form.valid_until || null,
+        priority: form.priority,
+        status: "waiting_client_approval",
+        client_approval_status: "pending",
+      };
+
+      const created = await createWorkOrder(createInput);
+
+      const itemsPayload = items.map((item) => ({
+        item_type: item.item_type,
+        description: item.description.trim(),
+        quantity: Number(item.quantity) || 1,
+        unit: item.unit || undefined,
+        part_catalog_id: item.part_catalog_id || undefined,
+        warranty_months:
+          typeof item.warranty_months === "number" ? item.warranty_months : undefined,
+        notes: item.notes.trim() || undefined,
+        sort_order: item.sort_order,
+      }));
+
+      await saveWorkOrderItems(created.id, itemsPayload);
+
+      setShowCreateForm(false);
+      setForm(emptyForm());
+      setItems([]);
+      await loadAll();
+      setSelectedWorkOrderId(created.id);
+    } catch (err: any) {
+      console.error("Error creating work order:", err);
+      setError(err?.message || "No fue posible crear la orden de trabajo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAssignTechnician(workOrderId: string) {
+    const technicianId = assignTechnicianMap[workOrderId];
+    if (!technicianId) return;
+
+    setAssigningId(workOrderId);
+    setError("");
+
+    try {
+      await assignTechnicianToWorkOrder(workOrderId, technicianId);
+      await loadAll();
+    } catch (err: any) {
+      console.error("Error assigning technician:", err);
+      setError(err?.message || "No fue posible asignar el técnico.");
+    } finally {
+      setAssigningId(null);
+    }
+  }
+
+  async function handleAdminApprove(workOrderId: string) {
+    setError("");
+    try {
+      await updateWorkOrder(workOrderId, {
+        status: "approved",
+        client_approval_status: "approved_by_admin_override",
+      });
+      await loadAll();
+    } catch (err: any) {
+      console.error("Error approving work order:", err);
+      setError(err?.message || "No fue posible aprobar manualmente la OT.");
+    }
+  }
+
+  if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <FileText className="w-6 h-6 text-blue-600" />
-            <h2 className="text-2xl font-bold text-slate-900">Crear Orden de Trabajo</h2>
-          </div>
-          <button
-            onClick={() => setViewMode('list')}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition"
-          >
-            <X className="w-4 h-4" />
-            Cancelar
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Ascensor *
-            </label>
-            <select
-              required
-              value={formData.elevator_id}
-              onChange={(e) => setFormData({ ...formData, elevator_id: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">Seleccionar ascensor</option>
-              {elevators.map((elevator) => (
-                <option key={elevator.id} value={elevator.id}>
-                  {elevator.clients?.business_name} - {elevator.brand} {elevator.model} (S/N: {elevator.serial_number})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Tipo de Trabajo *
-            </label>
-            <select
-              required
-              value={formData.work_type}
-              onChange={(e) => setFormData({ ...formData, work_type: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="maintenance">Mantenimiento</option>
-              <option value="repair">Reparación</option>
-              <option value="installation">Instalación</option>
-              <option value="inspection">Inspección</option>
-              <option value="emergency">Emergencia</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Descripción del Trabajo *
-            </label>
-            <textarea
-              required
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              rows={4}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Describe el trabajo a realizar..."
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Prioridad *
-              </label>
-              <select
-                required
-                value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="low">Baja</option>
-                <option value="medium">Media</option>
-                <option value="high">Alta</option>
-                <option value="urgent">Urgente</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Fecha Programada
-              </label>
-              <input
-                type="date"
-                value={formData.scheduled_date}
-                onChange={(e) => setFormData({ ...formData, scheduled_date: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Asignar Técnico
-            </label>
-            <select
-              value={formData.assigned_technician_id}
-              onChange={(e) => setFormData({ ...formData, assigned_technician_id: e.target.value })}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">Sin asignar</option>
-              {technicians.map((tech) => (
-                <option key={tech.id} value={tech.id}>
-                  {tech.full_name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Notas Adicionales
-            </label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              rows={3}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Notas o instrucciones especiales..."
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50"
-            >
-              {submitting ? 'Creando...' : 'Crear Orden de Trabajo'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className="px-6 py-3 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300 transition"
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-slate-900"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Órdenes de Trabajo</h1>
-          <p className="text-slate-600 mt-1">Gestión de órdenes de trabajo y asignaciones</p>
+          <p className="mt-1 text-slate-600">
+            Gestión administrativa de OT, cotizaciones y asignación técnica.
+          </p>
         </div>
+
         <button
-          onClick={() => setViewMode('create')}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          type="button"
+          onClick={() => setShowCreateForm((prev) => !prev)}
+          className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
         >
-          <Plus className="w-4 h-4" />
-          Nueva Orden
+          {showCreateForm ? "Cerrar formulario" : "Nueva OT"}
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <Clock className="w-8 h-8 text-yellow-600" />
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {showCreateForm && (
+        <div className="rounded-xl border bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-xl font-bold text-slate-900">Crear nueva orden de trabajo</h2>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div>
-              <p className="text-2xl font-bold text-yellow-900">
-                {workOrders.filter((w) => w.status === 'pending').length}
-              </p>
-              <p className="text-sm text-yellow-700">Pendientes</p>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Título *</label>
+              <input
+                value={form.title}
+                onChange={(e) => updateForm("title", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+                placeholder="Ej: Reparación operador de puerta"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Cliente *</label>
+              <select
+                value={form.client_id}
+                onChange={(e) => updateForm("client_id", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+              >
+                <option value="">Seleccionar cliente</option>
+                {clients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.company_name || client.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Edificio</label>
+              <select
+                value={form.building_id}
+                onChange={(e) => updateForm("building_id", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+              >
+                <option value="">Seleccionar edificio</option>
+                {filteredBuildings.map((building) => (
+                  <option key={building.id} value={building.id}>
+                    {building.name || building.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Ascensor</label>
+              <select
+                value={form.elevator_id}
+                onChange={(e) => updateForm("elevator_id", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+              >
+                <option value="">Seleccionar ascensor</option>
+                {filteredElevators.map((elevator) => (
+                  <option key={elevator.id} value={elevator.id}>
+                    {elevator.internal_number || elevator.model || elevator.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Tipo de trabajo</label>
+              <select
+                value={form.work_type}
+                onChange={(e) => updateForm("work_type", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+              >
+                <option value="repair">Reparación</option>
+                <option value="modernization">Modernización</option>
+                <option value="normative">Normativo</option>
+                <option value="improvement">Mejora</option>
+                <option value="maintenance">Mantenimiento</option>
+                <option value="inspection">Inspección</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Prioridad</label>
+              <select
+                value={form.priority}
+                onChange={(e) => updateForm("priority", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+              >
+                <option value="low">Baja</option>
+                <option value="medium">Media</option>
+                <option value="high">Alta</option>
+                <option value="critical">Crítica</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">N° cotización *</label>
+              <input
+                value={form.quotation_number}
+                onChange={(e) => updateForm("quotation_number", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+                placeholder="Ej: COT-2026-001"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">PDF cotización *</label>
+              <input
+                value={form.quotation_pdf_url}
+                onChange={(e) => updateForm("quotation_pdf_url", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+                placeholder="URL, ruta o referencia del PDF"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Días estimados</label>
+              <input
+                type="number"
+                min="1"
+                value={form.estimated_days}
+                onChange={(e) => updateForm("estimated_days", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Técnicos requeridos</label>
+              <input
+                type="number"
+                min="1"
+                value={form.required_technicians}
+                onChange={(e) => updateForm("required_technicians", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Válida hasta</label>
+              <input
+                type="date"
+                value={form.valid_until}
+                onChange={(e) => updateForm("valid_until", e.target.value)}
+                className="w-full rounded-lg border px-3 py-2"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 rounded-lg border px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={form.is_internal}
+                  onChange={(e) => updateForm("is_internal", e.target.checked)}
+                />
+                <span className="text-sm text-slate-700">Trabajo interno</span>
+              </label>
             </div>
           </div>
-        </div>
 
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <FileText className="w-8 h-8 text-blue-600" />
-            <div>
-              <p className="text-2xl font-bold text-blue-900">
-                {workOrders.filter((w) => w.status === 'assigned').length}
-              </p>
-              <p className="text-sm text-blue-700">Asignadas</p>
+          <div className="mt-4">
+            <label className="mb-1 block text-sm font-medium text-slate-700">Descripción general</label>
+            <textarea
+              value={form.description}
+              onChange={(e) => updateForm("description", e.target.value)}
+              className="min-h-[100px] w-full rounded-lg border px-3 py-2"
+              placeholder="Detalle general del trabajo a ejecutar"
+            />
+          </div>
+
+          <div className="mt-6 rounded-xl border border-slate-200 p-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Ítems de la OT</h3>
+                <p className="text-sm text-slate-600">
+                  Clasifica rápidamente repuestos, materiales y trabajos.
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => addItem("part")}
+                  className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
+                >
+                  + Repuesto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addItem("material")}
+                  className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
+                >
+                  + Material
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addItem("labor")}
+                  className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
+                >
+                  + Trabajo
+                </button>
+              </div>
             </div>
+
+            {items.length === 0 ? (
+              <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
+                Aún no agregas ítems. Debes ingresar al menos uno para crear la OT.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {items.map((item, index) => (
+                  <div key={item.localId} className="rounded-lg border p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-sm font-semibold text-slate-800">
+                        Ítem #{index + 1} · {item.item_type === "part"
+                          ? "Repuesto"
+                          : item.item_type === "material"
+                          ? "Material"
+                          : "Trabajo"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeItem(item.localId)}
+                        className="text-sm text-red-600 hover:text-red-700"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">Tipo</label>
+                        <select
+                          value={item.item_type}
+                          onChange={(e) =>
+                            updateItem(item.localId, {
+                              item_type: e.target.value as WorkOrderItemType,
+                            })
+                          }
+                          className="w-full rounded-lg border px-3 py-2"
+                        >
+                          <option value="part">Repuesto</option>
+                          <option value="material">Material</option>
+                          <option value="labor">Trabajo</option>
+                        </select>
+                      </div>
+
+                      {item.item_type === "part" ? (
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-600">Catálogo</label>
+                          <select
+                            value={item.part_catalog_id || ""}
+                            onChange={(e) =>
+                              updateItem(item.localId, { part_catalog_id: e.target.value })
+                            }
+                            className="w-full rounded-lg border px-3 py-2"
+                          >
+                            <option value="">Seleccionar repuesto</option>
+                            {partsCatalog.map((part) => (
+                              <option key={part.id} value={part.id}>
+                                {part.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-slate-600">Descripción</label>
+                          <input
+                            value={item.description}
+                            onChange={(e) =>
+                              updateItem(item.localId, { description: e.target.value })
+                            }
+                            className="w-full rounded-lg border px-3 py-2"
+                            placeholder="Descripción"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">Cantidad</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.quantity}
+                          onChange={(e) =>
+                            updateItem(item.localId, { quantity: Number(e.target.value) })
+                          }
+                          className="w-full rounded-lg border px-3 py-2"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">Unidad</label>
+                        <input
+                          value={item.unit}
+                          onChange={(e) =>
+                            updateItem(item.localId, { unit: e.target.value })
+                          }
+                          className="w-full rounded-lg border px-3 py-2"
+                          placeholder="unidad / mt / servicio"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Garantía meses
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={item.warranty_months ?? ""}
+                          onChange={(e) =>
+                            updateItem(item.localId, {
+                              warranty_months: e.target.value
+                                ? Number(e.target.value)
+                                : undefined,
+                            })
+                          }
+                          className="w-full rounded-lg border px-3 py-2"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <label className="mb-1 block text-xs font-medium text-slate-600">Notas</label>
+                      <input
+                        value={item.notes}
+                        onChange={(e) =>
+                          updateItem(item.localId, { notes: e.target.value })
+                        }
+                        className="w-full rounded-lg border px-3 py-2"
+                        placeholder="Observaciones del ítem"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreateForm(false);
+                setForm(emptyForm());
+                setItems([]);
+              }}
+              className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleCreateWorkOrder()}
+              disabled={saving}
+              className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {saving ? "Guardando..." : "Crear OT"}
+            </button>
           </div>
         </div>
+      )}
 
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <AlertCircle className="w-8 h-8 text-orange-600" />
-            <div>
-              <p className="text-2xl font-bold text-orange-900">
-                {workOrders.filter((w) => w.status === 'in_progress').length}
-              </p>
-              <p className="text-sm text-orange-700">En Proceso</p>
-            </div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-xl border bg-white shadow-sm">
+          <div className="border-b p-4">
+            <h2 className="text-lg font-semibold text-slate-900">Listado de OT</h2>
           </div>
-        </div>
 
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <CheckCircle className="w-8 h-8 text-green-600" />
-            <div>
-              <p className="text-2xl font-bold text-green-900">
-                {workOrders.filter((w) => w.status === 'completed').length}
-              </p>
-              <p className="text-sm text-green-700">Completadas</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Cliente</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Ascensor</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Tipo</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Descripción</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Prioridad</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Técnico</th>
-                <th className="text-left px-6 py-3 text-xs font-semibold text-slate-600 uppercase">Estado</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {workOrders.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-600">
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center">
-                    <FileText className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-                    <p className="text-slate-600 font-medium">No hay órdenes de trabajo</p>
-                    <p className="text-sm text-slate-500 mt-1">Crea tu primera orden de trabajo</p>
-                  </td>
+                  <th className="px-4 py-3">OT</th>
+                  <th className="px-4 py-3">Cliente</th>
+                  <th className="px-4 py-3">Estado</th>
+                  <th className="px-4 py-3">Aprobación</th>
+                  <th className="px-4 py-3">Técnico</th>
+                  <th className="px-4 py-3">Acciones</th>
                 </tr>
-              ) : (
-                workOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-slate-50 transition">
-                    <td className="px-6 py-4">
-                      <p className="font-medium text-slate-900">
-                        {order.elevators?.clients?.business_name || 'N/A'}
-                      </p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-slate-900">
-                        {order.elevators?.brand} {order.elevators?.model}
-                      </p>
-                      <p className="text-xs text-slate-500">S/N: {order.elevators?.serial_number}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-slate-900">{getWorkTypeLabel(order.work_type)}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-slate-900 max-w-xs truncate">{order.description}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPriorityBadge(
-                          order.priority
-                        )}`}
+              </thead>
+              <tbody>
+                {workOrders.map((wo) => (
+                  <tr
+                    key={wo.id}
+                    className={`border-t ${
+                      selectedWorkOrderId === wo.id ? "bg-slate-50" : "bg-white"
+                    }`}
+                  >
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWorkOrderId(wo.id)}
+                        className="text-left"
                       >
-                        {getPriorityLabel(order.priority)}
-                      </span>
+                        <div className="font-semibold text-slate-900">
+                          OT-{wo.ot_number}
+                        </div>
+                        <div className="text-xs text-slate-500">{wo.title}</div>
+                      </button>
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-slate-900">{order.profiles?.full_name || 'Sin asignar'}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(
-                          order.status
-                        )}`}
-                      >
-                        {order.status}
-                      </span>
+
+                    <td className="px-4 py-3">{wo.client_name || "—"}</td>
+                    <td className="px-4 py-3">{getStatusLabel(wo.status)}</td>
+                    <td className="px-4 py-3">{getApprovalLabel(wo.client_approval_status)}</td>
+                    <td className="px-4 py-3">{wo.technician_name || "Sin asignar"}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-2">
+                        {wo.status === "waiting_client_approval" && (
+                          <button
+                            type="button"
+                            onClick={() => void handleAdminApprove(wo.id)}
+                            className="rounded-lg border px-3 py-1.5 text-xs hover:bg-slate-50"
+                          >
+                            Aprobar manualmente
+                          </button>
+                        )}
+
+                        {(wo.status === "approved" ||
+                          wo.status === "waiting_client_approval") && (
+                          <div className="flex gap-2">
+                            <select
+                              value={assignTechnicianMap[wo.id] || ""}
+                              onChange={(e) =>
+                                setAssignTechnicianMap((prev) => ({
+                                  ...prev,
+                                  [wo.id]: e.target.value,
+                                }))
+                              }
+                              className="rounded-lg border px-2 py-1.5 text-xs"
+                            >
+                              <option value="">Asignar técnico</option>
+                              {technicians.map((tech) => (
+                                <option key={tech.id} value={tech.id}>
+                                  {tech.full_name || tech.id}
+                                </option>
+                              ))}
+                            </select>
+
+                            <button
+                              type="button"
+                              disabled={!assignTechnicianMap[wo.id] || assigningId === wo.id}
+                              onClick={() => void handleAssignTechnician(wo.id)}
+                              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                            >
+                              {assigningId === wo.id ? "..." : "Asignar"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
-                ))
+                ))}
+
+                {workOrders.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                      No hay órdenes de trabajo registradas.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-white shadow-sm">
+          <div className="border-b p-4">
+            <h2 className="text-lg font-semibold text-slate-900">Detalle de OT</h2>
+          </div>
+
+          {!selectedWorkOrder ? (
+            <div className="p-6 text-sm text-slate-500">
+              Selecciona una orden para ver su detalle.
+            </div>
+          ) : (
+            <div className="space-y-5 p-5">
+              <div>
+                <div className="text-xs uppercase text-slate-500">Orden</div>
+                <div className="text-xl font-bold text-slate-900">
+                  OT-{selectedWorkOrder.ot_number}
+                </div>
+                <div className="text-sm text-slate-600">{selectedWorkOrder.title}</div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <div className="text-slate-500">Cliente</div>
+                  <div className="font-medium">{selectedWorkOrder.client_name || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Edificio</div>
+                  <div className="font-medium">{selectedWorkOrder.building_name || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Ascensor</div>
+                  <div className="font-medium">{selectedWorkOrder.elevator_name || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Técnico</div>
+                  <div className="font-medium">{selectedWorkOrder.technician_name || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Estado</div>
+                  <div className="font-medium">{getStatusLabel(selectedWorkOrder.status)}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Aprobación</div>
+                  <div className="font-medium">
+                    {getApprovalLabel(selectedWorkOrder.client_approval_status)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Cotización</div>
+                  <div className="font-medium">{selectedWorkOrder.quotation_number || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Válida hasta</div>
+                  <div className="font-medium">{formatDate((selectedWorkOrder as any).valid_until)}</div>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-1 text-slate-500">Descripción</div>
+                <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+                  {selectedWorkOrder.description || "Sin descripción"}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 text-slate-500">Ítems de la OT</div>
+                {selectedItems.length === 0 ? (
+                  <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">
+                    Esta OT no tiene ítems registrados.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {selectedItems.map((item) => (
+                      <div key={item.id} className="rounded-lg border p-3 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium text-slate-900">{item.description}</div>
+                          <div className="text-xs uppercase text-slate-500">
+                            {item.item_type === "part"
+                              ? "Repuesto"
+                              : item.item_type === "material"
+                              ? "Material"
+                              : "Trabajo"}
+                          </div>
+                        </div>
+                        <div className="mt-1 text-slate-600">
+                          Cantidad: {item.quantity} {item.unit || ""}
+                        </div>
+                        {typeof item.warranty_months === "number" && (
+                          <div className="text-slate-600">
+                            Garantía: {item.warranty_months} meses
+                          </div>
+                        )}
+                        {item.notes && <div className="text-slate-500">{item.notes}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {selectedWorkOrder.quotation_pdf_url && (
+                <div>
+                  <a
+                    href={selectedWorkOrder.quotation_pdf_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50"
+                  >
+                    Ver PDF cotización
+                  </a>
+                </div>
               )}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
