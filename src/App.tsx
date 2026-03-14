@@ -11,7 +11,6 @@ import { TechnicianDashboard } from "./components/dashboards/TechnicianDashboard
 import { ClientDashboard } from "./components/dashboards/ClientDashboard";
 
 import { AdminMaintenancesDashboard } from "./components/views/AdminMaintenancesDashboard";
-import { MaintenancesDashboard } from "./components/views/MaintenancesDashboard";
 import AdminCalendarDashboard from "./components/views/AdminCalendarDashboard";
 import TechnicianCalendarView from "./components/views/TechnicianCalendarView";
 import { TechnicianMaintenanceChecklistView } from "./components/views/TechnicianMaintenanceChecklistView";
@@ -119,7 +118,7 @@ function App() {
 
     case "new-maintenance":
       if (profile?.role === "admin" || profile?.role === "developer") {
-        content = <MaintenancesDashboard />;
+        content = <TechnicianMaintenanceChecklistView />;
       } else {
         content = (
           <div className="py-12 text-center">
