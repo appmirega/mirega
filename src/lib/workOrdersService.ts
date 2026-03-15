@@ -159,7 +159,10 @@ function mapWorkOrder(row: Record<string, unknown>): WorkOrder {
   };
 }
 
-function mapWorkOrderItem(row: Record<string, unknown>): WorkOrderItem {
+function mapWorkOrderItem(row: Record<string, unknown>): WorkOrderItem & {
+  scope_type?: string;
+  target_elevator_id?: string;
+} {
   return {
     id: String(row.id),
     work_order_id: String(row.work_order_id),
@@ -176,6 +179,10 @@ function mapWorkOrderItem(row: Record<string, unknown>): WorkOrderItem {
     sort_order: typeof row.sort_order === "number" ? row.sort_order : undefined,
     created_at: row.created_at ? String(row.created_at) : undefined,
     updated_at: row.updated_at ? String(row.updated_at) : undefined,
+    scope_type: row.scope_type ? String(row.scope_type) : undefined,
+    target_elevator_id: row.target_elevator_id
+      ? String(row.target_elevator_id)
+      : undefined,
   };
 }
 
@@ -217,9 +224,7 @@ export async function getNextWorkOrderNumber(): Promise<number> {
     .limit(1)
     .maybeSingle();
 
-  if (fallbackError) {
-    throw fallbackError;
-  }
+  if (fallbackError) throw fallbackError;
 
   return Number(fallback?.ot_number ?? 999) + 1;
 }
@@ -231,7 +236,7 @@ export async function getWorkOrdersForAdmin(): Promise<WorkOrderAdminRow[]> {
       *,
       clients:client_id ( company_name ),
       buildings:building_id ( name ),
-      elevators:elevator_id ( elevator_number, model ),
+      elevators:elevator_id ( elevator_number, tower_name, location_building, model ),
       technicians:assigned_technician_id ( full_name )
     `)
     .order("created_at", { ascending: false });
@@ -245,15 +250,23 @@ export async function getWorkOrdersForAdmin(): Promise<WorkOrderAdminRow[]> {
     const elevator = row.elevators as Record<string, unknown> | null;
     const technician = row.technicians as Record<string, unknown> | null;
 
+    let elevatorName: string | undefined;
+    if (elevator?.elevator_number) {
+      elevatorName = `Ascensor #${String(elevator.elevator_number)}`;
+      if (elevator?.tower_name) {
+        elevatorName += ` — ${String(elevator.tower_name)}`;
+      } else if (elevator?.location_building) {
+        elevatorName += ` — ${String(elevator.location_building)}`;
+      }
+    } else if (elevator?.model) {
+      elevatorName = String(elevator.model);
+    }
+
     return {
       ...mapped,
       client_name: client?.company_name ? String(client.company_name) : undefined,
       building_name: building?.name ? String(building.name) : undefined,
-      elevator_name: elevator?.elevator_number
-        ? String(elevator.elevator_number)
-        : elevator?.model
-        ? String(elevator.model)
-        : undefined,
+      elevator_name: elevatorName,
       technician_name: technician?.full_name
         ? String(technician.full_name)
         : undefined,
@@ -270,7 +283,7 @@ export async function getWorkOrdersForTechnician(
       *,
       clients:client_id ( company_name ),
       buildings:building_id ( name ),
-      elevators:elevator_id ( elevator_number, model )
+      elevators:elevator_id ( elevator_number, tower_name, location_building, model )
     `)
     .eq("assigned_technician_id", technicianId)
     .order("created_at", { ascending: false });
@@ -283,15 +296,23 @@ export async function getWorkOrdersForTechnician(
     const building = row.buildings as Record<string, unknown> | null;
     const elevator = row.elevators as Record<string, unknown> | null;
 
+    let elevatorName: string | undefined;
+    if (elevator?.elevator_number) {
+      elevatorName = `Ascensor #${String(elevator.elevator_number)}`;
+      if (elevator?.tower_name) {
+        elevatorName += ` — ${String(elevator.tower_name)}`;
+      } else if (elevator?.location_building) {
+        elevatorName += ` — ${String(elevator.location_building)}`;
+      }
+    } else if (elevator?.model) {
+      elevatorName = String(elevator.model);
+    }
+
     return {
       ...mapped,
       client_name: client?.company_name ? String(client.company_name) : undefined,
       building_name: building?.name ? String(building.name) : undefined,
-      elevator_name: elevator?.elevator_number
-        ? String(elevator.elevator_number)
-        : elevator?.model
-        ? String(elevator.model)
-        : undefined,
+      elevator_name: elevatorName,
     };
   });
 }
@@ -305,7 +326,7 @@ export async function getWorkOrderById(
       *,
       clients:client_id ( company_name ),
       buildings:building_id ( name ),
-      elevators:elevator_id ( elevator_number, model ),
+      elevators:elevator_id ( elevator_number, tower_name, location_building, model ),
       technicians:assigned_technician_id ( full_name )
     `)
     .eq("id", workOrderId)
@@ -321,15 +342,23 @@ export async function getWorkOrderById(
   const elevator = row.elevators as Record<string, unknown> | null;
   const technician = row.technicians as Record<string, unknown> | null;
 
+  let elevatorName: string | undefined;
+  if (elevator?.elevator_number) {
+    elevatorName = `Ascensor #${String(elevator.elevator_number)}`;
+    if (elevator?.tower_name) {
+      elevatorName += ` — ${String(elevator.tower_name)}`;
+    } else if (elevator?.location_building) {
+      elevatorName += ` — ${String(elevator.location_building)}`;
+    }
+  } else if (elevator?.model) {
+    elevatorName = String(elevator.model);
+  }
+
   return {
     ...mapped,
     client_name: client?.company_name ? String(client.company_name) : undefined,
     building_name: building?.name ? String(building.name) : undefined,
-    elevator_name: elevator?.elevator_number
-      ? String(elevator.elevator_number)
-      : elevator?.model
-      ? String(elevator.model)
-      : undefined,
+    elevator_name: elevatorName,
     technician_name: technician?.full_name
       ? String(technician.full_name)
       : undefined,
@@ -383,13 +412,9 @@ export async function updateWorkOrder(
   workOrderId: UUID,
   input: WorkOrderUpdateInput
 ): Promise<WorkOrder> {
-  const payload: Record<string, unknown> = {
-    ...input,
-  };
-
   const { data, error } = await supabase
     .from("work_orders")
-    .update(payload)
+    .update({ ...input })
     .eq("id", workOrderId)
     .select("*")
     .single();
@@ -401,8 +426,13 @@ export async function updateWorkOrder(
 
 export async function saveWorkOrderItems(
   workOrderId: UUID,
-  items: Array<Omit<WorkOrderItem, "id" | "work_order_id" | "created_at" | "updated_at">>
-): Promise<WorkOrderItem[]> {
+  items: Array<
+    Omit<WorkOrderItem, "id" | "work_order_id" | "created_at" | "updated_at"> & {
+      scope_type?: string;
+      target_elevator_id?: string;
+    }
+  >
+): Promise<(WorkOrderItem & { scope_type?: string; target_elevator_id?: string })[]> {
   const { error: deleteError } = await supabase
     .from("work_order_items")
     .delete()
@@ -422,6 +452,8 @@ export async function saveWorkOrderItems(
     warranty_months: item.warranty_months ?? null,
     notes: item.notes ?? null,
     sort_order: item.sort_order ?? index,
+    scope_type: item.scope_type ?? "single_elevator",
+    target_elevator_id: item.target_elevator_id ?? null,
   }));
 
   const { data, error } = await supabase
@@ -437,7 +469,7 @@ export async function saveWorkOrderItems(
 
 export async function getWorkOrderItems(
   workOrderId: UUID
-): Promise<WorkOrderItem[]> {
+): Promise<(WorkOrderItem & { scope_type?: string; target_elevator_id?: string })[]> {
   const { data, error } = await supabase
     .from("work_order_items")
     .select("*")
@@ -605,7 +637,8 @@ export async function registerInstalledPartsFromItems(
       warrantyMonths > 0 ? addMonthsToDate(installedAt, warrantyMonths) : null;
 
     return {
-      elevator_id: workOrder.elevator_id,
+      elevator_id:
+        item.target_elevator_id ?? workOrder.elevator_id,
       work_order_id: workOrderId,
       part_catalog_id: item.part_catalog_id,
       installed_at: installedAt,

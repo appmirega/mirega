@@ -11,7 +11,7 @@ import {
   type WorkOrderCreateInput,
 } from "../../lib/workOrdersService";
 import type { WorkOrderAdminRow } from "../../lib/workOrdersService";
-import type { WorkOrderItem, WorkOrderItemType } from "../../types/workOrderItems";
+import type { WorkOrderItemType } from "../../types/workOrderItems";
 import type { PartCatalogItem } from "../../types/parts";
 
 type ClientRow = {
@@ -40,6 +40,8 @@ type TechnicianRow = {
   full_name: string | null;
 };
 
+type ItemScopeType = "single_elevator" | "all_selected_elevators";
+
 type FormItem = {
   localId: string;
   item_type: WorkOrderItemType;
@@ -50,6 +52,8 @@ type FormItem = {
   warranty_months?: number;
   notes: string;
   sort_order: number;
+  scope_type: ItemScopeType;
+  target_elevator_id: string;
 };
 
 type CreateFormState = {
@@ -57,7 +61,6 @@ type CreateFormState = {
   description: string;
   client_id: string;
   building_id: string;
-  elevator_id: string;
   work_type: string;
   quotation_number: string;
   quotation_pdf_url: string;
@@ -73,7 +76,6 @@ const emptyForm = (): CreateFormState => ({
   description: "",
   client_id: "",
   building_id: "",
-  elevator_id: "",
   work_type: "repair",
   quotation_number: "",
   quotation_pdf_url: "",
@@ -164,7 +166,7 @@ export function WorkOrdersView() {
 
   const [workOrders, setWorkOrders] = useState<WorkOrderAdminRow[]>([]);
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
-  const [selectedItems, setSelectedItems] = useState<WorkOrderItem[]>([]);
+  const [selectedItems, setSelectedItems] = useState<any[]>([]);
 
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [buildings, setBuildings] = useState<BuildingRow[]>([]);
@@ -174,6 +176,7 @@ export function WorkOrdersView() {
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState<CreateFormState>(emptyForm());
+  const [selectedElevatorIds, setSelectedElevatorIds] = useState<string[]>([]);
   const [items, setItems] = useState<FormItem[]>([]);
   const [assignTechnicianMap, setAssignTechnicianMap] = useState<Record<string, string>>({});
   const [selectedQuotationFile, setSelectedQuotationFile] = useState<File | null>(null);
@@ -202,6 +205,12 @@ export function WorkOrdersView() {
 
     return Array.from(unique.values());
   }, [elevators, form.client_id]);
+
+  const selectedElevators = useMemo(() => {
+    return filteredElevators.filter((elevator) =>
+      selectedElevatorIds.includes(elevator.id)
+    );
+  }, [filteredElevators, selectedElevatorIds]);
 
   useEffect(() => {
     void loadAll();
@@ -290,11 +299,19 @@ export function WorkOrdersView() {
       const next = { ...prev, [key]: value };
 
       if (key === "client_id") {
-        next.elevator_id = "";
+        setSelectedElevatorIds([]);
       }
 
       return next;
     });
+  }
+
+  function toggleElevatorSelection(elevatorId: string) {
+    setSelectedElevatorIds((prev) =>
+      prev.includes(elevatorId)
+        ? prev.filter((id) => id !== elevatorId)
+        : [...prev, elevatorId]
+    );
   }
 
   function addItem(itemType: WorkOrderItemType) {
@@ -308,6 +325,8 @@ export function WorkOrdersView() {
         unit: itemType === "labor" ? "servicio" : "unidad",
         notes: "",
         sort_order: prev.length,
+        scope_type: "single_elevator",
+        target_elevator_id: selectedElevatorIds[0] || "",
       },
     ]);
   }
@@ -326,6 +345,10 @@ export function WorkOrdersView() {
             next.warranty_months = selectedPart.default_warranty_months ?? 0;
             next.unit = "unidad";
           }
+        }
+
+        if (patch.scope_type === "all_selected_elevators") {
+          next.target_elevator_id = "";
         }
 
         return next;
@@ -370,6 +393,9 @@ export function WorkOrdersView() {
       if (!form.client_id) {
         throw new Error("Debes seleccionar un cliente.");
       }
+      if (selectedElevatorIds.length === 0) {
+        throw new Error("Debes seleccionar al menos un ascensor.");
+      }
       if (!form.quotation_number.trim()) {
         throw new Error("Debes ingresar el número de cotización.");
       }
@@ -378,6 +404,16 @@ export function WorkOrdersView() {
       }
       if (items.length === 0) {
         throw new Error("Debes agregar al menos un ítem de trabajo.");
+      }
+
+      const invalidSingleScope = items.some(
+        (item) =>
+          item.scope_type === "single_elevator" &&
+          !item.target_elevator_id
+      );
+
+      if (invalidSingleScope) {
+        throw new Error("Hay ítems configurados para un ascensor específico sin ascensor asignado.");
       }
 
       let quotationPdfUrl = form.quotation_pdf_url.trim();
@@ -390,12 +426,14 @@ export function WorkOrdersView() {
         );
       }
 
+      const primaryElevatorId = selectedElevatorIds[0];
+
       const createInput: WorkOrderCreateInput = {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         client_id: form.client_id,
         building_id: form.building_id || undefined,
-        elevator_id: form.elevator_id || undefined,
+        elevator_id: primaryElevatorId || undefined,
         work_type: (form.work_type as WorkOrderCreateInput["work_type"]) || "repair",
         quotation_number: form.quotation_number.trim(),
         quotation_pdf_url: quotationPdfUrl,
@@ -422,14 +460,18 @@ export function WorkOrdersView() {
           typeof item.warranty_months === "number" ? item.warranty_months : undefined,
         notes: item.notes.trim() || undefined,
         sort_order: item.sort_order,
+        scope_type: item.scope_type,
+        target_elevator_id:
+          item.scope_type === "single_elevator" ? item.target_elevator_id || undefined : undefined,
       }));
 
-      await saveWorkOrderItems(created.id, itemsPayload);
+      await saveWorkOrderItems(created.id, itemsPayload as any);
 
       setShowCreateForm(false);
       setForm(emptyForm());
       setItems([]);
       setSelectedQuotationFile(null);
+      setSelectedElevatorIds([]);
       await loadAll();
       setSelectedWorkOrderId(created.id);
     } catch (err: any) {
@@ -555,23 +597,49 @@ export function WorkOrdersView() {
               </select>
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Ascensor</label>
-              <select
-                value={form.elevator_id}
-                onChange={(e) => updateForm("elevator_id", e.target.value)}
-                className="w-full rounded-lg border px-3 py-2"
-                disabled={!form.client_id}
-              >
-                <option value="">
-                  {form.client_id ? "Seleccionar ascensor" : "Primero selecciona un cliente"}
-                </option>
-                {filteredElevators.map((elevator) => (
-                  <option key={elevator.id} value={elevator.id}>
-                    {getElevatorLabel(elevator)}
-                  </option>
-                ))}
-              </select>
+            <div className="md:col-span-2 xl:col-span-3">
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Ascensores incluidos en la OT *
+              </label>
+
+              {!form.client_id ? (
+                <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-500">
+                  Primero selecciona un cliente para ver sus ascensores.
+                </div>
+              ) : filteredElevators.length === 0 ? (
+                <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-500">
+                  Este cliente no tiene ascensores disponibles.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {filteredElevators.map((elevator) => {
+                    const checked = selectedElevatorIds.includes(elevator.id);
+                    return (
+                      <label
+                        key={elevator.id}
+                        className={`flex items-start gap-3 rounded-lg border p-3 ${
+                          checked ? "border-slate-900 bg-slate-50" : "border-slate-200"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleElevatorSelection(elevator.id)}
+                          className="mt-1"
+                        />
+                        <div>
+                          <div className="font-medium text-slate-900">
+                            {getElevatorLabel(elevator)}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            ID: {elevator.id.slice(0, 8)}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div>
@@ -706,7 +774,7 @@ export function WorkOrdersView() {
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Ítems de la OT</h3>
                 <p className="text-sm text-slate-600">
-                  Clasifica rápidamente repuestos, materiales y trabajos.
+                  Define si cada ítem aplica a un ascensor específico o a todos.
                 </p>
               </div>
 
@@ -759,6 +827,52 @@ export function WorkOrdersView() {
                       >
                         Eliminar
                       </button>
+                    </div>
+
+                    <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Aplica a
+                        </label>
+                        <select
+                          value={item.scope_type}
+                          onChange={(e) =>
+                            updateItem(item.localId, {
+                              scope_type: e.target.value as ItemScopeType,
+                            })
+                          }
+                          className="w-full rounded-lg border px-3 py-2"
+                        >
+                          <option value="single_elevator">Un ascensor específico</option>
+                          <option value="all_selected_elevators">
+                            Todos los ascensores seleccionados
+                          </option>
+                        </select>
+                      </div>
+
+                      {item.scope_type === "single_elevator" && (
+                        <div className="xl:col-span-2">
+                          <label className="mb-1 block text-xs font-medium text-slate-600">
+                            Ascensor destino
+                          </label>
+                          <select
+                            value={item.target_elevator_id}
+                            onChange={(e) =>
+                              updateItem(item.localId, {
+                                target_elevator_id: e.target.value,
+                              })
+                            }
+                            className="w-full rounded-lg border px-3 py-2"
+                          >
+                            <option value="">Seleccionar ascensor</option>
+                            {selectedElevators.map((elevator) => (
+                              <option key={elevator.id} value={elevator.id}>
+                                {getElevatorLabel(elevator)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -890,6 +1004,7 @@ export function WorkOrdersView() {
                 setForm(emptyForm());
                 setItems([]);
                 setSelectedQuotationFile(null);
+                setSelectedElevatorIds([]);
               }}
               className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50"
             >
@@ -1042,7 +1157,7 @@ export function WorkOrdersView() {
                   <div className="font-medium">{selectedWorkOrder.building_name || "—"}</div>
                 </div>
                 <div>
-                  <div className="text-slate-500">Ascensor</div>
+                  <div className="text-slate-500">Ascensor referencia</div>
                   <div className="font-medium">{selectedWorkOrder.elevator_name || "—"}</div>
                 </div>
                 <div>
@@ -1101,6 +1216,14 @@ export function WorkOrdersView() {
                         <div className="mt-1 text-slate-600">
                           Cantidad: {item.quantity} {item.unit || ""}
                         </div>
+                        {item.scope_type && (
+                          <div className="text-slate-500">
+                            Aplica a:{" "}
+                            {item.scope_type === "all_selected_elevators"
+                              ? "Todos los ascensores seleccionados"
+                              : "Un ascensor específico"}
+                          </div>
+                        )}
                         {typeof item.warranty_months === "number" && (
                           <div className="text-slate-600">
                             Garantía: {item.warranty_months} meses
