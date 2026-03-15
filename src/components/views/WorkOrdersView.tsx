@@ -27,7 +27,11 @@ type BuildingRow = {
 
 type ElevatorRow = {
   id: string;
-  elevator_number: string | null;
+  client_id: string | null;
+  elevator_number: number | null;
+  tower_name: string | null;
+  index_number: number | null;
+  location_building: string | null;
   model: string | null;
 };
 
@@ -127,6 +131,31 @@ function getApprovalLabel(status?: string) {
   }
 }
 
+function getElevatorLabel(elevator: ElevatorRow) {
+  const elevatorNumber =
+    elevator.elevator_number !== null && elevator.elevator_number !== undefined
+      ? `Ascensor #${elevator.elevator_number}`
+      : "Ascensor";
+
+  if (elevator.tower_name) {
+    return `${elevatorNumber} — ${elevator.tower_name}`;
+  }
+
+  if (elevator.location_building) {
+    return `${elevatorNumber} — ${elevator.location_building}`;
+  }
+
+  if (elevator.index_number !== null && elevator.index_number !== undefined) {
+    return `${elevatorNumber} — Nº interno ${elevator.index_number}`;
+  }
+
+  if (elevator.model) {
+    return `${elevatorNumber} — ${elevator.model}`;
+  }
+
+  return elevatorNumber;
+}
+
 export function WorkOrdersView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -154,6 +183,25 @@ export function WorkOrdersView() {
     () => workOrders.find((wo) => wo.id === selectedWorkOrderId) ?? null,
     [workOrders, selectedWorkOrderId]
   );
+
+  const filteredElevators = useMemo(() => {
+    if (!form.client_id) return [];
+
+    const filtered = elevators.filter(
+      (elevator) => elevator.client_id === form.client_id
+    );
+
+    const unique = new Map<string, ElevatorRow>();
+
+    for (const elevator of filtered) {
+      const key = `${elevator.client_id}-${elevator.tower_name ?? ""}-${elevator.index_number ?? ""}-${elevator.elevator_number ?? ""}`;
+      if (!unique.has(key)) {
+        unique.set(key, elevator);
+      }
+    }
+
+    return Array.from(unique.values());
+  }, [elevators, form.client_id]);
 
   useEffect(() => {
     void loadAll();
@@ -191,7 +239,9 @@ export function WorkOrdersView() {
           .order("name", { ascending: true }),
         supabase
           .from("elevators")
-          .select("id, elevator_number, model")
+          .select("id, client_id, elevator_number, tower_name, index_number, location_building, model")
+          .order("tower_name", { ascending: true })
+          .order("index_number", { ascending: true })
           .order("elevator_number", { ascending: true }),
         supabase
           .from("profiles")
@@ -236,7 +286,15 @@ export function WorkOrdersView() {
   }
 
   function updateForm<K extends keyof CreateFormState>(key: K, value: CreateFormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+
+      if (key === "client_id") {
+        next.elevator_id = "";
+      }
+
+      return next;
+    });
   }
 
   function addItem(itemType: WorkOrderItemType) {
@@ -503,11 +561,14 @@ export function WorkOrdersView() {
                 value={form.elevator_id}
                 onChange={(e) => updateForm("elevator_id", e.target.value)}
                 className="w-full rounded-lg border px-3 py-2"
+                disabled={!form.client_id}
               >
-                <option value="">Seleccionar ascensor</option>
-                {elevators.map((elevator) => (
+                <option value="">
+                  {form.client_id ? "Seleccionar ascensor" : "Primero selecciona un cliente"}
+                </option>
+                {filteredElevators.map((elevator) => (
                   <option key={elevator.id} value={elevator.id}>
-                    {elevator.elevator_number || elevator.model || elevator.id}
+                    {getElevatorLabel(elevator)}
                   </option>
                 ))}
               </select>
