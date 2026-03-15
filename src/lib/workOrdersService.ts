@@ -637,8 +637,7 @@ export async function registerInstalledPartsFromItems(
       warrantyMonths > 0 ? addMonthsToDate(installedAt, warrantyMonths) : null;
 
     return {
-      elevator_id:
-        item.target_elevator_id ?? workOrder.elevator_id,
+      elevator_id: item.target_elevator_id ?? workOrder.elevator_id,
       work_order_id: workOrderId,
       part_catalog_id: item.part_catalog_id,
       installed_at: installedAt,

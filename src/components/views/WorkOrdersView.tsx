@@ -20,11 +20,6 @@ type ClientRow = {
   building_name?: string | null;
 };
 
-type BuildingRow = {
-  id: string;
-  name: string | null;
-};
-
 type ElevatorRow = {
   id: string;
   client_id: string | null;
@@ -169,7 +164,6 @@ export function WorkOrdersView() {
   const [selectedItems, setSelectedItems] = useState<any[]>([]);
 
   const [clients, setClients] = useState<ClientRow[]>([]);
-  const [buildings, setBuildings] = useState<BuildingRow[]>([]);
   const [elevators, setElevators] = useState<ElevatorRow[]>([]);
   const [technicians, setTechnicians] = useState<TechnicianRow[]>([]);
   const [partsCatalog, setPartsCatalog] = useState<PartCatalogItem[]>([]);
@@ -212,6 +206,22 @@ export function WorkOrdersView() {
     );
   }, [filteredElevators, selectedElevatorIds]);
 
+  const detectedBuildings = useMemo(() => {
+    const unique = new Map<string, string>();
+
+    for (const elevator of selectedElevators) {
+      const buildingName =
+        elevator.location_building?.trim() ||
+        (elevator.tower_name ? `Torre ${elevator.tower_name}` : "");
+
+      if (buildingName) {
+        unique.set(buildingName, buildingName);
+      }
+    }
+
+    return Array.from(unique.values());
+  }, [selectedElevators]);
+
   useEffect(() => {
     void loadAll();
   }, []);
@@ -232,7 +242,6 @@ export function WorkOrdersView() {
       const [
         workOrdersData,
         clientsRes,
-        buildingsRes,
         elevatorsRes,
         techniciansRes,
         partsData,
@@ -242,10 +251,6 @@ export function WorkOrdersView() {
           .from("clients")
           .select("id, company_name, building_name")
           .order("company_name", { ascending: true }),
-        supabase
-          .from("buildings")
-          .select("id, name")
-          .order("name", { ascending: true }),
         supabase
           .from("elevators")
           .select("id, client_id, elevator_number, tower_name, index_number, location_building, model")
@@ -262,13 +267,11 @@ export function WorkOrdersView() {
       ]);
 
       if (clientsRes.error) throw clientsRes.error;
-      if (buildingsRes.error) throw buildingsRes.error;
       if (elevatorsRes.error) throw elevatorsRes.error;
       if (techniciansRes.error) throw techniciansRes.error;
 
       setWorkOrders(workOrdersData);
       setClients((clientsRes.data ?? []) as ClientRow[]);
-      setBuildings((buildingsRes.data ?? []) as BuildingRow[]);
       setElevators((elevatorsRes.data ?? []) as ElevatorRow[]);
       setTechnicians((techniciansRes.data ?? []) as TechnicianRow[]);
       setPartsCatalog(partsData);
@@ -300,6 +303,7 @@ export function WorkOrdersView() {
 
       if (key === "client_id") {
         setSelectedElevatorIds([]);
+        next.building_id = "";
       }
 
       return next;
@@ -413,7 +417,9 @@ export function WorkOrdersView() {
       );
 
       if (invalidSingleScope) {
-        throw new Error("Hay ítems configurados para un ascensor específico sin ascensor asignado.");
+        throw new Error(
+          "Hay ítems configurados para un ascensor específico sin ascensor asignado."
+        );
       }
 
       let quotationPdfUrl = form.quotation_pdf_url.trim();
@@ -462,7 +468,9 @@ export function WorkOrdersView() {
         sort_order: item.sort_order,
         scope_type: item.scope_type,
         target_elevator_id:
-          item.scope_type === "single_elevator" ? item.target_elevator_id || undefined : undefined,
+          item.scope_type === "single_elevator"
+            ? item.target_elevator_id || undefined
+            : undefined,
       }));
 
       await saveWorkOrderItems(created.id, itemsPayload as any);
@@ -556,7 +564,9 @@ export function WorkOrdersView() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Título *</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Título *
+              </label>
               <input
                 value={form.title}
                 onChange={(e) => updateForm("title", e.target.value)}
@@ -566,7 +576,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Cliente *</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Cliente *
+              </label>
               <select
                 value={form.client_id}
                 onChange={(e) => updateForm("client_id", e.target.value)}
@@ -582,19 +594,43 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Edificio</label>
-              <select
-                value={form.building_id}
-                onChange={(e) => updateForm("building_id", e.target.value)}
-                className="w-full rounded-lg border px-3 py-2"
-              >
-                <option value="">Seleccionar edificio</option>
-                {buildings.map((building) => (
-                  <option key={building.id} value={building.id}>
-                    {building.name || building.id}
-                  </option>
-                ))}
-              </select>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Edificio detectado
+              </label>
+
+              <div className="min-h-[48px] w-full rounded-lg border bg-slate-50 px-3 py-2">
+                {selectedElevatorIds.length === 0 ? (
+                  <span className="text-slate-500">
+                    Selecciona uno o más ascensores para detectar el edificio
+                  </span>
+                ) : detectedBuildings.length === 0 ? (
+                  <span className="text-slate-500">
+                    No se pudo detectar el edificio desde los ascensores seleccionados
+                  </span>
+                ) : detectedBuildings.length === 1 ? (
+                  <span className="font-medium text-slate-900">
+                    {detectedBuildings[0]}
+                  </span>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">
+                      Edificios involucrados
+                    </p>
+                    {detectedBuildings.map((building) => (
+                      <div
+                        key={building}
+                        className="mr-2 mb-2 inline-flex rounded-full bg-slate-200 px-3 py-1 text-sm text-slate-800"
+                      >
+                        {building}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Este campo se construye automáticamente desde los ascensores seleccionados.
+              </p>
             </div>
 
             <div className="md:col-span-2 xl:col-span-3">
@@ -643,7 +679,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Tipo de trabajo</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Tipo de trabajo
+              </label>
               <select
                 value={form.work_type}
                 onChange={(e) => updateForm("work_type", e.target.value)}
@@ -659,7 +697,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Prioridad</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Prioridad
+              </label>
               <select
                 value={form.priority}
                 onChange={(e) => updateForm("priority", e.target.value)}
@@ -673,7 +713,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">N° cotización *</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                N° cotización *
+              </label>
               <input
                 value={form.quotation_number}
                 onChange={(e) => updateForm("quotation_number", e.target.value)}
@@ -712,7 +754,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Días estimados</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Días estimados
+              </label>
               <input
                 type="number"
                 min="1"
@@ -736,7 +780,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Válida hasta</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Válida hasta
+              </label>
               <input
                 type="date"
                 value={form.valid_until}
@@ -877,7 +923,9 @@ export function WorkOrdersView() {
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600">Tipo</label>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Tipo
+                        </label>
                         <select
                           value={item.item_type}
                           onChange={(e) =>
@@ -980,7 +1028,9 @@ export function WorkOrdersView() {
                     </div>
 
                     <div className="mt-3">
-                      <label className="mb-1 block text-xs font-medium text-slate-600">Notas</label>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Notas
+                      </label>
                       <input
                         value={item.notes}
                         onChange={(e) =>
@@ -1059,7 +1109,9 @@ export function WorkOrdersView() {
                         onClick={() => setSelectedWorkOrderId(wo.id)}
                         className="text-left"
                       >
-                        <div className="font-semibold text-slate-900">OT-{wo.ot_number}</div>
+                        <div className="font-semibold text-slate-900">
+                          OT-{wo.ot_number}
+                        </div>
                         <div className="text-xs text-slate-500">{wo.title}</div>
                       </button>
                     </td>
