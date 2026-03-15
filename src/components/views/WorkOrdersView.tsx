@@ -17,12 +17,13 @@ import type { PartCatalogItem } from "../../types/parts";
 type ClientRow = {
   id: string;
   company_name: string | null;
+  building_name?: string | null;
 };
 
 type BuildingRow = {
   id: string;
   name: string | null;
-  client_id: string | null;
+  address?: string | null;
 };
 
 type ElevatorRow = {
@@ -129,10 +130,19 @@ function getApprovalLabel(status?: string) {
   }
 }
 
+function normalizeText(value?: string | null) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
 export function WorkOrdersView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [uploadingQuotation, setUploadingQuotation] = useState(false);
 
   const [workOrders, setWorkOrders] = useState<WorkOrderAdminRow[]>([]);
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
@@ -148,6 +158,7 @@ export function WorkOrdersView() {
   const [form, setForm] = useState<CreateFormState>(emptyForm());
   const [items, setItems] = useState<FormItem[]>([]);
   const [assignTechnicianMap, setAssignTechnicianMap] = useState<Record<string, string>>({});
+  const [selectedQuotationFile, setSelectedQuotationFile] = useState<File | null>(null);
   const [error, setError] = useState<string>("");
 
   const selectedWorkOrder = useMemo(
@@ -155,18 +166,35 @@ export function WorkOrdersView() {
     [workOrders, selectedWorkOrderId]
   );
 
+  const selectedClient = useMemo(
+    () => clients.find((client) => client.id === form.client_id) ?? null,
+    [clients, form.client_id]
+  );
+
   const filteredBuildings = useMemo(() => {
     if (!form.client_id) return buildings;
-    return buildings.filter((b) => b.client_id === form.client_id);
-  }, [buildings, form.client_id]);
+
+    const clientBuildingName = normalizeText(selectedClient?.building_name);
+    if (!clientBuildingName) return buildings;
+
+    const matched = buildings.filter(
+      (building) => normalizeText(building.name) === clientBuildingName
+    );
+
+    return matched.length > 0 ? matched : buildings;
+  }, [buildings, form.client_id, selectedClient]);
 
   const filteredElevators = useMemo(() => {
     if (form.building_id) {
-      return elevators.filter((e) => e.building_id === form.building_id);
+      const byBuilding = elevators.filter((e) => e.building_id === form.building_id);
+      if (byBuilding.length > 0) return byBuilding;
     }
+
     if (form.client_id) {
-      return elevators.filter((e) => e.client_id === form.client_id);
+      const byClient = elevators.filter((e) => e.client_id === form.client_id);
+      if (byClient.length > 0) return byClient;
     }
+
     return elevators;
   }, [elevators, form.client_id, form.building_id]);
 
@@ -198,11 +226,11 @@ export function WorkOrdersView() {
         getWorkOrdersForAdmin(),
         supabase
           .from("clients")
-          .select("id, company_name")
+          .select("id, company_name, building_name")
           .order("company_name", { ascending: true }),
         supabase
           .from("buildings")
-          .select("id, name, client_id")
+          .select("id, name, address")
           .order("name", { ascending: true }),
         supabase
           .from("elevators")
@@ -311,6 +339,26 @@ export function WorkOrdersView() {
     );
   }
 
+  async function uploadQuotationPdf(file: File, quotationNumber: string): Promise<string> {
+    const safeQuotation = quotationNumber.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const fileExt = file.name.split(".").pop() || "pdf";
+    const fileName = `${Date.now()}_${safeQuotation}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("quotation-pdfs")
+      .upload(fileName, file, { upsert: true });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("quotation-pdfs").getPublicUrl(fileName);
+
+    return publicUrl;
+  }
+
   async function handleCreateWorkOrder() {
     setSaving(true);
     setError("");
@@ -325,11 +373,22 @@ export function WorkOrdersView() {
       if (!form.quotation_number.trim()) {
         throw new Error("Debes ingresar el número de cotización.");
       }
-      if (!form.quotation_pdf_url.trim()) {
-        throw new Error("Debes ingresar la URL o referencia del PDF de cotización.");
+      if (!selectedQuotationFile && !form.quotation_pdf_url.trim()) {
+        throw new Error("Debes adjuntar el PDF de cotización o ingresar su URL.");
       }
       if (items.length === 0) {
         throw new Error("Debes agregar al menos un ítem de trabajo.");
+      }
+
+      let quotationPdfUrl = form.quotation_pdf_url.trim();
+
+      if (selectedQuotationFile) {
+        setUploadingQuotation(true);
+        quotationPdfUrl = await uploadQuotationPdf(
+          selectedQuotationFile,
+          form.quotation_number.trim()
+        );
+        setUploadingQuotation(false);
       }
 
       const createInput: WorkOrderCreateInput = {
@@ -340,7 +399,7 @@ export function WorkOrdersView() {
         elevator_id: form.elevator_id || undefined,
         work_type: (form.work_type as WorkOrderCreateInput["work_type"]) || "repair",
         quotation_number: form.quotation_number.trim(),
-        quotation_pdf_url: form.quotation_pdf_url.trim(),
+        quotation_pdf_url: quotationPdfUrl,
         estimated_days: form.estimated_days ? Number(form.estimated_days) : null,
         required_technicians: form.required_technicians
           ? Number(form.required_technicians)
@@ -371,6 +430,7 @@ export function WorkOrdersView() {
       setShowCreateForm(false);
       setForm(emptyForm());
       setItems([]);
+      setSelectedQuotationFile(null);
       await loadAll();
       setSelectedWorkOrderId(created.id);
     } catch (err: any) {
@@ -378,6 +438,7 @@ export function WorkOrdersView() {
       setError(err?.message || "No fue posible crear la orden de trabajo.");
     } finally {
       setSaving(false);
+      setUploadingQuotation(false);
     }
   }
 
@@ -448,11 +509,15 @@ export function WorkOrdersView() {
 
       {showCreateForm && (
         <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-xl font-bold text-slate-900">Crear nueva orden de trabajo</h2>
+          <h2 className="mb-4 text-xl font-bold text-slate-900">
+            Crear nueva orden de trabajo
+          </h2>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Título *</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Título *
+              </label>
               <input
                 value={form.title}
                 onChange={(e) => updateForm("title", e.target.value)}
@@ -462,7 +527,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Cliente *</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Cliente *
+              </label>
               <select
                 value={form.client_id}
                 onChange={(e) => updateForm("client_id", e.target.value)}
@@ -478,7 +545,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Edificio</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Edificio
+              </label>
               <select
                 value={form.building_id}
                 onChange={(e) => updateForm("building_id", e.target.value)}
@@ -491,10 +560,18 @@ export function WorkOrdersView() {
                   </option>
                 ))}
               </select>
+
+              {selectedClient?.building_name && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Referencia cliente: {selectedClient.building_name}
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Ascensor</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Ascensor
+              </label>
               <select
                 value={form.elevator_id}
                 onChange={(e) => updateForm("elevator_id", e.target.value)}
@@ -510,7 +587,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Tipo de trabajo</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Tipo de trabajo
+              </label>
               <select
                 value={form.work_type}
                 onChange={(e) => updateForm("work_type", e.target.value)}
@@ -526,7 +605,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Prioridad</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Prioridad
+              </label>
               <select
                 value={form.priority}
                 onChange={(e) => updateForm("priority", e.target.value)}
@@ -540,7 +621,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">N° cotización *</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                N° cotización *
+              </label>
               <input
                 value={form.quotation_number}
                 onChange={(e) => updateForm("quotation_number", e.target.value)}
@@ -550,17 +633,38 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">PDF cotización *</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Adjuntar PDF cotización *
+              </label>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setSelectedQuotationFile(e.target.files?.[0] || null)}
+                className="w-full rounded-lg border px-3 py-2"
+              />
+              {selectedQuotationFile && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Archivo seleccionado: {selectedQuotationFile.name}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                URL PDF cotización
+              </label>
               <input
                 value={form.quotation_pdf_url}
                 onChange={(e) => updateForm("quotation_pdf_url", e.target.value)}
                 className="w-full rounded-lg border px-3 py-2"
-                placeholder="URL, ruta o referencia del PDF"
+                placeholder="Opcional si adjuntas archivo"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Días estimados</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Días estimados
+              </label>
               <input
                 type="number"
                 min="1"
@@ -571,7 +675,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Técnicos requeridos</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Técnicos requeridos
+              </label>
               <input
                 type="number"
                 min="1"
@@ -582,7 +688,9 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Válida hasta</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Válida hasta
+              </label>
               <input
                 type="date"
                 value={form.valid_until}
@@ -604,7 +712,9 @@ export function WorkOrdersView() {
           </div>
 
           <div className="mt-4">
-            <label className="mb-1 block text-sm font-medium text-slate-700">Descripción general</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Descripción general
+            </label>
             <textarea
               value={form.description}
               onChange={(e) => updateForm("description", e.target.value)}
@@ -657,7 +767,8 @@ export function WorkOrdersView() {
                   <div key={item.localId} className="rounded-lg border p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <span className="text-sm font-semibold text-slate-800">
-                        Ítem #{index + 1} · {item.item_type === "part"
+                        Ítem #{index + 1} ·{" "}
+                        {item.item_type === "part"
                           ? "Repuesto"
                           : item.item_type === "material"
                           ? "Material"
@@ -674,7 +785,9 @@ export function WorkOrdersView() {
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600">Tipo</label>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Tipo
+                        </label>
                         <select
                           value={item.item_type}
                           onChange={(e) =>
@@ -692,7 +805,9 @@ export function WorkOrdersView() {
 
                       {item.item_type === "part" ? (
                         <div>
-                          <label className="mb-1 block text-xs font-medium text-slate-600">Catálogo</label>
+                          <label className="mb-1 block text-xs font-medium text-slate-600">
+                            Catálogo
+                          </label>
                           <select
                             value={item.part_catalog_id || ""}
                             onChange={(e) =>
@@ -710,7 +825,9 @@ export function WorkOrdersView() {
                         </div>
                       ) : (
                         <div>
-                          <label className="mb-1 block text-xs font-medium text-slate-600">Descripción</label>
+                          <label className="mb-1 block text-xs font-medium text-slate-600">
+                            Descripción
+                          </label>
                           <input
                             value={item.description}
                             onChange={(e) =>
@@ -723,7 +840,9 @@ export function WorkOrdersView() {
                       )}
 
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600">Cantidad</label>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Cantidad
+                        </label>
                         <input
                           type="number"
                           min="0"
@@ -737,7 +856,9 @@ export function WorkOrdersView() {
                       </div>
 
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600">Unidad</label>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                          Unidad
+                        </label>
                         <input
                           value={item.unit}
                           onChange={(e) =>
@@ -769,7 +890,9 @@ export function WorkOrdersView() {
                     </div>
 
                     <div className="mt-3">
-                      <label className="mb-1 block text-xs font-medium text-slate-600">Notas</label>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Notas
+                      </label>
                       <input
                         value={item.notes}
                         onChange={(e) =>
@@ -792,6 +915,7 @@ export function WorkOrdersView() {
                 setShowCreateForm(false);
                 setForm(emptyForm());
                 setItems([]);
+                setSelectedQuotationFile(null);
               }}
               className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50"
             >
@@ -801,10 +925,14 @@ export function WorkOrdersView() {
             <button
               type="button"
               onClick={() => void handleCreateWorkOrder()}
-              disabled={saving}
+              disabled={saving || uploadingQuotation}
               className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
             >
-              {saving ? "Guardando..." : "Crear OT"}
+              {uploadingQuotation
+                ? "Subiendo cotización..."
+                : saving
+                ? "Guardando..."
+                : "Crear OT"}
             </button>
           </div>
         </div>
@@ -851,7 +979,9 @@ export function WorkOrdersView() {
 
                     <td className="px-4 py-3">{wo.client_name || "—"}</td>
                     <td className="px-4 py-3">{getStatusLabel(wo.status)}</td>
-                    <td className="px-4 py-3">{getApprovalLabel(wo.client_approval_status)}</td>
+                    <td className="px-4 py-3">
+                      {getApprovalLabel(wo.client_approval_status)}
+                    </td>
                     <td className="px-4 py-3">{wo.technician_name || "Sin asignar"}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-2">
@@ -961,11 +1091,15 @@ export function WorkOrdersView() {
                 </div>
                 <div>
                   <div className="text-slate-500">Cotización</div>
-                  <div className="font-medium">{selectedWorkOrder.quotation_number || "—"}</div>
+                  <div className="font-medium">
+                    {selectedWorkOrder.quotation_number || "—"}
+                  </div>
                 </div>
                 <div>
                   <div className="text-slate-500">Válida hasta</div>
-                  <div className="font-medium">{formatDate((selectedWorkOrder as any).valid_until)}</div>
+                  <div className="font-medium">
+                    {formatDate((selectedWorkOrder as any).valid_until)}
+                  </div>
                 </div>
               </div>
 
@@ -987,7 +1121,9 @@ export function WorkOrdersView() {
                     {selectedItems.map((item) => (
                       <div key={item.id} className="rounded-lg border p-3 text-sm">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="font-medium text-slate-900">{item.description}</div>
+                          <div className="font-medium text-slate-900">
+                            {item.description}
+                          </div>
                           <div className="text-xs uppercase text-slate-500">
                             {item.item_type === "part"
                               ? "Repuesto"
