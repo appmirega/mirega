@@ -23,15 +23,12 @@ type ClientRow = {
 type BuildingRow = {
   id: string;
   name: string | null;
-  address?: string | null;
 };
 
 type ElevatorRow = {
   id: string;
   elevator_number: string | null;
   model: string | null;
-  building_id: string | null;
-  client_id: string | null;
 };
 
 type TechnicianRow = {
@@ -130,14 +127,6 @@ function getApprovalLabel(status?: string) {
   }
 }
 
-function normalizeText(value?: string | null) {
-  return (value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
-
 export function WorkOrdersView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -165,38 +154,6 @@ export function WorkOrdersView() {
     () => workOrders.find((wo) => wo.id === selectedWorkOrderId) ?? null,
     [workOrders, selectedWorkOrderId]
   );
-
-  const selectedClient = useMemo(
-    () => clients.find((client) => client.id === form.client_id) ?? null,
-    [clients, form.client_id]
-  );
-
-  const filteredBuildings = useMemo(() => {
-    if (!form.client_id) return buildings;
-
-    const clientBuildingName = normalizeText(selectedClient?.building_name);
-    if (!clientBuildingName) return buildings;
-
-    const matched = buildings.filter(
-      (building) => normalizeText(building.name) === clientBuildingName
-    );
-
-    return matched.length > 0 ? matched : buildings;
-  }, [buildings, form.client_id, selectedClient]);
-
-  const filteredElevators = useMemo(() => {
-    if (form.building_id) {
-      const byBuilding = elevators.filter((e) => e.building_id === form.building_id);
-      if (byBuilding.length > 0) return byBuilding;
-    }
-
-    if (form.client_id) {
-      const byClient = elevators.filter((e) => e.client_id === form.client_id);
-      if (byClient.length > 0) return byClient;
-    }
-
-    return elevators;
-  }, [elevators, form.client_id, form.building_id]);
 
   useEffect(() => {
     void loadAll();
@@ -230,11 +187,11 @@ export function WorkOrdersView() {
           .order("company_name", { ascending: true }),
         supabase
           .from("buildings")
-          .select("id, name, address")
+          .select("id, name")
           .order("name", { ascending: true }),
         supabase
           .from("elevators")
-          .select("id, elevator_number, model, building_id, client_id")
+          .select("id, elevator_number, model")
           .order("elevator_number", { ascending: true }),
         supabase
           .from("profiles")
@@ -279,20 +236,7 @@ export function WorkOrdersView() {
   }
 
   function updateForm<K extends keyof CreateFormState>(key: K, value: CreateFormState[K]) {
-    setForm((prev) => {
-      const next = { ...prev, [key]: value };
-
-      if (key === "client_id") {
-        next.building_id = "";
-        next.elevator_id = "";
-      }
-
-      if (key === "building_id") {
-        next.elevator_id = "";
-      }
-
-      return next;
-    });
+    setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   function addItem(itemType: WorkOrderItemType) {
@@ -348,9 +292,7 @@ export function WorkOrdersView() {
       .from("quotation-pdfs")
       .upload(fileName, file, { upsert: true });
 
-    if (uploadError) {
-      throw uploadError;
-    }
+    if (uploadError) throw uploadError;
 
     const {
       data: { publicUrl },
@@ -388,7 +330,6 @@ export function WorkOrdersView() {
           selectedQuotationFile,
           form.quotation_number.trim()
         );
-        setUploadingQuotation(false);
       }
 
       const createInput: WorkOrderCreateInput = {
@@ -515,9 +456,7 @@ export function WorkOrdersView() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Título *
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Título *</label>
               <input
                 value={form.title}
                 onChange={(e) => updateForm("title", e.target.value)}
@@ -527,9 +466,7 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Cliente *
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Cliente *</label>
               <select
                 value={form.client_id}
                 onChange={(e) => updateForm("client_id", e.target.value)}
@@ -545,40 +482,30 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Edificio
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Edificio</label>
               <select
                 value={form.building_id}
                 onChange={(e) => updateForm("building_id", e.target.value)}
                 className="w-full rounded-lg border px-3 py-2"
               >
                 <option value="">Seleccionar edificio</option>
-                {filteredBuildings.map((building) => (
+                {buildings.map((building) => (
                   <option key={building.id} value={building.id}>
                     {building.name || building.id}
                   </option>
                 ))}
               </select>
-
-              {selectedClient?.building_name && (
-                <p className="mt-1 text-xs text-slate-500">
-                  Referencia cliente: {selectedClient.building_name}
-                </p>
-              )}
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Ascensor
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Ascensor</label>
               <select
                 value={form.elevator_id}
                 onChange={(e) => updateForm("elevator_id", e.target.value)}
                 className="w-full rounded-lg border px-3 py-2"
               >
                 <option value="">Seleccionar ascensor</option>
-                {filteredElevators.map((elevator) => (
+                {elevators.map((elevator) => (
                   <option key={elevator.id} value={elevator.id}>
                     {elevator.elevator_number || elevator.model || elevator.id}
                   </option>
@@ -587,9 +514,7 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Tipo de trabajo
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Tipo de trabajo</label>
               <select
                 value={form.work_type}
                 onChange={(e) => updateForm("work_type", e.target.value)}
@@ -605,9 +530,7 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Prioridad
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Prioridad</label>
               <select
                 value={form.priority}
                 onChange={(e) => updateForm("priority", e.target.value)}
@@ -621,9 +544,7 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                N° cotización *
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">N° cotización *</label>
               <input
                 value={form.quotation_number}
                 onChange={(e) => updateForm("quotation_number", e.target.value)}
@@ -662,9 +583,7 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Días estimados
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Días estimados</label>
               <input
                 type="number"
                 min="1"
@@ -688,9 +607,7 @@ export function WorkOrdersView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Válida hasta
-              </label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Válida hasta</label>
               <input
                 type="date"
                 value={form.valid_until}
@@ -785,9 +702,7 @@ export function WorkOrdersView() {
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600">
-                          Tipo
-                        </label>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">Tipo</label>
                         <select
                           value={item.item_type}
                           onChange={(e) =>
@@ -890,9 +805,7 @@ export function WorkOrdersView() {
                     </div>
 
                     <div className="mt-3">
-                      <label className="mb-1 block text-xs font-medium text-slate-600">
-                        Notas
-                      </label>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">Notas</label>
                       <input
                         value={item.notes}
                         onChange={(e) =>
@@ -970,18 +883,14 @@ export function WorkOrdersView() {
                         onClick={() => setSelectedWorkOrderId(wo.id)}
                         className="text-left"
                       >
-                        <div className="font-semibold text-slate-900">
-                          OT-{wo.ot_number}
-                        </div>
+                        <div className="font-semibold text-slate-900">OT-{wo.ot_number}</div>
                         <div className="text-xs text-slate-500">{wo.title}</div>
                       </button>
                     </td>
 
                     <td className="px-4 py-3">{wo.client_name || "—"}</td>
                     <td className="px-4 py-3">{getStatusLabel(wo.status)}</td>
-                    <td className="px-4 py-3">
-                      {getApprovalLabel(wo.client_approval_status)}
-                    </td>
+                    <td className="px-4 py-3">{getApprovalLabel(wo.client_approval_status)}</td>
                     <td className="px-4 py-3">{wo.technician_name || "Sin asignar"}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-2">
@@ -1091,9 +1000,7 @@ export function WorkOrdersView() {
                 </div>
                 <div>
                   <div className="text-slate-500">Cotización</div>
-                  <div className="font-medium">
-                    {selectedWorkOrder.quotation_number || "—"}
-                  </div>
+                  <div className="font-medium">{selectedWorkOrder.quotation_number || "—"}</div>
                 </div>
                 <div>
                   <div className="text-slate-500">Válida hasta</div>
@@ -1121,9 +1028,7 @@ export function WorkOrdersView() {
                     {selectedItems.map((item) => (
                       <div key={item.id} className="rounded-lg border p-3 text-sm">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="font-medium text-slate-900">
-                            {item.description}
-                          </div>
+                          <div className="font-medium text-slate-900">{item.description}</div>
                           <div className="text-xs uppercase text-slate-500">
                             {item.item_type === "part"
                               ? "Repuesto"
