@@ -15,7 +15,7 @@ export interface WorkOrderCreateInput {
   description?: string;
   client_id?: UUID;
   building_id?: UUID;
-  elevator_id?: UUID;
+  elevator_id?: UUID | null;
   assigned_technician_id?: UUID | null;
   work_type?: WorkType;
   status?: WorkOrderStatus;
@@ -210,14 +210,6 @@ function normalizeDateOnly(value?: string | null): string | null {
 }
 
 export async function getNextWorkOrderNumber(): Promise<number> {
-  const { data, error } = await supabase.rpc("nextval", {
-    sequence_name: "public.work_order_number_seq",
-  });
-
-  if (!error && typeof data === "number") {
-    return data;
-  }
-
   const { data: fallback, error: fallbackError } = await supabase
     .from("work_orders")
     .select("ot_number")
@@ -239,7 +231,7 @@ export async function getWorkOrdersForAdmin(): Promise<WorkOrderAdminRow[]> {
       *,
       clients:client_id ( company_name ),
       buildings:building_id ( name ),
-      elevators:elevator_id ( internal_number, model ),
+      elevators:elevator_id ( elevator_number, model ),
       technicians:assigned_technician_id ( full_name )
     `)
     .order("created_at", { ascending: false });
@@ -257,8 +249,8 @@ export async function getWorkOrdersForAdmin(): Promise<WorkOrderAdminRow[]> {
       ...mapped,
       client_name: client?.company_name ? String(client.company_name) : undefined,
       building_name: building?.name ? String(building.name) : undefined,
-      elevator_name: elevator?.internal_number
-        ? String(elevator.internal_number)
+      elevator_name: elevator?.elevator_number
+        ? String(elevator.elevator_number)
         : elevator?.model
         ? String(elevator.model)
         : undefined,
@@ -278,7 +270,7 @@ export async function getWorkOrdersForTechnician(
       *,
       clients:client_id ( company_name ),
       buildings:building_id ( name ),
-      elevators:elevator_id ( internal_number, model )
+      elevators:elevator_id ( elevator_number, model )
     `)
     .eq("assigned_technician_id", technicianId)
     .order("created_at", { ascending: false });
@@ -295,8 +287,8 @@ export async function getWorkOrdersForTechnician(
       ...mapped,
       client_name: client?.company_name ? String(client.company_name) : undefined,
       building_name: building?.name ? String(building.name) : undefined,
-      elevator_name: elevator?.internal_number
-        ? String(elevator.internal_number)
+      elevator_name: elevator?.elevator_number
+        ? String(elevator.elevator_number)
         : elevator?.model
         ? String(elevator.model)
         : undefined,
@@ -313,7 +305,7 @@ export async function getWorkOrderById(
       *,
       clients:client_id ( company_name ),
       buildings:building_id ( name ),
-      elevators:elevator_id ( internal_number, model ),
+      elevators:elevator_id ( elevator_number, model ),
       technicians:assigned_technician_id ( full_name )
     `)
     .eq("id", workOrderId)
@@ -333,8 +325,8 @@ export async function getWorkOrderById(
     ...mapped,
     client_name: client?.company_name ? String(client.company_name) : undefined,
     building_name: building?.name ? String(building.name) : undefined,
-    elevator_name: elevator?.internal_number
-      ? String(elevator.internal_number)
+    elevator_name: elevator?.elevator_number
+      ? String(elevator.elevator_number)
       : elevator?.model
       ? String(elevator.model)
       : undefined,

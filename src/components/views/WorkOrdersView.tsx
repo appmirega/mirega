@@ -27,7 +27,7 @@ type BuildingRow = {
 
 type ElevatorRow = {
   id: string;
-  internal_number: string | null;
+  elevator_number: string | null;
   model: string | null;
   building_id: string | null;
   client_id: string | null;
@@ -161,9 +161,6 @@ export function WorkOrdersView() {
   }, [buildings, form.client_id]);
 
   const filteredElevators = useMemo(() => {
-    if (form.elevator_id && form.building_id) {
-      return elevators.filter((e) => e.building_id === form.building_id);
-    }
     if (form.building_id) {
       return elevators.filter((e) => e.building_id === form.building_id);
     }
@@ -171,7 +168,7 @@ export function WorkOrdersView() {
       return elevators.filter((e) => e.client_id === form.client_id);
     }
     return elevators;
-  }, [elevators, form.client_id, form.building_id, form.elevator_id]);
+  }, [elevators, form.client_id, form.building_id]);
 
   useEffect(() => {
     void loadAll();
@@ -209,8 +206,8 @@ export function WorkOrdersView() {
           .order("name", { ascending: true }),
         supabase
           .from("elevators")
-          .select("id, internal_number, model, building_id, client_id")
-          .order("internal_number", { ascending: true }),
+          .select("id, elevator_number, model, building_id, client_id")
+          .order("elevator_number", { ascending: true }),
         supabase
           .from("profiles")
           .select("id, full_name")
@@ -506,7 +503,7 @@ export function WorkOrdersView() {
                 <option value="">Seleccionar ascensor</option>
                 {filteredElevators.map((elevator) => (
                   <option key={elevator.id} value={elevator.id}>
-                    {elevator.internal_number || elevator.model || elevator.id}
+                    {elevator.elevator_number || elevator.model || elevator.id}
                   </option>
                 ))}
               </select>

@@ -22,6 +22,12 @@ function getStatusLabel(status?: string) {
       return "Completada";
     case "approved":
       return "Aprobada";
+    case "waiting_client_approval":
+      return "Esperando aprobación";
+    case "cancelled":
+      return "Cancelada";
+    case "expired":
+      return "Vencida";
     default:
       return status || "—";
   }
@@ -37,6 +43,12 @@ function getStatusBadge(status?: string) {
       return "bg-green-100 text-green-800";
     case "approved":
       return "bg-purple-100 text-purple-800";
+    case "waiting_client_approval":
+      return "bg-yellow-100 text-yellow-800";
+    case "cancelled":
+      return "bg-red-100 text-red-800";
+    case "expired":
+      return "bg-slate-200 text-slate-700";
     default:
       return "bg-slate-100 text-slate-800";
   }
@@ -129,6 +141,7 @@ export function TechnicianWorkOrdersView() {
 
   async function loadWorkOrders(currentTechnicianId: string) {
     const data = await getWorkOrdersForTechnician(currentTechnicianId);
+
     const filtered = data.filter((wo) =>
       ["assigned", "in_progress", "completed", "approved"].includes(wo.status)
     );
@@ -162,6 +175,7 @@ export function TechnicianWorkOrdersView() {
       await markWorkOrderInProgress(workOrderId);
       await loadWorkOrders(technicianId);
       setSelectedWorkOrderId(workOrderId);
+      await loadItems(workOrderId);
     } catch (err: any) {
       console.error("Error starting work order:", err);
       setError(err?.message || "No fue posible iniciar la orden de trabajo.");
