@@ -206,22 +206,6 @@ export function WorkOrdersView() {
     );
   }, [filteredElevators, selectedElevatorIds]);
 
-  const detectedBuildings = useMemo(() => {
-    const unique = new Map<string, string>();
-
-    for (const elevator of selectedElevators) {
-      const buildingName =
-        elevator.location_building?.trim() ||
-        (elevator.tower_name ? `Torre ${elevator.tower_name}` : "");
-
-      if (buildingName) {
-        unique.set(buildingName, buildingName);
-      }
-    }
-
-    return Array.from(unique.values());
-  }, [selectedElevators]);
-
   useEffect(() => {
     void loadAll();
   }, []);
@@ -303,7 +287,6 @@ export function WorkOrdersView() {
 
       if (key === "client_id") {
         setSelectedElevatorIds([]);
-        next.building_id = "";
       }
 
       return next;
@@ -438,7 +421,7 @@ export function WorkOrdersView() {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         client_id: form.client_id,
-        building_id: form.building_id || undefined,
+        building_id: undefined,
         elevator_id: primaryElevatorId || undefined,
         work_type: (form.work_type as WorkOrderCreateInput["work_type"]) || "repair",
         quotation_number: form.quotation_number.trim(),
@@ -593,45 +576,7 @@ export function WorkOrdersView() {
               </select>
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Edificio detectado
-              </label>
-
-              <div className="min-h-[48px] w-full rounded-lg border bg-slate-50 px-3 py-2">
-                {selectedElevatorIds.length === 0 ? (
-                  <span className="text-slate-500">
-                    Selecciona uno o más ascensores para detectar el edificio
-                  </span>
-                ) : detectedBuildings.length === 0 ? (
-                  <span className="text-slate-500">
-                    No se pudo detectar el edificio desde los ascensores seleccionados
-                  </span>
-                ) : detectedBuildings.length === 1 ? (
-                  <span className="font-medium text-slate-900">
-                    {detectedBuildings[0]}
-                  </span>
-                ) : (
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-slate-500">
-                      Edificios involucrados
-                    </p>
-                    {detectedBuildings.map((building) => (
-                      <div
-                        key={building}
-                        className="mr-2 mb-2 inline-flex rounded-full bg-slate-200 px-3 py-1 text-sm text-slate-800"
-                      >
-                        {building}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Este campo se construye automáticamente desde los ascensores seleccionados.
-              </p>
-            </div>
+            <div></div>
 
             <div className="md:col-span-2 xl:col-span-3">
               <label className="mb-2 block text-sm font-medium text-slate-700">
