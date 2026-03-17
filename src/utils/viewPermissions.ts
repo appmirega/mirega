@@ -1,10 +1,12 @@
+import type { UserRole } from '../lib/database.types';
+
 // Sistema de permisos basado en vistas
 
 export interface ViewPermission {
   key: string;
   label: string;
   description: string;
-  defaultRoles: string[];
+  defaultRoles: UserRole[];
 }
 
 export const ALL_VIEWS: ViewPermission[] = [
@@ -38,23 +40,34 @@ export const ALL_VIEWS: ViewPermission[] = [
   { key: 'admin-permissions', label: 'Gestión de Permisos', description: 'Control de permisos para técnicos y clientes', defaultRoles: ['admin'] },
 ];
 
-// Obtener vistas permitidas para un rol específico
-export function getViewsForRole(role: 'admin' | 'technician' | 'client' | 'developer'): ViewPermission[] {
-  return ALL_VIEWS.filter(view => view.defaultRoles.includes(role));
+export const ALL_VIEW_KEYS = new Set(ALL_VIEWS.map((view) => view.key));
+
+export function isManagedView(viewKey: string): boolean {
+  return ALL_VIEW_KEYS.has(viewKey);
+}
+
+export function getViewsForRole(role: UserRole): ViewPermission[] {
+  return ALL_VIEWS.filter((view) => view.defaultRoles.includes(role));
+}
+
+export function getDefaultEnabledViewKeys(role: UserRole): Set<string> {
+  return new Set(getViewsForRole(role).map((view) => view.key));
 }
 
 // Obtener vistas que un admin puede gestionar (técnico y cliente)
 export function getManageableViews(managerRole: 'admin'): ViewPermission[] {
   if (managerRole === 'admin') {
-    return ALL_VIEWS.filter(view =>
-      view.defaultRoles.includes('technician') ||
-      view.defaultRoles.includes('client')
+    return ALL_VIEWS.filter(
+      (view) =>
+        view.defaultRoles.includes('technician') ||
+        view.defaultRoles.includes('client')
     );
   }
+
   return [];
 }
 
-// Obtener todas las vistas que un developer puede gestionar (todas excepto developer)
+// Obtener todas las vistas que un developer puede gestionar
 export function getAllManageableViews(): ViewPermission[] {
   return ALL_VIEWS;
 }

@@ -2,6 +2,7 @@ import { ReactNode, useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationCenter } from './NotificationCenter';
 import { supabase } from '../lib/supabase';
+import { useViewPermissions } from '../hooks/useViewPermissions';
 import {
   LayoutDashboard,
   Users,
@@ -53,14 +54,12 @@ const navSections: NavSection[] = [
     items: [
       { label: 'Atajos', icon: LayoutDashboard, path: 'dashboard', roles: ['developer', 'admin', 'technician', 'client'] },
       { label: 'Mi Perfil', icon: UserIcon, path: 'profile', roles: ['developer', 'admin', 'technician', 'client'] },
-      // Nuevo submenú para técnicos
       { label: 'Mi Calendario', icon: CalendarRange, path: 'calendar', roles: ['technician'] },
     ],
   },
   {
     label: 'Operaciones',
     items: [
-      // Reemplaza el antiguo calendario operativo por el nuevo para admin
       { label: 'Gestión de Calendario', icon: CalendarRange, path: 'calendar', roles: ['developer', 'admin'] },
       { label: 'Mantenimientos', icon: ClipboardList, path: 'maintenance-checklist', roles: ['developer', 'admin', 'technician'] },
       { label: 'Solicitudes de Servicio', icon: FileText, path: 'service-requests', roles: ['developer', 'admin', 'technician'] },
@@ -105,6 +104,8 @@ const navSections: NavSection[] = [
 
 export function Layout({ children, onNavigate, currentView }: LayoutProps) {
   const { profile, signOut } = useAuth();
+  const { canAccessView } = useViewPermissions();
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -115,7 +116,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
     'Configuración & Admin': false,
   });
 
-  // Acordeón: al abrir una sección, cierra las otras
   const toggleSection = (label: string) => {
     setExpandedSections((prev) => ({
       'Accesos Rápidos': label === 'Accesos Rápidos' ? !prev['Accesos Rápidos'] : false,
@@ -129,7 +129,11 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
   const filteredSections = navSections
     .map((section) => ({
       label: section.label,
-      items: section.items.filter((item) => profile && item.roles.includes(profile.role)),
+      items: section.items.filter((item) => {
+        if (!profile) return false;
+        if (!item.roles.includes(profile.role)) return false;
+        return canAccessView(item.path);
+      }),
     }))
     .filter((section) => section.items.length > 0);
 
@@ -186,8 +190,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
     };
   };
 
-  // Usa la función de navegación pasada por props para navegación centralizada
-  // Usa la función de navegación pasada por props para navegación centralizada
   const handleNavigation = (path: string) => {
     setSidebarOpen(false);
     if (onNavigate) {
@@ -197,7 +199,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Top bar móvil */}
       <div className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-30 px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -223,7 +224,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
         </div>
       </div>
 
-      {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-20 w-64 bg-white border-r border-gray-200 transition-transform lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -254,11 +254,10 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
             </div>
           </div>
 
-          {/* Perfil */}
           <div className="p-4 border-b border-gray-200 lg:mt-0 mt-16">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gradient-to-r from-red-600 to-green-600 rounded-full flex items-center justify-center text-white font-semibold">
-                {profile?.full_name.charAt(0).toUpperCase()}
+                {profile?.full_name?.charAt(0)?.toUpperCase() ?? '?'}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900 truncate">
@@ -273,7 +272,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
             </div>
           </div>
 
-          {/* Menú principal */}
           <nav className="flex-1 overflow-y-auto p-4 space-y-2">
             {filteredSections.map((section) => (
               <div key={section.label} className="space-y-1">
@@ -288,12 +286,13 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
                     <ChevronRight className="w-4 h-4 flex-shrink-0" />
                   )}
                 </button>
+
                 {expandedSections[section.label] && (
                   <div className="space-y-1 pl-2">
                     {section.items.map((item) => {
                       const Icon = item.icon;
-                      // Asegura que el resaltado depende de currentView recibido por props
                       const isActive = currentView === item.path;
+
                       return (
                         <button
                           key={item.path}
@@ -315,7 +314,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
             ))}
           </nav>
 
-          {/* Cerrar sesión */}
           <div className="p-4 border-t border-gray-200">
             <button
               onClick={signOut}
@@ -328,7 +326,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
         </div>
       </aside>
 
-      {/* Overlay móvil */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-10 lg:hidden"
@@ -336,12 +333,9 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
         />
       )}
 
-      {/* Contenido principal */}
       <main className="lg:ml-64 pt-16 lg:pt-0">
         <div className="p-6 lg:p-8">{children}</div>
       </main>
     </div>
   );
 }
- // (Insertar aquí el contenido del backup para igualar rutas y visibilidad)
-
