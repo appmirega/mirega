@@ -50,9 +50,9 @@ interface NavSection {
 
 const navSections: NavSection[] = [
   {
-    label: 'Accesos Rápidos',
+    label: 'Principal',
     items: [
-      { label: 'Atajos', icon: LayoutDashboard, path: 'dashboard', roles: ['developer', 'admin', 'technician', 'client'] },
+      { label: 'Inicio', icon: LayoutDashboard, path: 'dashboard', roles: ['developer', 'admin', 'technician', 'client'] },
       { label: 'Mi Perfil', icon: UserIcon, path: 'profile', roles: ['developer', 'admin', 'technician', 'client'] },
       { label: 'Mi Calendario', icon: CalendarRange, path: 'calendar', roles: ['technician'] },
     ],
@@ -60,20 +60,20 @@ const navSections: NavSection[] = [
   {
     label: 'Operaciones',
     items: [
-      { label: 'Gestión de Calendario', icon: CalendarRange, path: 'calendar', roles: ['developer', 'admin'] },
+      { label: 'Calendario Operativo', icon: CalendarRange, path: 'calendar', roles: ['developer', 'admin'] },
       { label: 'Mantenimientos', icon: ClipboardList, path: 'maintenance-checklist', roles: ['developer', 'admin', 'technician'] },
       { label: 'Solicitudes de Servicio', icon: FileText, path: 'service-requests', roles: ['developer', 'admin', 'technician'] },
       { label: 'Emergencias', icon: AlertTriangle, path: 'emergencies', roles: ['developer', 'admin', 'technician'] },
       { label: 'Órdenes de Trabajo', icon: FileText, path: 'work-orders', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Gestión de Ascensores', icon: Building2, path: 'elevators', roles: ['developer', 'admin', 'technician', 'client'] },
+      { label: 'Ascensores', icon: Building2, path: 'elevators', roles: ['developer', 'admin', 'technician', 'client'] },
     ],
   },
   {
-    label: 'Análisis & Reportes',
+    label: 'Análisis y Gestión',
     items: [
       { label: 'Estadísticas', icon: TrendingUp, path: 'statistics', roles: ['developer', 'admin'] },
-      { label: 'Gestión de Trabajo', icon: ShieldCheck, path: 'risk-backlog', roles: ['developer', 'admin'] },
-      { label: 'Análisis Estratégico', icon: BarChart3, path: 'value-opportunities', roles: ['developer', 'admin'] },
+      { label: 'Pendientes Operativos', icon: ShieldCheck, path: 'risk-backlog', roles: ['developer', 'admin'] },
+      { label: 'Oportunidades de Mejora', icon: BarChart3, path: 'value-opportunities', roles: ['developer', 'admin'] },
       { label: 'Prioridades Operativas', icon: TrendingUp, path: 'roi-calculator', roles: ['developer', 'admin'] },
       { label: 'Registro de Auditoría', icon: FileSearch, path: 'audit-logs', roles: ['developer', 'admin'] },
     ],
@@ -89,13 +89,13 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    label: 'Configuración & Admin',
+    label: 'Configuración y Administración',
     items: [
       { label: 'Usuarios', icon: Users, path: 'users', roles: ['developer', 'admin'] },
       { label: 'Clientes', icon: Building, path: 'clients', roles: ['developer', 'admin'] },
       { label: 'Códigos QR', icon: QrCode, path: 'qr-codes-complete', roles: ['developer', 'admin'] },
       { label: 'Manuales Técnicos', icon: BookOpen, path: 'manuals', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Gestión de Permisos', icon: Shield, path: 'developer-permissions', roles: ['developer'] },
+      { label: 'Permisos Globales', icon: Shield, path: 'developer-permissions', roles: ['developer'] },
       { label: 'Permisos', icon: Shield, path: 'admin-permissions', roles: ['admin'] },
       { label: 'Configuración', icon: Settings, path: 'settings', roles: ['developer', 'admin'] },
     ],
@@ -109,20 +109,23 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    'Accesos Rápidos': true,
-    'Operaciones': false,
-    'Análisis & Reportes': false,
-    'Cliente': false,
-    'Configuración & Admin': false,
+    Principal: true,
+    Operaciones: false,
+    'Análisis y Gestión': false,
+    Cliente: false,
+    'Configuración y Administración': false,
   });
 
   const toggleSection = (label: string) => {
     setExpandedSections((prev) => ({
-      'Accesos Rápidos': label === 'Accesos Rápidos' ? !prev['Accesos Rápidos'] : false,
-      'Operaciones': label === 'Operaciones' ? !prev['Operaciones'] : false,
-      'Análisis & Reportes': label === 'Análisis & Reportes' ? !prev['Análisis & Reportes'] : false,
-      'Cliente': label === 'Cliente' ? !prev['Cliente'] : false,
-      'Configuración & Admin': label === 'Configuración & Admin' ? !prev['Configuración & Admin'] : false,
+      Principal: label === 'Principal' ? !prev.Principal : false,
+      Operaciones: label === 'Operaciones' ? !prev.Operaciones : false,
+      'Análisis y Gestión': label === 'Análisis y Gestión' ? !prev['Análisis y Gestión'] : false,
+      Cliente: label === 'Cliente' ? !prev.Cliente : false,
+      'Configuración y Administración':
+        label === 'Configuración y Administración'
+          ? !prev['Configuración y Administración']
+          : false,
     }));
   };
 
@@ -279,7 +282,9 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
                   onClick={() => toggleSection(section.label)}
                   className="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition text-left"
                 >
-                  <span className="uppercase tracking-wide text-left flex-1">{section.label}</span>
+                  <span className="uppercase tracking-wide text-left flex-1">
+                    {section.label}
+                  </span>
                   {expandedSections[section.label] ? (
                     <ChevronDown className="w-4 h-4 flex-shrink-0" />
                   ) : (
