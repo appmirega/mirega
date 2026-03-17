@@ -21,6 +21,12 @@ export const ALL_VIEWS: ViewPermission[] = [
     defaultRoles: ['admin', 'technician', 'client'],
   },
   {
+    key: 'calendar',
+    label: 'Calendario',
+    description: 'Vista de calendario operativo',
+    defaultRoles: ['admin', 'technician'],
+  },
+  {
     key: 'users',
     label: 'Usuarios',
     description: 'Administrar usuarios del sistema',
@@ -48,6 +54,12 @@ export const ALL_VIEWS: ViewPermission[] = [
     key: 'maintenance-checklist',
     label: 'Mantenimientos',
     description: 'Checklist y gestión operativa de mantenimientos',
+    defaultRoles: ['admin', 'technician'],
+  },
+  {
+    key: 'service-requests',
+    label: 'Solicitudes de Servicio',
+    description: 'Gestión de solicitudes de servicio',
     defaultRoles: ['admin', 'technician'],
   },
   {
