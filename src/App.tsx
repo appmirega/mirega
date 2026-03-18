@@ -30,6 +30,7 @@ import { ClientTechnicalInfoView } from "./components/views/ClientTechnicalInfoV
 import { ClientEmergenciesView } from "./components/views/ClientEmergenciesView";
 import { RescueTrainingView } from "./components/views/RescueTrainingView";
 import { CarpetaCeroView } from "./components/views/CarpetaCeroView";
+import { QRCodesCompleteView } from "./components/views/QRCodesCompleteView";
 
 import { StoppedElevators } from "./components/emergency/StoppedElevators";
 import { EmergencyHistory } from "./components/emergency/EmergencyHistory";
@@ -282,6 +283,18 @@ function App() {
 
       case "manuals":
         content = <ManualsView />;
+        break;
+
+      case "qr-codes-complete":
+        if (profile?.role === "admin" || profile?.role === "developer") {
+          content = <QRCodesCompleteView />;
+        } else {
+          content = (
+            <div className="py-12 text-center">
+              Vista de códigos QR no disponible para este rol.
+            </div>
+          );
+        }
         break;
 
       case "admin-permissions":
