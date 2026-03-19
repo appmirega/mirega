@@ -1,54 +1,31 @@
 interface QRCardProps {
   qrDataURL: string;
   buildingName: string;
+  elevatorLabel: string;
 }
 
-export function QRCard({ qrDataURL, buildingName }: QRCardProps) {
+export function QRCard({ qrDataURL, buildingName, elevatorLabel }: QRCardProps) {
   return (
-    <div
-      className="bg-white border-2 border-black rounded-2xl overflow-hidden"
-      style={{
-        width: '112px',
-        height: '150px',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <div
-        className="bg-white flex items-center justify-center"
-        style={{
-          width: '100px',
-          height: '100px',
-          margin: '6px auto 0',
-        }}
-      >
-        <img
-          src={qrDataURL}
-          alt={`QR ${buildingName}`}
-          style={{
-            width: '100%',
-            height: '100%',
-            display: 'block'
-          }}
-        />
-      </div>
-
-      <div
-        className="bg-white text-center"
-        style={{
-          padding: '4px 6px',
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center'
-        }}
-      >
-        <div style={{ fontSize: '12pt', color: '#000', fontWeight: 'normal', lineHeight: '1.2' }}>
-          Edificio:
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+      <div className="text-center space-y-2">
+        <div className="min-h-[44px] flex items-center justify-center">
+          <h3 className="text-sm font-bold text-slate-900 uppercase leading-tight">
+            {buildingName}
+          </h3>
         </div>
-        <div style={{ fontSize: '21pt', color: '#DC2626', fontWeight: 'bold', lineHeight: '1.1', marginTop: '2px' }}>
-          {buildingName}
+
+        <div className="min-h-[24px] flex items-center justify-center">
+          <p className="text-sm font-semibold text-slate-700 leading-tight">
+            {elevatorLabel}
+          </p>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center justify-center">
+          <img
+            src={qrDataURL}
+            alt={`QR ${buildingName} ${elevatorLabel}`}
+            className="w-[180px] h-[180px] object-contain"
+          />
         </div>
       </div>
     </div>

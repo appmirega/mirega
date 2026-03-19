@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import QRCode from 'qrcode';
+import { QRCard } from '../qr/QRCard';
 import {
   QrCode,
   Plus,
@@ -12,6 +12,7 @@ import {
   Download,
   RefreshCw,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 
 interface ClientItem {
   id: string;
@@ -34,7 +35,7 @@ interface Elevator {
   location_floor?: string | null;
   location_specific?: string | null;
   status?: string | null;
-  clients?: ClientItem | null;
+  clients?: ClientItem | ClientItem[] | null;
 }
 
 type ViewTab = 'manage' | 'gallery';
@@ -56,11 +57,17 @@ function getElevatorQrUrl(elevatorId: string) {
   return `${window.location.origin}/elevator/${elevatorId}`;
 }
 
+function getClientObject(elevator: Elevator): ClientItem | null {
+  if (!elevator.clients) return null;
+  return Array.isArray(elevator.clients) ? elevator.clients[0] ?? null : elevator.clients;
+}
+
 function getBuildingDisplayName(elevator: Elevator) {
-  const clientAlias = elevator.clients?.internal_alias?.trim();
+  const client = getClientObject(elevator);
+  const clientAlias = client?.internal_alias?.trim();
   const towerName = elevator.tower_name?.trim();
   const locationBuilding = elevator.location_building?.trim();
-  const clientName = elevator.clients?.company_name?.trim();
+  const clientName = client?.company_name?.trim();
 
   return clientAlias || towerName || locationBuilding || clientName || 'ASCENSOR';
 }
@@ -81,29 +88,17 @@ function getElevatorLabelLine(elevator: Elevator) {
   return `Ascensor ${getElevatorNumberDisplay(elevator)}`;
 }
 
-function getElevatorLocationLine(elevator: Elevator) {
-  const tower = elevator.tower_name?.trim();
-  const building = elevator.location_building?.trim();
-  const floor = elevator.location_floor?.trim();
-
-  if (tower && floor) return `${tower} - ${floor}`;
-  if (building && floor) return `${building} - ${floor}`;
-  if (tower) return tower;
-  if (building) return building;
-  return '';
-}
-
 export function QRCodesCompleteView() {
   const [activeTab, setActiveTab] = useState<ViewTab>('manage');
   const [elevators, setElevators] = useState<Elevator[]>([]);
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [qrMap, setQrMap] = useState<Record<string, string>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [filterClient, setFilterClient] = useState<string>('all');
   const [selectedElevators, setSelectedElevators] = useState<Set<string>>(new Set());
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [qrMap, setQrMap] = useState<Record<string, string>>({});
 
   const [formData, setFormData] = useState<ElevatorFormData>({
     client_id: '',
@@ -122,20 +117,17 @@ export function QRCodesCompleteView() {
     loadData();
   }, []);
 
-  useEffect(() => {
-    generateVisibleQrs(filteredElevators);
-  }, [elevators, searchTerm, filterClient]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const filteredElevators = useMemo(() => {
     let filtered = [...elevators];
     const term = searchTerm.trim().toLowerCase();
 
     if (term) {
       filtered = filtered.filter((elevator) => {
+        const client = getClientObject(elevator);
         const buildingName = getBuildingDisplayName(elevator).toLowerCase();
         const elevatorLabel = getElevatorLabelLine(elevator).toLowerCase();
-        const clientName = elevator.clients?.company_name?.toLowerCase() ?? '';
-        const clientAlias = elevator.clients?.internal_alias?.toLowerCase() ?? '';
+        const clientName = client?.company_name?.toLowerCase() ?? '';
+        const clientAlias = client?.internal_alias?.toLowerCase() ?? '';
         const internalCode = elevator.internal_code?.toLowerCase() ?? '';
         const brand = elevator.brand?.toLowerCase() ?? '';
         const model = elevator.model?.toLowerCase() ?? '';
@@ -165,6 +157,31 @@ export function QRCodesCompleteView() {
     return filtered;
   }, [elevators, searchTerm, filterClient]);
 
+  useEffect(() => {
+    const generateQrs = async () => {
+      const nextMap: Record<string, string> = {};
+
+      for (const elevator of filteredElevators) {
+        try {
+          nextMap[elevator.id] = await QRCode.toDataURL(getElevatorQrUrl(elevator.id), {
+            width: 900,
+            margin: 1,
+          });
+        } catch (error) {
+          console.error('Error generating QR:', error);
+        }
+      }
+
+      setQrMap(nextMap);
+    };
+
+    if (filteredElevators.length > 0) {
+      generateQrs();
+    } else {
+      setQrMap({});
+    }
+  }, [filteredElevators]);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -175,76 +192,52 @@ export function QRCodesCompleteView() {
   };
 
   const loadElevators = async () => {
-    const { data, error } = await supabase
-      .from('elevators')
-      .select(`
-        id,
-        client_id,
-        internal_code,
-        elevator_number,
-        index_number,
-        tower_name,
-        brand,
-        model,
-        serial_number,
-        location_building,
-        location_floor,
-        location_specific,
-        status,
-        clients (
+    try {
+      const { data, error } = await supabase
+        .from('elevators')
+        .select(`
           id,
-          company_name,
-          internal_alias,
-          address
-        )
-      `)
-      .order('client_id', { ascending: true });
+          client_id,
+          internal_code,
+          elevator_number,
+          index_number,
+          tower_name,
+          brand,
+          model,
+          serial_number,
+          location_building,
+          location_floor,
+          location_specific,
+          status,
+          clients (
+            id,
+            company_name,
+            internal_alias,
+            address
+          )
+        `)
+        .order('client_id', { ascending: true });
 
-    if (error) {
+      if (error) throw error;
+      setElevators((data as Elevator[]) || []);
+    } catch (error) {
       console.error('Error loading elevators:', error);
-      alert(`Error al cargar ascensores: ${error.message}`);
-      return;
+      alert('Error al cargar ascensores');
     }
-
-    setElevators((data as Elevator[]) || []);
   };
 
   const loadClients = async () => {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('id, company_name, internal_alias, address')
-      .order('company_name', { ascending: true });
-
-    if (error) {
-      console.error('Error loading clients:', error);
-      alert(`Error al cargar clientes: ${error.message}`);
-      return;
-    }
-
-    setClients((data as ClientItem[]) || []);
-  };
-
-  const generateVisibleQrs = async (items: Elevator[]) => {
     try {
-      const entries = await Promise.all(
-        items.map(async (elevator) => {
-          const dataUrl = await QRCode.toDataURL(getElevatorQrUrl(elevator.id), {
-            width: 512,
-            margin: 1,
-          });
-          return [elevator.id, dataUrl] as const;
-        })
-      );
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, company_name, internal_alias, address')
+        .order('company_name', { ascending: true });
 
-      setQrMap((prev) => {
-        const next = { ...prev };
-        for (const [id, dataUrl] of entries) {
-          next[id] = dataUrl;
-        }
-        return next;
-      });
+      if (error) throw error;
+      setClients((data as ClientItem[]) || []);
     } catch (error) {
-      console.error('Error generating QR previews:', error);
+      console.error('Error loading clients:', error);
+      alert('Error al cargar clientes');
     }
   };
 
@@ -289,7 +282,6 @@ export function QRCodesCompleteView() {
       setShowCreateModal(false);
       resetForm();
       await loadElevators();
-      setActiveTab('manage');
     } catch (error: any) {
       console.error('Error creating elevator:', error);
       alert(`Error al crear ascensor: ${error.message}`);
@@ -318,22 +310,19 @@ export function QRCodesCompleteView() {
     setSelectedElevators(new Set(filteredElevators.map((elevator) => elevator.id)));
   };
 
-  const generateQrDataUrl = async (elevator: Elevator, width = 1000) => {
-    return QRCode.toDataURL(getElevatorQrUrl(elevator.id), {
-      width,
-      margin: 1,
-    });
-  };
-
   const downloadSingleQR = async (elevator: Elevator) => {
     try {
-      const qrDataUrl = await generateQrDataUrl(elevator, 1200);
-      const link = document.createElement('a');
-      const buildingName = getBuildingDisplayName(elevator).replace(/\s+/g, '_');
-      const elevatorName = getElevatorLabelLine(elevator).replace(/\s+/g, '_');
+      const qrDataUrl = await QRCode.toDataURL(getElevatorQrUrl(elevator.id), {
+        width: 1400,
+        margin: 1,
+      });
 
+      const buildingName = getBuildingDisplayName(elevator).replace(/\s+/g, '_');
+      const elevatorLabel = getElevatorLabelLine(elevator).replace(/\s+/g, '_');
+
+      const link = document.createElement('a');
       link.href = qrDataUrl;
-      link.download = `QR_${buildingName}_${elevatorName}.png`;
+      link.download = `QR_${buildingName}_${elevatorLabel}.png`;
       link.click();
     } catch (error) {
       console.error('Error downloading QR:', error);
@@ -343,7 +332,7 @@ export function QRCodesCompleteView() {
 
   const handlePrintSelected = async () => {
     if (selectedElevators.size === 0) {
-      alert('Selecciona al menos un ascensor para imprimir');
+      alert('Selecciona al menos un código QR para imprimir');
       return;
     }
 
@@ -422,6 +411,8 @@ export function QRCodesCompleteView() {
               justify-content: center;
               margin-bottom: 0.06cm;
               text-transform: uppercase;
+              width: 100%;
+              word-break: break-word;
             }
 
             .elevator {
@@ -434,6 +425,7 @@ export function QRCodesCompleteView() {
               align-items: center;
               justify-content: center;
               margin-bottom: 0.08cm;
+              width: 100%;
             }
 
             .qr-wrap {
@@ -460,7 +452,6 @@ export function QRCodesCompleteView() {
               text-transform: uppercase;
               margin-bottom: 0.03cm;
               width: 100%;
-              white-space: normal;
               word-break: break-word;
             }
 
@@ -474,14 +465,6 @@ export function QRCodesCompleteView() {
             @media print {
               .toolbar {
                 display: none;
-              }
-
-              body {
-                padding: 0;
-              }
-
-              .sheet {
-                gap: 0.2cm;
               }
             }
           </style>
@@ -498,20 +481,24 @@ export function QRCodesCompleteView() {
     const sheet = printWindow.document.getElementById('sheet');
 
     for (const elevator of selectedList) {
-      const qrDataUrl = await generateQrDataUrl(elevator, 900);
+      const qrDataUrl = await QRCode.toDataURL(getElevatorQrUrl(elevator.id), {
+        width: 1200,
+        margin: 1,
+      });
+
       const buildingName = getBuildingDisplayName(elevator);
-      const elevatorName = getElevatorLabelLine(elevator);
+      const elevatorLabel = getElevatorLabelLine(elevator);
 
       const item = printWindow.document.createElement('div');
       item.className = 'label';
       item.innerHTML = `
         <div class="building">${buildingName}</div>
-        <div class="elevator">${elevatorName}</div>
+        <div class="elevator">${elevatorLabel}</div>
         <div class="qr-wrap">
-          <img src="${qrDataUrl}" alt="QR ${elevatorName}" />
+          <img src="${qrDataUrl}" alt="QR ${elevatorLabel}" />
         </div>
         <div class="footer-building">${buildingName}</div>
-        <div class="footer-elevator">${elevatorName}</div>
+        <div class="footer-elevator">${elevatorLabel}</div>
       `;
       sheet?.appendChild(item);
     }
@@ -519,12 +506,10 @@ export function QRCodesCompleteView() {
     printWindow.document.close();
   };
 
-  const selectedCount = selectedElevators.size;
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
       </div>
     );
   }
@@ -626,86 +611,18 @@ export function QRCodesCompleteView() {
                   <p className="text-slate-600 font-medium">No hay ascensores registrados</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                   {filteredElevators.map((elevator) => {
-                    const buildingName = getBuildingDisplayName(elevator);
-                    const elevatorLabel = getElevatorLabelLine(elevator);
-                    const locationLine = getElevatorLocationLine(elevator);
-                    const qrSrc = qrMap[elevator.id];
+                    const qrDataURL = qrMap[elevator.id];
+                    if (!qrDataURL) return null;
 
                     return (
-                      <div
+                      <QRCard
                         key={elevator.id}
-                        className="border border-slate-200 rounded-xl p-5 bg-slate-50"
-                      >
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="space-y-2">
-                            <div>
-                              <h3 className="text-lg font-semibold text-slate-900 uppercase">
-                                {buildingName}
-                              </h3>
-                              <p className="text-base font-medium text-slate-700">
-                                {elevatorLabel}
-                              </p>
-                              {locationLine && (
-                                <p className="text-sm text-slate-500">{locationLine}</p>
-                              )}
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                              <p className="text-slate-700">
-                                <span className="font-medium">Cliente:</span>{' '}
-                                {elevator.clients?.company_name || '-'}
-                              </p>
-                              <p className="text-slate-700">
-                                <span className="font-medium">Código:</span>{' '}
-                                {elevator.internal_code || '-'}
-                              </p>
-                              <p className="text-slate-700">
-                                <span className="font-medium">Marca:</span>{' '}
-                                {elevator.brand || '-'}
-                              </p>
-                              <p className="text-slate-700">
-                                <span className="font-medium">Modelo:</span>{' '}
-                                {elevator.model || '-'}
-                              </p>
-                            </div>
-
-                            <a
-                              href={getElevatorQrUrl(elevator.id)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex text-sm text-blue-600 hover:text-blue-700 font-medium"
-                            >
-                              Abrir URL del QR
-                            </a>
-                          </div>
-
-                          <div className="flex flex-col items-center gap-3">
-                            <div className="bg-white border border-slate-200 rounded-lg p-3">
-                              {qrSrc ? (
-                                <img
-                                  src={qrSrc}
-                                  alt={`QR ${elevatorLabel}`}
-                                  className="w-[180px] h-[180px] object-contain"
-                                />
-                              ) : (
-                                <div className="w-[180px] h-[180px] flex items-center justify-center text-sm text-slate-400">
-                                  Generando QR...
-                                </div>
-                              )}
-                            </div>
-
-                            <button
-                              onClick={() => downloadSingleQR(elevator)}
-                              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm"
-                            >
-                              <Download className="w-4 h-4" />
-                              Descargar PNG
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                        qrDataURL={qrDataURL}
+                        buildingName={getBuildingDisplayName(elevator)}
+                        elevatorLabel={getElevatorLabelLine(elevator)}
+                      />
                     );
                   })}
                 </div>
@@ -716,29 +633,29 @@ export function QRCodesCompleteView() {
           {activeTab === 'gallery' && (
             <>
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-4">
                   <button
                     onClick={selectAll}
                     className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition"
                   >
-                    {filteredElevators.length > 0 && selectedCount === filteredElevators.length ? (
+                    {selectedElevators.size === filteredElevators.length && filteredElevators.length > 0 ? (
                       <CheckSquare className="w-4 h-4 text-blue-600" />
                     ) : (
                       <Square className="w-4 h-4" />
                     )}
-                    {filteredElevators.length > 0 && selectedCount === filteredElevators.length
-                      ? 'Deseleccionar todos'
-                      : 'Seleccionar todos'}
+                    {selectedElevators.size === filteredElevators.length && filteredElevators.length > 0
+                      ? 'Deseleccionar Todos'
+                      : 'Seleccionar Todos'}
                   </button>
 
                   <span className="text-sm text-slate-600">
-                    {selectedCount} seleccionado{selectedCount !== 1 ? 's' : ''}
+                    {selectedElevators.size} seleccionado{selectedElevators.size !== 1 ? 's' : ''}
                   </span>
                 </div>
 
                 <button
                   onClick={handlePrintSelected}
-                  disabled={selectedCount === 0}
+                  disabled={selectedElevators.size === 0}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Printer className="w-4 h-4" />
@@ -755,9 +672,7 @@ export function QRCodesCompleteView() {
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                   {filteredElevators.map((elevator) => {
                     const isSelected = selectedElevators.has(elevator.id);
-                    const buildingName = getBuildingDisplayName(elevator);
-                    const elevatorLabel = getElevatorLabelLine(elevator);
-                    const qrSrc = qrMap[elevator.id];
+                    const qrDataURL = qrMap[elevator.id];
 
                     return (
                       <div
@@ -779,23 +694,21 @@ export function QRCodesCompleteView() {
 
                         <div className="text-center">
                           <h3 className="font-bold text-slate-900 uppercase text-sm mb-1">
-                            {buildingName}
+                            {getBuildingDisplayName(elevator)}
                           </h3>
                           <p className="text-sm font-medium text-slate-700 mb-3">
-                            {elevatorLabel}
+                            {getElevatorLabelLine(elevator)}
                           </p>
 
-                          <div className="bg-white p-3 rounded-lg mb-3 border border-slate-200">
-                            {qrSrc ? (
+                          <div className="bg-white p-3 rounded-lg mb-3 border border-slate-200 min-h-[210px] flex items-center justify-center">
+                            {qrDataURL ? (
                               <img
-                                src={qrSrc}
-                                alt={`QR ${elevatorLabel}`}
+                                src={qrDataURL}
+                                alt={`QR ${getElevatorLabelLine(elevator)}`}
                                 className="w-full max-w-[180px] mx-auto"
                               />
                             ) : (
-                              <div className="h-[180px] flex items-center justify-center text-sm text-slate-400">
-                                Generando QR...
-                              </div>
+                              <span className="text-sm text-slate-400">Generando QR...</span>
                             )}
                           </div>
 
