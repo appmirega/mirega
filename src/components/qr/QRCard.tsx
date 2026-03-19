@@ -8,7 +8,7 @@ export function QRCard({ qrDataURL, buildingName, elevatorLabel }: QRCardProps) 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
       <div className="text-center space-y-2">
-        <div className="min-h-[44px] flex items-center justify-center">
+        <div className="min-h-[40px] flex items-center justify-center">
           <h3 className="text-sm font-bold text-slate-900 uppercase leading-tight">
             {buildingName}
           </h3>
