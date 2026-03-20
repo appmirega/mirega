@@ -30,7 +30,7 @@ import { ClientTechnicalInfoView } from "./components/views/ClientTechnicalInfoV
 import { ClientEmergenciesView } from "./components/views/ClientEmergenciesView";
 import { RescueTrainingView } from "./components/views/RescueTrainingView";
 import { CarpetaCeroView } from "./components/views/CarpetaCeroView";
-import { QRCodesCompleteView } from "./components/views/QRCodesCompleteView";
+import QRCodesCompleteView from "./components/views/QRCodesCompleteView";
 
 import { StoppedElevators } from "./components/emergency/StoppedElevators";
 import { EmergencyHistory } from "./components/emergency/EmergencyHistory";
