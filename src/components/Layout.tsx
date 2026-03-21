@@ -50,49 +50,164 @@ const navSections: NavSection[] = [
   {
     label: 'Principal',
     items: [
-      { label: 'Inicio', icon: LayoutDashboard, path: 'dashboard', roles: ['developer', 'admin', 'technician', 'client'] },
-      { label: 'Mi Perfil', icon: UserIcon, path: 'profile', roles: ['developer', 'admin', 'technician', 'client'] },
-      { label: 'Mi Calendario', icon: CalendarRange, path: 'calendar', roles: ['technician'] },
+      {
+        label: 'Inicio',
+        icon: LayoutDashboard,
+        path: 'dashboard',
+        roles: ['developer', 'admin', 'technician', 'client'],
+      },
+      {
+        label: 'Mi Perfil',
+        icon: UserIcon,
+        path: 'profile',
+        roles: ['developer', 'admin', 'technician', 'client'],
+      },
+      {
+        label: 'Mi Calendario',
+        icon: CalendarRange,
+        path: 'calendar',
+        roles: ['technician'],
+      },
     ],
   },
   {
     label: 'Operaciones',
     items: [
-      { label: 'Calendario Operativo', icon: CalendarRange, path: 'calendar', roles: ['developer', 'admin'] },
-      { label: 'Mantenimientos', icon: ClipboardList, path: 'maintenance-checklist', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Solicitudes de Servicio', icon: FileText, path: 'service-requests', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Emergencias', icon: AlertTriangle, path: 'emergencies', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Órdenes de Trabajo', icon: FileText, path: 'work-orders', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Ascensores', icon: Building2, path: 'elevators', roles: ['developer', 'admin', 'technician', 'client'] },
+      {
+        label: 'Calendario Operativo',
+        icon: CalendarRange,
+        path: 'calendar',
+        roles: ['developer', 'admin'],
+      },
+      {
+        label: 'Mantenimientos',
+        icon: ClipboardList,
+        path: 'maintenance-checklist',
+        roles: ['developer', 'admin', 'technician'],
+      },
+      {
+        label: 'Solicitudes de Servicio',
+        icon: FileText,
+        path: 'service-requests',
+        roles: ['developer', 'admin', 'technician'],
+      },
+      {
+        label: 'Emergencias',
+        icon: AlertTriangle,
+        path: 'emergencies',
+        roles: ['developer', 'admin', 'technician'],
+      },
+      {
+        label: 'Órdenes de Trabajo',
+        icon: FileText,
+        path: 'work-orders',
+        roles: ['developer', 'admin', 'technician'],
+      },
+      {
+        label: 'Ascensores',
+        icon: Building2,
+        path: 'elevators',
+        roles: ['developer', 'admin', 'technician', 'client'],
+      },
     ],
   },
   {
     label: 'Análisis y Gestión',
     items: [
-      { label: 'Estadísticas', icon: TrendingUp, path: 'statistics', roles: ['developer', 'admin'] },
-      { label: 'Registro de Auditoría', icon: FileSearch, path: 'audit-logs', roles: ['developer', 'admin'] },
+      {
+        label: 'Estadísticas',
+        icon: TrendingUp,
+        path: 'statistics',
+        roles: ['developer', 'admin'],
+      },
+      {
+        label: 'Registro de Auditoría',
+        icon: FileSearch,
+        path: 'audit-logs',
+        roles: ['developer', 'admin'],
+      },
     ],
   },
   {
     label: 'Cliente',
     items: [
-      { label: 'Mis Mantenimientos', icon: ClipboardList, path: 'client-maintenances', roles: ['client'] },
-      { label: 'Mis Solicitudes', icon: FileText, path: 'client-service-requests', roles: ['client'] },
-      { label: 'Mis Emergencias', icon: AlertTriangle, path: 'client-emergencies', roles: ['client'] },
-      { label: 'Inducción de Rescate', icon: Award, path: 'rescue-training', roles: ['client'] },
-      { label: 'Carpeta Cero', icon: Folder, path: 'carpeta-cero', roles: ['client'] },
+      {
+        label: 'Mis Mantenimientos',
+        icon: ClipboardList,
+        path: 'client-maintenances',
+        roles: ['client'],
+      },
+      {
+        label: 'Mis Solicitudes',
+        icon: FileText,
+        path: 'client-service-requests',
+        roles: ['client'],
+      },
+      {
+        label: 'Mis Emergencias',
+        icon: AlertTriangle,
+        path: 'client-emergencies',
+        roles: ['client'],
+      },
+      {
+        label: 'Inducción de Rescate',
+        icon: Award,
+        path: 'rescue-training',
+        roles: ['client'],
+      },
+      {
+        label: 'Carpeta Cero',
+        icon: Folder,
+        path: 'carpeta-cero',
+        roles: ['client'],
+      },
     ],
   },
   {
     label: 'Configuración y Administración',
     items: [
-      { label: 'Usuarios', icon: Users, path: 'users', roles: ['developer', 'admin'] },
-      { label: 'Clientes', icon: Building, path: 'clients', roles: ['developer', 'admin'] },
-      { label: 'Códigos QR', icon: QrCode, path: 'qr-codes-complete', roles: ['developer', 'admin'] },
-      { label: 'Manuales Técnicos', icon: BookOpen, path: 'manuals', roles: ['developer', 'admin', 'technician'] },
-      { label: 'Permisos Globales', icon: Shield, path: 'developer-permissions', roles: ['developer'] },
-      { label: 'Permisos', icon: Shield, path: 'admin-permissions', roles: ['admin'] },
-      { label: 'Configuración', icon: Settings, path: 'settings', roles: ['developer', 'admin'] },
+      {
+        label: 'Usuarios',
+        icon: Users,
+        path: 'users',
+        roles: ['developer', 'admin'],
+      },
+      {
+        label: 'Clientes',
+        icon: Building,
+        path: 'clients',
+        roles: ['developer', 'admin'],
+      },
+      {
+        label: 'Códigos QR',
+        icon: QrCode,
+        path: 'qr-codes-complete',
+        roles: ['developer', 'admin'],
+      },
+      {
+        label: 'Manuales Técnicos',
+        icon: BookOpen,
+        path: 'manuals',
+        roles: ['developer', 'admin', 'technician'],
+      },
+      {
+        label: 'Permisos Globales',
+        icon: Shield,
+        path: 'developer-permissions',
+        roles: ['developer'],
+      },
+      {
+        label: 'Permisos',
+        icon: Shield,
+        path: 'admin-permissions',
+        roles: ['admin'],
+      },
+      {
+        label: 'Configuración',
+        icon: Settings,
+        path: 'settings',
+        roles: ['developer', 'admin'],
+      },
     ],
   },
 ];
@@ -160,7 +275,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
 
       if (error) throw error;
 
-      const unread = (data ?? []).filter((n: any) => !n.is_read).length;
+      const unread = (data ?? []).filter((n: { is_read?: boolean | null }) => !n.is_read).length;
       setNotificationCount(unread);
     } catch (error) {
       console.error('Error loading unread notifications:', error);
@@ -168,14 +283,17 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
   };
 
   const subscribeToNotifications = () => {
+    if (!profile?.id) return () => {};
+
     const channel = supabase
-      .channel('layout_notifications')
+      .channel(`layout_notifications_${profile.id}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'notifications',
+          filter: `user_id=eq.${profile.id}`,
         },
         () => {
           loadUnreadNotifications();
@@ -190,9 +308,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
 
   const handleNavigation = (path: string) => {
     setSidebarOpen(false);
-    if (onNavigate) {
-      onNavigate(path);
-    }
+    onNavigate?.(path);
   };
 
   return (
@@ -210,13 +326,18 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
               <p className="text-xs text-gray-600">Ascensores</p>
             </div>
           </div>
+
           <div className="flex items-center gap-2">
             <NotificationCenter onNavigate={handleNavigation} />
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="p-2 hover:bg-gray-100 rounded-lg transition"
             >
-              {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {sidebarOpen ? (
+                <X className="w-6 h-6" />
+              ) : (
+                <Menu className="w-6 h-6" />
+              )}
             </button>
           </div>
         </div>
@@ -241,6 +362,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
                   <p className="text-sm text-gray-600">Ascensores</p>
                 </div>
               </div>
+
               <div className="relative">
                 <NotificationCenter onNavigate={handleNavigation} />
                 {notificationCount > 0 && (
@@ -257,6 +379,88 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
               <div className="w-10 h-10 bg-gradient-to-r from-red-600 to-green-600 rounded-full flex items-center justify-center text-white font-semibold">
                 {profile?.full_name?.charAt(0)?.toUpperCase() ?? '?'}
               </div>
+
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900 truncate">
-                  {
+                  {profile?.full_name}
+                </p>
+
+                {profile?.role === 'client' && profile?.building_name && (
+                  <p className="text-xs text-gray-600 truncate">
+                    {profile.building_name}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <nav className="flex-1 overflow-y-auto p-4 space-y-2">
+            {filteredSections.map((section) => (
+              <div key={section.label} className="space-y-1">
+                <button
+                  onClick={() => toggleSection(section.label)}
+                  className="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition text-left"
+                >
+                  <span className="uppercase tracking-wide text-left flex-1">
+                    {section.label}
+                  </span>
+
+                  {expandedSections[section.label] ? (
+                    <ChevronDown className="w-4 h-4 flex-shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 flex-shrink-0" />
+                  )}
+                </button>
+
+                {expandedSections[section.label] && (
+                  <div className="space-y-1 pl-2">
+                    {section.items.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = currentView === item.path;
+
+                      return (
+                        <button
+                          key={item.path}
+                          onClick={() => handleNavigation(item.path)}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition text-sm text-left ${
+                            isActive
+                              ? 'bg-red-600 text-white'
+                              : 'text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 flex-shrink-0" />
+                          <span className="font-medium">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </nav>
+
+          <div className="p-4 border-t border-gray-200">
+            <button
+              onClick={signOut}
+              className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition font-medium"
+            >
+              <LogOut className="w-5 h-5" />
+              <span>Cerrar Sesión</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-10 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <main className="lg:ml-64 pt-16 lg:pt-0">
+        <div className="p-6 lg:p-8">{children}</div>
+      </main>
+    </div>
+  );
+}
