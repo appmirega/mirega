@@ -21,6 +21,7 @@ import { WorkOrdersView } from "./components/views/WorkOrdersView";
 import { TechnicianWorkOrdersView } from "./components/views/TechnicianWorkOrdersView";
 import { ElevatorsCompleteView } from "./components/views/ElevatorsCompleteView";
 import { StatisticsView } from "./components/views/StatisticsView";
+import { AuditLogView } from "./components/views/AuditLogView";
 import { UsersView } from "./components/views/UsersView";
 import { ClientsView } from "./components/views/ClientsView";
 import { ManualsView } from "./components/views/ManualsView";
@@ -369,11 +370,22 @@ function App() {
         }
         break;
 
+      case "audit-logs":
+        if (profile?.role === "admin" || profile?.role === "developer") {
+          content = <AuditLogView />;
+        } else {
+          content = (
+            <div className="py-12 text-center">
+              Vista de auditoría no disponible para este rol.
+            </div>
+          );
+        }
+        break;
+
       case "client-service-requests":
       case "risk-backlog":
       case "value-opportunities":
       case "roi-calculator":
-      case "audit-logs":
       case "settings":
         content = (
           <div className="py-12 text-center text-slate-600">

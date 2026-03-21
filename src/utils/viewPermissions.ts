@@ -150,7 +150,7 @@ export const ALL_VIEWS: ViewPermission[] = [
     key: 'statistics',
     label: 'Estadísticas',
     description: 'Reportes y estadísticas generales',
-    defaultRoles: ['admin'],
+    defaultRoles: ['admin', 'developer'],
   },
   {
     key: 'activity-history',
@@ -168,7 +168,7 @@ export const ALL_VIEWS: ViewPermission[] = [
     key: 'audit-logs',
     label: 'Registro de Auditoría',
     description: 'Logs y trazabilidad del sistema',
-    defaultRoles: ['admin'],
+    defaultRoles: ['admin', 'developer'],
   },
   {
     key: 'bulk-operations',
