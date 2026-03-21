@@ -54,15 +54,19 @@ function getClientObject(elevator: Elevator): ClientItem | null {
   return Array.isArray(elevator.clients) ? elevator.clients[0] ?? null : elevator.clients;
 }
 
-function getBuildingDisplayName(elevator: Elevator) {
-  const building = elevator.location_building?.trim();
+function getShortBuildingName(elevator: Elevator) {
+  const shortName = elevator.location_building?.trim();
   const clientName = getClientObject(elevator)?.company_name?.trim();
-  return building || clientName || 'EDIFICIO';
+  return shortName || clientName || 'EDIFICIO';
+}
+
+function getElevatorNumber(elevator: Elevator) {
+  const code = elevator.internal_code?.trim();
+  return code || 'S/N';
 }
 
 function getElevatorLabelLine(elevator: Elevator) {
-  const code = elevator.internal_code?.trim();
-  return code ? `Ascensor ${code}` : 'Ascensor';
+  return `Ascensor ${getElevatorNumber(elevator)}`;
 }
 
 function QRCodesCompleteView() {
@@ -99,8 +103,8 @@ function QRCodesCompleteView() {
       filtered = filtered.filter((elevator) => {
         const client = getClientObject(elevator);
         return (
-          (getBuildingDisplayName(elevator) || '').toLowerCase().includes(term) ||
-          (getElevatorLabelLine(elevator) || '').toLowerCase().includes(term) ||
+          getShortBuildingName(elevator).toLowerCase().includes(term) ||
+          getElevatorLabelLine(elevator).toLowerCase().includes(term) ||
           (client?.company_name || '').toLowerCase().includes(term) ||
           (elevator.internal_code || '').toLowerCase().includes(term) ||
           (elevator.brand || '').toLowerCase().includes(term) ||
@@ -265,7 +269,7 @@ function QRCodesCompleteView() {
         margin: 1,
       });
 
-      const buildingName = getBuildingDisplayName(elevator).replace(/\s+/g, '_');
+      const buildingName = getShortBuildingName(elevator).replace(/\s+/g, '_');
       const elevatorLabel = getElevatorLabelLine(elevator).replace(/\s+/g, '_');
 
       const link = document.createElement('a');
@@ -343,24 +347,9 @@ function QRCodesCompleteView() {
               flex-direction: column;
               align-items: center;
               justify-content: flex-start;
-              padding: 0.12cm 0.1cm 0.08cm 0.1cm;
+              padding: 0.12cm 0.1cm 0.12cm 0.1cm;
               page-break-inside: avoid;
               overflow: hidden;
-            }
-
-            .building {
-              font-size: 8pt;
-              font-weight: 700;
-              text-align: center;
-              line-height: 1.1;
-              min-height: 0.55cm;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              margin-bottom: 0.06cm;
-              text-transform: uppercase;
-              width: 100%;
-              word-break: break-word;
             }
 
             .elevator {
@@ -368,21 +357,21 @@ function QRCodesCompleteView() {
               font-weight: 700;
               text-align: center;
               line-height: 1.1;
-              min-height: 0.45cm;
+              min-height: 0.5cm;
               display: flex;
               align-items: center;
               justify-content: center;
-              margin-bottom: 0.08cm;
+              margin-bottom: 0.1cm;
               width: 100%;
             }
 
             .qr-wrap {
               width: 2.45cm;
-              height: 2.45cm;
+              height: 2.9cm;
               display: flex;
               align-items: center;
               justify-content: center;
-              margin-bottom: 0.08cm;
+              margin-bottom: 0.1cm;
             }
 
             .qr-wrap img {
@@ -392,22 +381,14 @@ function QRCodesCompleteView() {
               display: block;
             }
 
-            .footer-building {
-              font-size: 7pt;
+            .building {
+              font-size: 7.5pt;
               font-weight: 700;
               text-align: center;
               line-height: 1.05;
               text-transform: uppercase;
-              margin-bottom: 0.03cm;
               width: 100%;
               word-break: break-word;
-            }
-
-            .footer-elevator {
-              font-size: 7pt;
-              text-align: center;
-              line-height: 1.05;
-              width: 100%;
             }
 
             @media print {
@@ -434,19 +415,17 @@ function QRCodesCompleteView() {
         margin: 1,
       });
 
-      const buildingName = getBuildingDisplayName(elevator);
+      const buildingName = getShortBuildingName(elevator);
       const elevatorLabel = getElevatorLabelLine(elevator);
 
       const item = printWindow.document.createElement('div');
       item.className = 'label';
       item.innerHTML = `
-        <div class="building">${buildingName}</div>
         <div class="elevator">${elevatorLabel}</div>
         <div class="qr-wrap">
           <img src="${qrDataUrl}" alt="QR ${elevatorLabel}" />
         </div>
-        <div class="footer-building">${buildingName}</div>
-        <div class="footer-elevator">${elevatorLabel}</div>
+        <div class="building">${buildingName}</div>
       `;
       sheet?.appendChild(item);
     }
@@ -568,7 +547,7 @@ function QRCodesCompleteView() {
                       <QRCard
                         key={elevator.id}
                         qrDataURL={qrDataURL}
-                        buildingName={getBuildingDisplayName(elevator)}
+                        buildingName={getShortBuildingName(elevator)}
                         elevatorLabel={getElevatorLabelLine(elevator)}
                       />
                     );
@@ -642,7 +621,7 @@ function QRCodesCompleteView() {
 
                         <div className="text-center">
                           <h3 className="font-bold text-slate-900 uppercase text-sm mb-1">
-                            {getBuildingDisplayName(elevator)}
+                            {getShortBuildingName(elevator)}
                           </h3>
                           <p className="text-sm font-medium text-slate-700 mb-3">
                             {getElevatorLabelLine(elevator)}
