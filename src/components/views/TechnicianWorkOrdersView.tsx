@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { ClipboardCheck, Clock, Wrench, CheckCircle2 } from "lucide-react";
+import {
+  ClipboardCheck,
+  Clock,
+  Wrench,
+  CheckCircle2,
+  FileText,
+} from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import {
   getWorkOrderItems,
@@ -11,6 +17,12 @@ import type { WorkOrderItem } from "../../types/workOrderItems";
 import { WorkOrderClosureForm } from "../forms/WorkOrderClosureForm";
 
 type ViewMode = "list" | "closure";
+
+type ClosureSummary = {
+  pdf_url?: string | null;
+  client_reception_name?: string | null;
+  completed_at?: string | null;
+};
 
 function getStatusLabel(status?: string) {
   switch (status) {
@@ -92,6 +104,7 @@ export function TechnicianWorkOrdersView() {
   const [workOrders, setWorkOrders] = useState<WorkOrderTechnicianRow[]>([]);
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<WorkOrderItem[]>([]);
+  const [selectedClosure, setSelectedClosure] = useState<ClosureSummary | null>(null);
   const [error, setError] = useState("");
 
   const selectedWorkOrder = useMemo(
@@ -111,10 +124,25 @@ export function TechnicianWorkOrdersView() {
   useEffect(() => {
     if (!selectedWorkOrderId) {
       setSelectedItems([]);
+      setSelectedClosure(null);
       return;
     }
     void loadItems(selectedWorkOrderId);
   }, [selectedWorkOrderId]);
+
+  useEffect(() => {
+    if (!selectedWorkOrder) {
+      setSelectedClosure(null);
+      return;
+    }
+
+    if (!["completed", "approved"].includes(selectedWorkOrder.status)) {
+      setSelectedClosure(null);
+      return;
+    }
+
+    void loadClosureSummary(selectedWorkOrder.id);
+  }, [selectedWorkOrder]);
 
   async function initialize() {
     setLoading(true);
@@ -167,6 +195,24 @@ export function TechnicianWorkOrdersView() {
     }
   }
 
+  async function loadClosureSummary(workOrderId: string) {
+    try {
+      const { data, error } = await supabase
+        .from("work_order_closures")
+        .select("pdf_url, client_reception_name, completed_at")
+        .eq("work_order_id", workOrderId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      setSelectedClosure(data || null);
+    } catch (err) {
+      console.error("Error loading work order closure summary:", err);
+      setSelectedClosure(null);
+    }
+  }
+
   async function handleStartWorkOrder(workOrderId: string) {
     setStartingId(workOrderId);
     setError("");
@@ -191,6 +237,7 @@ export function TechnicianWorkOrdersView() {
     }
     if (selectedWorkOrderId) {
       void loadItems(selectedWorkOrderId);
+      void loadClosureSummary(selectedWorkOrderId);
     }
   }
 
@@ -405,6 +452,10 @@ export function TechnicianWorkOrdersView() {
                         {order.status === "completed" && (
                           <span className="text-xs text-green-700">Finalizada</span>
                         )}
+
+                        {order.status === "approved" && (
+                          <span className="text-xs text-purple-700">Aprobada</span>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -502,6 +553,45 @@ export function TechnicianWorkOrdersView() {
                   </div>
                 )}
               </div>
+
+              {selectedClosure && (
+                <div className="rounded-xl border bg-slate-50 p-4">
+                  <div className="mb-2 text-sm font-semibold text-slate-900">
+                    Cierre técnico registrado
+                  </div>
+                  <div className="space-y-1 text-sm text-slate-600">
+                    <div>
+                      Recibe: <strong>{selectedClosure.client_reception_name || "—"}</strong>
+                    </div>
+                    <div>
+                      Fecha cierre:{" "}
+                      <strong>{formatDate(selectedClosure.completed_at || "")}</strong>
+                    </div>
+                  </div>
+
+                  {selectedClosure.pdf_url && (
+                    <div className="mt-4 flex gap-2">
+                      <a
+                        href={selectedClosure.pdf_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+                      >
+                        <FileText className="h-4 w-4" />
+                        Ver PDF
+                      </a>
+
+                      <a
+                        href={selectedClosure.pdf_url}
+                        download
+                        className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium hover:bg-white"
+                      >
+                        Descargar PDF
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {selectedWorkOrder.status === "assigned" && (
                 <button

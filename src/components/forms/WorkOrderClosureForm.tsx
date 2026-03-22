@@ -1,4 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import SignatureCanvas from "react-signature-canvas";
+import { RotateCcw, FileText } from "lucide-react";
+import { supabase } from "../../lib/supabase";
 import {
   completeWorkOrder,
   getWorkOrderById,
@@ -6,6 +9,7 @@ import {
   registerInstalledPartsFromItems,
 } from "../../lib/workOrdersService";
 import type { WorkOrderItem } from "../../types/workOrderItems";
+import { generateWorkOrderClosurePDF } from "../../utils/workOrderClosurePDF";
 
 interface WorkOrderClosureFormProps {
   workOrderId: string;
@@ -29,7 +33,6 @@ export function WorkOrderClosureForm({
   );
   const [technicalReport, setTechnicalReport] = useState("");
   const [clientReceptionName, setClientReceptionName] = useState("");
-  const [clientSignatureUrl, setClientSignatureUrl] = useState("");
   const [actualHours, setActualHours] = useState("");
 
   const [beforePhotos, setBeforePhotos] = useState<string[]>([""]);
@@ -37,12 +40,20 @@ export function WorkOrderClosureForm({
   const [evidencePhotos, setEvidencePhotos] = useState<string[]>([""]);
 
   const [items, setItems] = useState<WorkOrderItem[]>([]);
-  const [partSelections, setPartSelections] = useState<Record<string, boolean>>({});
+  const [partSelections, setPartSelections] = useState<Record<string, boolean>>(
+    {}
+  );
 
   const [orderTitle, setOrderTitle] = useState("");
   const [orderNumber, setOrderNumber] = useState<number | null>(null);
+  const [clientName, setClientName] = useState("");
+  const [buildingName, setBuildingName] = useState("");
+  const [elevatorName, setElevatorName] = useState("");
+  const [technicianName, setTechnicianName] = useState("");
 
-  useMemo(() => {
+  const signaturePadRef = useRef<SignatureCanvas | null>(null);
+
+  useEffect(() => {
     void loadData();
   }, [workOrderId]);
 
@@ -62,6 +73,10 @@ export function WorkOrderClosureForm({
 
       setOrderTitle(order.title || "");
       setOrderNumber(order.ot_number || null);
+      setClientName(order.client_name || "");
+      setBuildingName(order.building_name || "");
+      setElevatorName(order.elevator_name || "");
+      setTechnicianName(order.technician_name || "");
       setItems(orderItems);
 
       const defaultPartSelection: Record<string, boolean> = {};
@@ -80,7 +95,9 @@ export function WorkOrderClosureForm({
       setStartedAt(order.technician_started_at?.slice(0, 16) || startDefault);
     } catch (err: any) {
       console.error("Error loading closure form:", err);
-      setError(err?.message || "No fue posible cargar la información de cierre.");
+      setError(
+        err?.message || "No fue posible cargar la información de cierre."
+      );
     } finally {
       setInitialLoading(false);
     }
@@ -110,7 +127,74 @@ export function WorkOrderClosureForm({
     });
   }
 
+  function dataUrlToBlob(dataUrl: string): Blob {
+    const parts = dataUrl.split(",");
+    const mimeMatch = parts[0].match(/:(.*?);/);
+    const mime = mimeMatch?.[1] || "image/png";
+    const binary = atob(parts[1]);
+    const array = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i += 1) {
+      array[i] = binary.charCodeAt(i);
+    }
+
+    return new Blob([array], { type: mime });
+  }
+
+  async function uploadSignature(signatureDataUrl: string) {
+    const blob = dataUrlToBlob(signatureDataUrl);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filePath = `ot/${workOrderId}/signature_${timestamp}.png`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("work-order-signatures")
+      .upload(filePath, blob, {
+        contentType: "image/png",
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(`No se pudo subir la firma: ${uploadError.message}`);
+    }
+
+    const { data } = supabase.storage
+      .from("work-order-signatures")
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  }
+
+  async function uploadPdf(pdfBlob: Blob) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filePath = `ot/${workOrderId}/cierre_ot_${timestamp}.pdf`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("work-order-pdfs")
+      .upload(filePath, pdfBlob, {
+        contentType: "application/pdf",
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(`No se pudo subir el PDF: ${uploadError.message}`);
+    }
+
+    const { data } = supabase.storage
+      .from("work-order-pdfs")
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  }
+
   const selectedPartCount = Object.values(partSelections).filter(Boolean).length;
+
+  const selectedInstalledParts = useMemo(
+    () =>
+      items
+        .filter((item) => item.item_type === "part" && partSelections[item.id])
+        .map((item) => item.description),
+    [items, partSelections]
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -131,13 +215,24 @@ export function WorkOrderClosureForm({
         throw new Error("Debes ingresar el informe técnico de cierre.");
       }
 
+      if (!clientReceptionName.trim()) {
+        throw new Error("Debes ingresar el nombre de quien recibe.");
+      }
+
+      if (!signaturePadRef.current || signaturePadRef.current.isEmpty()) {
+        throw new Error("Debes registrar la firma de recepción.");
+      }
+
       const {
         data: { user },
         error: authError,
-      } = await (await import("../../lib/supabase")).supabase.auth.getUser();
+      } = await supabase.auth.getUser();
 
       if (authError) throw authError;
       if (!user) throw new Error("No hay sesión activa para registrar el cierre.");
+
+      const signatureDataUrl = signaturePadRef.current.toDataURL("image/png");
+      const signatureUrl = await uploadSignature(signatureDataUrl);
 
       const normalizedPhotos = [
         ...beforePhotos
@@ -160,8 +255,8 @@ export function WorkOrderClosureForm({
         startedAt: new Date(startedAt).toISOString(),
         completedAt: new Date(completedAt).toISOString(),
         technicalReport: technicalReport.trim(),
-        clientReceptionName: clientReceptionName.trim() || null,
-        clientSignatureUrl: clientSignatureUrl.trim() || null,
+        clientReceptionName: clientReceptionName.trim(),
+        clientSignatureUrl: signatureUrl,
         actualHours: actualHours ? Number(actualHours) : null,
         photos: normalizedPhotos,
       });
@@ -174,10 +269,61 @@ export function WorkOrderClosureForm({
         await registerInstalledPartsFromItems(workOrderId);
       }
 
-      setSuccessMessage("Orden de trabajo cerrada correctamente.");
+      const { data: closureRow, error: closureError } = await supabase
+        .from("work_order_closures")
+        .select("id")
+        .eq("work_order_id", workOrderId)
+        .eq("created_by", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (closureError) {
+        throw new Error(
+          `La OT se cerró, pero no se pudo recuperar el cierre para PDF: ${closureError.message}`
+        );
+      }
+
+      if (!closureRow?.id) {
+        throw new Error("La OT se cerró, pero no se encontró el registro de cierre.");
+      }
+
+      const pdfBlob = await generateWorkOrderClosurePDF({
+        workOrderNumber: orderNumber,
+        title: orderTitle,
+        clientName,
+        buildingName,
+        elevatorName,
+        technicianName,
+        startedAt: new Date(startedAt).toISOString(),
+        completedAt: new Date(completedAt).toISOString(),
+        actualHours: actualHours ? Number(actualHours) : null,
+        technicalReport: technicalReport.trim(),
+        clientReceptionName: clientReceptionName.trim(),
+        signatureDataUrl,
+        installedParts: selectedInstalledParts,
+        beforePhotos: beforePhotos.map((item) => item.trim()).filter(Boolean),
+        afterPhotos: afterPhotos.map((item) => item.trim()).filter(Boolean),
+        evidencePhotos: evidencePhotos.map((item) => item.trim()).filter(Boolean),
+      });
+
+      const pdfUrl = await uploadPdf(pdfBlob);
+
+      const { error: updateError } = await supabase
+        .from("work_order_closures")
+        .update({ pdf_url: pdfUrl })
+        .eq("id", closureRow.id);
+
+      if (updateError) {
+        throw new Error(
+          `La OT se cerró, pero no se pudo guardar el PDF: ${updateError.message}`
+        );
+      }
+
+      setSuccessMessage("Orden de trabajo cerrada correctamente con firma y PDF.");
       setTimeout(() => {
         onSuccess();
-      }, 800);
+      }, 900);
     } catch (err: any) {
       console.error("Error closing work order:", err);
       setError(err?.message || "No fue posible cerrar la orden de trabajo.");
@@ -284,7 +430,7 @@ export function WorkOrderClosureForm({
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              Recepción cliente
+              Nombre de quien recibe *
             </label>
             <input
               value={clientReceptionName}
@@ -294,16 +440,31 @@ export function WorkOrderClosureForm({
             />
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              URL firma / recepción
-            </label>
-            <input
-              value={clientSignatureUrl}
-              onChange={(e) => setClientSignatureUrl(e.target.value)}
-              className="w-full rounded-lg border px-3 py-2"
-              placeholder="URL de imagen o referencia de firma"
-            />
+          <div className="rounded-xl border bg-slate-50 p-4">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
+              <FileText className="h-4 w-4" />
+              Firma de recepción *
+            </div>
+
+            <div className="overflow-hidden rounded-lg border bg-white">
+              <SignatureCanvas
+                ref={signaturePadRef}
+                canvasProps={{
+                  className: "h-44 w-full",
+                }}
+              />
+            </div>
+
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => signaturePadRef.current?.clear()}
+                className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-white"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Limpiar firma
+              </button>
+            </div>
           </div>
         </div>
 
@@ -367,18 +528,27 @@ export function WorkOrderClosureForm({
           title="Fotos antes"
           values={beforePhotos}
           onChange={setBeforePhotos}
+          updatePhotoList={updatePhotoList}
+          addPhotoField={addPhotoField}
+          removePhotoField={removePhotoField}
         />
 
         <PhotoSection
           title="Fotos después"
           values={afterPhotos}
           onChange={setAfterPhotos}
+          updatePhotoList={updatePhotoList}
+          addPhotoField={addPhotoField}
+          removePhotoField={removePhotoField}
         />
 
         <PhotoSection
           title="Fotos evidencia"
           values={evidencePhotos}
           onChange={setEvidencePhotos}
+          updatePhotoList={updatePhotoList}
+          addPhotoField={addPhotoField}
+          removePhotoField={removePhotoField}
         />
 
         <div className="flex justify-end gap-3">
@@ -395,61 +565,74 @@ export function WorkOrderClosureForm({
             disabled={loading}
             className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
           >
-            {loading ? "Cerrando..." : "Cerrar OT"}
+            {loading ? "Cerrando..." : "Cerrar OT con firma y PDF"}
           </button>
         </div>
       </form>
     </div>
   );
+}
 
-  function PhotoSection({
-    title,
-    values,
-    onChange,
-  }: {
-    title: string;
-    values: string[];
-    onChange: React.Dispatch<React.SetStateAction<string[]>>;
-  }) {
-    return (
-      <div className="rounded-xl border p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-            <p className="text-sm text-slate-600">
-              Ingresa URLs o referencias de archivos subidos.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => addPhotoField(onChange)}
-            className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
-          >
-            + Agregar
-          </button>
+function PhotoSection({
+  title,
+  values,
+  onChange,
+  updatePhotoList,
+  addPhotoField,
+  removePhotoField,
+}: {
+  title: string;
+  values: string[];
+  onChange: React.Dispatch<React.SetStateAction<string[]>>;
+  updatePhotoList: (
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    index: number,
+    value: string
+  ) => void;
+  addPhotoField: (setter: React.Dispatch<React.SetStateAction<string[]>>) => void;
+  removePhotoField: (
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    index: number
+  ) => void;
+}) {
+  return (
+    <div className="rounded-xl border p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+          <p className="text-sm text-slate-600">
+            Ingresa URLs o referencias de archivos subidos.
+          </p>
         </div>
 
-        <div className="space-y-2">
-          {values.map((value, index) => (
-            <div key={`${title}-${index}`} className="flex gap-2">
-              <input
-                value={value}
-                onChange={(e) => updatePhotoList(onChange, index, e.target.value)}
-                className="w-full rounded-lg border px-3 py-2"
-                placeholder="https://... o referencia del archivo"
-              />
-              <button
-                type="button"
-                onClick={() => removePhotoField(onChange, index)}
-                className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
-              >
-                Quitar
-              </button>
-            </div>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => addPhotoField(onChange)}
+          className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
+        >
+          + Agregar
+        </button>
       </div>
-    );
-  }
+
+      <div className="space-y-2">
+        {values.map((value, index) => (
+          <div key={`${title}-${index}`} className="flex gap-2">
+            <input
+              value={value}
+              onChange={(e) => updatePhotoList(onChange, index, e.target.value)}
+              className="w-full rounded-lg border px-3 py-2"
+              placeholder="https://... o referencia del archivo"
+            />
+            <button
+              type="button"
+              onClick={() => removePhotoField(onChange, index)}
+              className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
+            >
+              Quitar
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
