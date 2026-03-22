@@ -15,8 +15,10 @@ import {
   X,
   BookOpen,
   QrCode,
+  BarChart3,
   Building,
   User as UserIcon,
+  ShieldCheck,
   TrendingUp,
   Shield,
   CalendarRange,
@@ -50,164 +52,52 @@ const navSections: NavSection[] = [
   {
     label: 'Principal',
     items: [
-      {
-        label: 'Inicio',
-        icon: LayoutDashboard,
-        path: 'dashboard',
-        roles: ['developer', 'admin', 'technician', 'client'],
-      },
-      {
-        label: 'Mi Perfil',
-        icon: UserIcon,
-        path: 'profile',
-        roles: ['developer', 'admin', 'technician', 'client'],
-      },
-      {
-        label: 'Mi Calendario',
-        icon: CalendarRange,
-        path: 'calendar',
-        roles: ['technician'],
-      },
+      { label: 'Inicio', icon: LayoutDashboard, path: 'dashboard', roles: ['developer', 'admin', 'technician', 'client'] },
+      { label: 'Mi Perfil', icon: UserIcon, path: 'profile', roles: ['developer', 'admin', 'technician', 'client'] },
+      { label: 'Mi Calendario', icon: CalendarRange, path: 'calendar', roles: ['technician'] },
     ],
   },
   {
     label: 'Operaciones',
     items: [
-      {
-        label: 'Calendario Operativo',
-        icon: CalendarRange,
-        path: 'calendar',
-        roles: ['developer', 'admin'],
-      },
-      {
-        label: 'Mantenimientos',
-        icon: ClipboardList,
-        path: 'maintenance-checklist',
-        roles: ['developer', 'admin', 'technician'],
-      },
-      {
-        label: 'Solicitudes de Servicio',
-        icon: FileText,
-        path: 'service-requests',
-        roles: ['developer', 'admin', 'technician'],
-      },
-      {
-        label: 'Emergencias',
-        icon: AlertTriangle,
-        path: 'emergencies',
-        roles: ['developer', 'admin', 'technician'],
-      },
-      {
-        label: 'Órdenes de Trabajo',
-        icon: FileText,
-        path: 'work-orders',
-        roles: ['developer', 'admin', 'technician'],
-      },
-      {
-        label: 'Ascensores',
-        icon: Building2,
-        path: 'elevators',
-        roles: ['developer', 'admin', 'technician', 'client'],
-      },
+      { label: 'Calendario Operativo', icon: CalendarRange, path: 'calendar', roles: ['developer', 'admin'] },
+      { label: 'Mantenimientos', icon: ClipboardList, path: 'maintenance-checklist', roles: ['developer', 'admin', 'technician'] },
+      { label: 'Solicitudes de Servicio', icon: FileText, path: 'service-requests', roles: ['developer', 'admin', 'technician'] },
+      { label: 'Emergencias', icon: AlertTriangle, path: 'emergencies', roles: ['developer', 'admin', 'technician'] },
+      { label: 'Órdenes de Trabajo', icon: FileText, path: 'work-orders', roles: ['developer', 'admin', 'technician'] },
+      { label: 'Ascensores', icon: Building2, path: 'elevators', roles: ['developer', 'admin', 'technician', 'client'] },
     ],
   },
   {
     label: 'Análisis y Gestión',
     items: [
-      {
-        label: 'Estadísticas',
-        icon: TrendingUp,
-        path: 'statistics',
-        roles: ['developer', 'admin'],
-      },
-      {
-        label: 'Registro de Auditoría',
-        icon: FileSearch,
-        path: 'audit-logs',
-        roles: ['developer', 'admin'],
-      },
+      { label: 'Resumen Ejecutivo', icon: TrendingUp, path: 'statistics', roles: ['developer', 'admin'] },
+      { label: 'Análisis Operativo', icon: ShieldCheck, path: 'risk-backlog', roles: ['developer', 'admin'] },
+      { label: 'Análisis Comercial', icon: BarChart3, path: 'value-opportunities', roles: ['developer', 'admin'] },
+      { label: 'Costos y Conversión', icon: TrendingUp, path: 'roi-calculator', roles: ['developer', 'admin'] },
+      { label: 'Registro de Auditoría', icon: FileSearch, path: 'audit-logs', roles: ['developer', 'admin'] },
     ],
   },
   {
     label: 'Cliente',
     items: [
-      {
-        label: 'Mis Mantenimientos',
-        icon: ClipboardList,
-        path: 'client-maintenances',
-        roles: ['client'],
-      },
-      {
-        label: 'Mis Solicitudes',
-        icon: FileText,
-        path: 'client-service-requests',
-        roles: ['client'],
-      },
-      {
-        label: 'Mis Emergencias',
-        icon: AlertTriangle,
-        path: 'client-emergencies',
-        roles: ['client'],
-      },
-      {
-        label: 'Inducción de Rescate',
-        icon: Award,
-        path: 'rescue-training',
-        roles: ['client'],
-      },
-      {
-        label: 'Carpeta Cero',
-        icon: Folder,
-        path: 'carpeta-cero',
-        roles: ['client'],
-      },
+      { label: 'Mis Mantenimientos', icon: ClipboardList, path: 'client-maintenances', roles: ['client'] },
+      { label: 'Mis Solicitudes', icon: FileText, path: 'client-service-requests', roles: ['client'] },
+      { label: 'Mis Emergencias', icon: AlertTriangle, path: 'client-emergencies', roles: ['client'] },
+      { label: 'Inducción de Rescate', icon: Award, path: 'rescue-training', roles: ['client'] },
+      { label: 'Carpeta Cero', icon: Folder, path: 'carpeta-cero', roles: ['client'] },
     ],
   },
   {
     label: 'Configuración y Administración',
     items: [
-      {
-        label: 'Usuarios',
-        icon: Users,
-        path: 'users',
-        roles: ['developer', 'admin'],
-      },
-      {
-        label: 'Clientes',
-        icon: Building,
-        path: 'clients',
-        roles: ['developer', 'admin'],
-      },
-      {
-        label: 'Códigos QR',
-        icon: QrCode,
-        path: 'qr-codes-complete',
-        roles: ['developer', 'admin'],
-      },
-      {
-        label: 'Manuales Técnicos',
-        icon: BookOpen,
-        path: 'manuals',
-        roles: ['developer', 'admin', 'technician'],
-      },
-      {
-        label: 'Permisos Globales',
-        icon: Shield,
-        path: 'developer-permissions',
-        roles: ['developer'],
-      },
-      {
-        label: 'Permisos',
-        icon: Shield,
-        path: 'admin-permissions',
-        roles: ['admin'],
-      },
-      {
-        label: 'Configuración',
-        icon: Settings,
-        path: 'settings',
-        roles: ['developer', 'admin'],
-      },
+      { label: 'Usuarios', icon: Users, path: 'users', roles: ['developer', 'admin'] },
+      { label: 'Clientes', icon: Building, path: 'clients', roles: ['developer', 'admin'] },
+      { label: 'Códigos QR', icon: QrCode, path: 'qr-codes-complete', roles: ['developer', 'admin'] },
+      { label: 'Manuales Técnicos', icon: BookOpen, path: 'manuals', roles: ['developer', 'admin', 'technician'] },
+      { label: 'Permisos Globales', icon: Shield, path: 'developer-permissions', roles: ['developer'] },
+      { label: 'Permisos', icon: Shield, path: 'admin-permissions', roles: ['admin'] },
+      { label: 'Configuración', icon: Settings, path: 'settings', roles: ['developer', 'admin'] },
     ],
   },
 ];
@@ -275,7 +165,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
 
       if (error) throw error;
 
-      const unread = (data ?? []).filter((n: { is_read?: boolean | null }) => !n.is_read).length;
+      const unread = (data ?? []).filter((n: any) => !n.is_read).length;
       setNotificationCount(unread);
     } catch (error) {
       console.error('Error loading unread notifications:', error);
@@ -283,17 +173,14 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
   };
 
   const subscribeToNotifications = () => {
-    if (!profile?.id) return () => {};
-
     const channel = supabase
-      .channel(`layout_notifications_${profile.id}`)
+      .channel('layout_notifications')
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'notifications',
-          filter: `user_id=eq.${profile.id}`,
         },
         () => {
           loadUnreadNotifications();
@@ -308,7 +195,9 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
 
   const handleNavigation = (path: string) => {
     setSidebarOpen(false);
-    onNavigate?.(path);
+    if (onNavigate) {
+      onNavigate(path);
+    }
   };
 
   return (
@@ -326,18 +215,13 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
               <p className="text-xs text-gray-600">Ascensores</p>
             </div>
           </div>
-
           <div className="flex items-center gap-2">
             <NotificationCenter onNavigate={handleNavigation} />
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="p-2 hover:bg-gray-100 rounded-lg transition"
             >
-              {sidebarOpen ? (
-                <X className="w-6 h-6" />
-              ) : (
-                <Menu className="w-6 h-6" />
-              )}
+              {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
           </div>
         </div>
@@ -362,7 +246,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
                   <p className="text-sm text-gray-600">Ascensores</p>
                 </div>
               </div>
-
               <div className="relative">
                 <NotificationCenter onNavigate={handleNavigation} />
                 {notificationCount > 0 && (
@@ -379,12 +262,10 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
               <div className="w-10 h-10 bg-gradient-to-r from-red-600 to-green-600 rounded-full flex items-center justify-center text-white font-semibold">
                 {profile?.full_name?.charAt(0)?.toUpperCase() ?? '?'}
               </div>
-
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900 truncate">
                   {profile?.full_name}
                 </p>
-
                 {profile?.role === 'client' && profile?.building_name && (
                   <p className="text-xs text-gray-600 truncate">
                     {profile.building_name}
@@ -404,7 +285,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
                   <span className="uppercase tracking-wide text-left flex-1">
                     {section.label}
                   </span>
-
                   {expandedSections[section.label] ? (
                     <ChevronDown className="w-4 h-4 flex-shrink-0" />
                   ) : (

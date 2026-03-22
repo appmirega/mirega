@@ -20,7 +20,10 @@ import { ServiceRequestsDashboard } from "./components/views/ServiceRequestsDash
 import { WorkOrdersView } from "./components/views/WorkOrdersView";
 import { TechnicianWorkOrdersView } from "./components/views/TechnicianWorkOrdersView";
 import { ElevatorsCompleteView } from "./components/views/ElevatorsCompleteView";
-import { StatisticsView } from "./components/views/StatisticsView";
+import { ExecutiveSummaryView } from "./components/views/ExecutiveSummaryView";
+import { CommercialAnalysisView } from "./components/views/CommercialAnalysisView";
+import { OperationalAnalysisView } from "./components/views/OperationalAnalysisView";
+import { CostAnalysisView } from "./components/views/CostAnalysisView";
 import { AuditLogView } from "./components/views/AuditLogView";
 import { UsersView } from "./components/views/UsersView";
 import { ClientsView } from "./components/views/ClientsView";
@@ -248,11 +251,47 @@ function App() {
 
       case "statistics":
         if (profile?.role === "admin" || profile?.role === "developer") {
-          content = <StatisticsView />;
+          content = <ExecutiveSummaryView />;
         } else {
           content = (
             <div className="py-12 text-center">
-              Vista de estadísticas no disponible para este rol.
+              Vista de análisis no disponible para este rol.
+            </div>
+          );
+        }
+        break;
+
+      case "risk-backlog":
+        if (profile?.role === "admin" || profile?.role === "developer") {
+          content = <OperationalAnalysisView />;
+        } else {
+          content = (
+            <div className="py-12 text-center">
+              Vista de análisis operativo no disponible para este rol.
+            </div>
+          );
+        }
+        break;
+
+      case "value-opportunities":
+        if (profile?.role === "admin" || profile?.role === "developer") {
+          content = <CommercialAnalysisView />;
+        } else {
+          content = (
+            <div className="py-12 text-center">
+              Vista de análisis comercial no disponible para este rol.
+            </div>
+          );
+        }
+        break;
+
+      case "roi-calculator":
+        if (profile?.role === "admin" || profile?.role === "developer") {
+          content = <CostAnalysisView />;
+        } else {
+          content = (
+            <div className="py-12 text-center">
+              Vista de costos no disponible para este rol.
             </div>
           );
         }
@@ -383,9 +422,6 @@ function App() {
         break;
 
       case "client-service-requests":
-      case "risk-backlog":
-      case "value-opportunities":
-      case "roi-calculator":
       case "settings":
         content = (
           <div className="py-12 text-center text-slate-600">

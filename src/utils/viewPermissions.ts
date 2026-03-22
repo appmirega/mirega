@@ -1,221 +1,346 @@
-import type { UserRole } from '../lib/database.types';
+import { ReactNode, useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { NotificationCenter } from './NotificationCenter';
+import { supabase } from '../lib/supabase';
+import { useViewPermissions } from '../hooks/useViewPermissions';
+import {
+  LayoutDashboard,
+  Users,
+  FileText,
+  AlertTriangle,
+  ClipboardList,
+  Settings,
+  LogOut,
+  Menu,
+  X,
+  BookOpen,
+  QrCode,
+  BarChart3,
+  Building,
+  User as UserIcon,
+  ShieldCheck,
+  TrendingUp,
+  Shield,
+  CalendarRange,
+  Award,
+  Folder,
+  FileSearch,
+  Building2,
+  ChevronDown,
+  ChevronRight,
+} from 'lucide-react';
 
-export interface ViewPermission {
-  key: string;
-  label: string;
-  description: string;
-  defaultRoles: UserRole[];
+interface LayoutProps {
+  children: ReactNode;
+  onNavigate?: (path: string) => void;
+  currentView?: string;
 }
 
-export const ALL_VIEWS: ViewPermission[] = [
+interface NavItem {
+  label: string;
+  icon: React.ElementType;
+  path: string;
+  roles: string[];
+}
+
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+const navSections: NavSection[] = [
   {
-    key: 'dashboard',
-    label: 'Inicio',
-    description: 'Panel principal del sistema',
-    defaultRoles: ['admin', 'technician', 'client'],
+    label: 'Principal',
+    items: [
+      { label: 'Inicio', icon: LayoutDashboard, path: 'dashboard', roles: ['developer', 'admin', 'technician', 'client'] },
+      { label: 'Mi Perfil', icon: UserIcon, path: 'profile', roles: ['developer', 'admin', 'technician', 'client'] },
+      { label: 'Mi Calendario', icon: CalendarRange, path: 'calendar', roles: ['technician'] },
+    ],
   },
   {
-    key: 'profile',
-    label: 'Mi Perfil',
-    description: 'Información personal del usuario',
-    defaultRoles: ['admin', 'technician', 'client'],
+    label: 'Operaciones',
+    items: [
+      { label: 'Calendario Operativo', icon: CalendarRange, path: 'calendar', roles: ['developer', 'admin'] },
+      { label: 'Mantenimientos', icon: ClipboardList, path: 'maintenance-checklist', roles: ['developer', 'admin', 'technician'] },
+      { label: 'Solicitudes de Servicio', icon: FileText, path: 'service-requests', roles: ['developer', 'admin', 'technician'] },
+      { label: 'Emergencias', icon: AlertTriangle, path: 'emergencies', roles: ['developer', 'admin', 'technician'] },
+      { label: 'Órdenes de Trabajo', icon: FileText, path: 'work-orders', roles: ['developer', 'admin', 'technician'] },
+      { label: 'Ascensores', icon: Building2, path: 'elevators', roles: ['developer', 'admin', 'technician', 'client'] },
+    ],
   },
   {
-    key: 'calendar',
-    label: 'Calendario',
-    description: 'Vista de calendario operativo',
-    defaultRoles: ['admin', 'technician'],
+    label: 'Análisis y Gestión',
+    items: [
+      { label: 'Resumen Ejecutivo', icon: TrendingUp, path: 'statistics', roles: ['developer', 'admin'] },
+      { label: 'Análisis Operativo', icon: ShieldCheck, path: 'risk-backlog', roles: ['developer', 'admin'] },
+      { label: 'Análisis Comercial', icon: BarChart3, path: 'value-opportunities', roles: ['developer', 'admin'] },
+      { label: 'Costos y Conversión', icon: TrendingUp, path: 'roi-calculator', roles: ['developer', 'admin'] },
+      { label: 'Registro de Auditoría', icon: FileSearch, path: 'audit-logs', roles: ['developer', 'admin'] },
+    ],
   },
   {
-    key: 'users',
-    label: 'Usuarios',
-    description: 'Administrar usuarios del sistema',
-    defaultRoles: ['admin'],
+    label: 'Cliente',
+    items: [
+      { label: 'Mis Mantenimientos', icon: ClipboardList, path: 'client-maintenances', roles: ['client'] },
+      { label: 'Mis Solicitudes', icon: FileText, path: 'client-service-requests', roles: ['client'] },
+      { label: 'Mis Emergencias', icon: AlertTriangle, path: 'client-emergencies', roles: ['client'] },
+      { label: 'Inducción de Rescate', icon: Award, path: 'rescue-training', roles: ['client'] },
+      { label: 'Carpeta Cero', icon: Folder, path: 'carpeta-cero', roles: ['client'] },
+    ],
   },
   {
-    key: 'clients',
-    label: 'Clientes',
-    description: 'Ver y administrar clientes',
-    defaultRoles: ['admin'],
-  },
-  {
-    key: 'elevators',
-    label: 'Ascensores',
-    description: 'Gestión de ascensores e información técnica',
-    defaultRoles: ['admin', 'technician', 'client'],
-  },
-  {
-    key: 'maintenance-complete',
-    label: 'Gestión de Mantenimientos',
-    description: 'Control administrativo de mantenimientos',
-    defaultRoles: ['admin'],
-  },
-  {
-    key: 'maintenance-checklist',
-    label: 'Mantenimientos',
-    description: 'Checklist y gestión operativa de mantenimientos',
-    defaultRoles: ['admin', 'technician'],
-  },
-  {
-    key: 'service-requests',
-    label: 'Solicitudes de Servicio',
-    description: 'Gestión de solicitudes de servicio',
-    defaultRoles: ['admin', 'technician'],
-  },
-  {
-    key: 'emergencies',
-    label: 'Emergencias',
-    description: 'Gestión de emergencias',
-    defaultRoles: ['technician'],
-  },
-  {
-    key: 'client-emergencies',
-    label: 'Mis Emergencias',
-    description: 'Ver emergencias propias',
-    defaultRoles: ['client'],
-  },
-  {
-    key: 'emergency-history',
-    label: 'Historial de Emergencias',
-    description: 'Histórico completo de emergencias',
-    defaultRoles: ['admin'],
-  },
-  {
-    key: 'work-orders',
-    label: 'Órdenes de Trabajo',
-    description: 'Gestionar órdenes de trabajo',
-    defaultRoles: ['admin', 'technician'],
-  },
-  {
-    key: 'routes',
-    label: 'Rutas',
-    description: 'Gestión de rutas de mantenimiento',
-    defaultRoles: ['admin', 'technician'],
-  },
-  {
-    key: 'quotations',
-    label: 'Cotizaciones',
-    description: 'Gestión de cotizaciones',
-    defaultRoles: ['admin'],
-  },
-  {
-    key: 'client-quotations',
-    label: 'Mis Cotizaciones',
-    description: 'Ver cotizaciones propias',
-    defaultRoles: ['client'],
-  },
-  {
-    key: 'carpeta-cero',
-    label: 'Carpeta Cero',
-    description: 'Documentación legal y técnica',
-    defaultRoles: ['admin', 'client'],
-  },
-  {
-    key: 'rescue-training-admin',
-    label: 'Capacitaciones de Rescate',
-    description: 'Administrar capacitaciones de rescate',
-    defaultRoles: ['admin'],
-  },
-  {
-    key: 'rescue-training',
-    label: 'Inducción de Rescate',
-    description: 'Contenido de inducción de rescate',
-    defaultRoles: ['client'],
-  },
-  {
-    key: 'parts-inventory',
-    label: 'Inventario de Repuestos',
-    description: 'Control de inventario de repuestos',
-    defaultRoles: ['admin'],
-  },
-  {
-    key: 'manuals',
-    label: 'Manuales Técnicos',
-    description: 'Biblioteca de manuales técnicos',
-    defaultRoles: ['admin', 'technician'],
-  },
-  {
-    key: 'qr-codes-complete',
-    label: 'Códigos QR',
-    description: 'Gestión de códigos QR',
-    defaultRoles: ['admin'],
-  },
-  {
-    key: 'certifications',
-    label: 'Certificaciones',
-    description: 'Gestión de certificaciones',
-    defaultRoles: ['admin'],
-  },
-  {
-    key: 'statistics',
-    label: 'Estadísticas',
-    description: 'Reportes y estadísticas generales',
-    defaultRoles: ['admin', 'developer'],
-  },
-  {
-    key: 'activity-history',
-    label: 'Historial de Actividad',
-    description: 'Registro de actividades del sistema',
-    defaultRoles: ['admin', 'technician', 'client'],
-  },
-  {
-    key: 'notifications',
-    label: 'Notificaciones',
-    description: 'Centro de notificaciones',
-    defaultRoles: ['admin', 'technician', 'client'],
-  },
-  {
-    key: 'audit-logs',
-    label: 'Registro de Auditoría',
-    description: 'Logs y trazabilidad del sistema',
-    defaultRoles: ['admin', 'developer'],
-  },
-  {
-    key: 'bulk-operations',
-    label: 'Operaciones Masivas',
-    description: 'Operaciones administrativas en lote',
-    defaultRoles: ['admin'],
-  },
-  {
-    key: 'developer-permissions',
-    label: 'Permisos Globales',
-    description: 'Gestión global de permisos del sistema',
-    defaultRoles: ['developer'],
-  },
-  {
-    key: 'admin-permissions',
-    label: 'Permisos',
-    description: 'Gestión de permisos para técnicos y clientes',
-    defaultRoles: ['admin'],
+    label: 'Configuración y Administración',
+    items: [
+      { label: 'Usuarios', icon: Users, path: 'users', roles: ['developer', 'admin'] },
+      { label: 'Clientes', icon: Building, path: 'clients', roles: ['developer', 'admin'] },
+      { label: 'Códigos QR', icon: QrCode, path: 'qr-codes-complete', roles: ['developer', 'admin'] },
+      { label: 'Manuales Técnicos', icon: BookOpen, path: 'manuals', roles: ['developer', 'admin', 'technician'] },
+      { label: 'Permisos Globales', icon: Shield, path: 'developer-permissions', roles: ['developer'] },
+      { label: 'Permisos', icon: Shield, path: 'admin-permissions', roles: ['admin'] },
+      { label: 'Configuración', icon: Settings, path: 'settings', roles: ['developer', 'admin'] },
+    ],
   },
 ];
 
-export const ALL_VIEW_KEYS = new Set(ALL_VIEWS.map((view) => view.key));
+export function Layout({ children, onNavigate, currentView }: LayoutProps) {
+  const { profile, signOut } = useAuth();
+  const { canAccessView } = useViewPermissions();
 
-export function isManagedView(viewKey: string): boolean {
-  return ALL_VIEW_KEYS.has(viewKey);
-}
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    Principal: true,
+    Operaciones: false,
+    'Análisis y Gestión': false,
+    Cliente: false,
+    'Configuración y Administración': false,
+  });
 
-export function getViewsForRole(role: UserRole): ViewPermission[] {
-  return ALL_VIEWS.filter((view) => view.defaultRoles.includes(role));
-}
+  const toggleSection = (label: string) => {
+    setExpandedSections((prev) => ({
+      Principal: label === 'Principal' ? !prev.Principal : false,
+      Operaciones: label === 'Operaciones' ? !prev.Operaciones : false,
+      'Análisis y Gestión': label === 'Análisis y Gestión' ? !prev['Análisis y Gestión'] : false,
+      Cliente: label === 'Cliente' ? !prev.Cliente : false,
+      'Configuración y Administración':
+        label === 'Configuración y Administración'
+          ? !prev['Configuración y Administración']
+          : false,
+    }));
+  };
 
-export function getDefaultEnabledViewKeys(role: UserRole): Set<string> {
-  return new Set(getViewsForRole(role).map((view) => view.key));
-}
+  const filteredSections = navSections
+    .map((section) => ({
+      label: section.label,
+      items: section.items.filter((item) => {
+        if (!profile) return false;
+        if (!item.roles.includes(profile.role)) return false;
+        return canAccessView(item.path);
+      }),
+    }))
+    .filter((section) => section.items.length > 0);
 
-export function getManageableViews(managerRole: 'admin'): ViewPermission[] {
-  if (managerRole === 'admin') {
-    return ALL_VIEWS.filter(
-      (view) =>
-        view.defaultRoles.includes('technician') ||
-        view.defaultRoles.includes('client')
-    );
-  }
+  useEffect(() => {
+    if (!profile?.id) return;
 
-  return [];
-}
+    loadUnreadNotifications();
+    const unsubscribe = subscribeToNotifications();
 
-export function getAllManageableViews(): ViewPermission[] {
-  return ALL_VIEWS;
+    return () => {
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
+
+  const loadUnreadNotifications = async () => {
+    if (!profile?.id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('id, is_read')
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      const unread = (data ?? []).filter((n: any) => !n.is_read).length;
+      setNotificationCount(unread);
+    } catch (error) {
+      console.error('Error loading unread notifications:', error);
+    }
+  };
+
+  const subscribeToNotifications = () => {
+    const channel = supabase
+      .channel('layout_notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+        },
+        () => {
+          loadUnreadNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
+  const handleNavigation = (path: string) => {
+    setSidebarOpen(false);
+    if (onNavigate) {
+      onNavigate(path);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="lg:hidden fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-30 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img
+              src="/logo-circular (2).png"
+              alt="MIREGA"
+              className="h-8 w-auto"
+            />
+            <div>
+              <h1 className="text-lg font-bold text-gray-900">MIREGA</h1>
+              <p className="text-xs text-gray-600">Ascensores</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <NotificationCenter onNavigate={handleNavigation} />
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition"
+            >
+              {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-20 w-64 bg-white border-r border-gray-200 transition-transform lg:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="h-full flex flex-col">
+          <div className="p-6 border-b border-gray-200 hidden lg:block">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <img
+                  src="/logo-circular (2).png"
+                  alt="MIREGA Ascensores"
+                  className="h-12 w-auto"
+                />
+                <div>
+                  <h1 className="text-xl font-bold text-gray-900">MIREGA</h1>
+                  <p className="text-sm text-gray-600">Ascensores</p>
+                </div>
+              </div>
+              <div className="relative">
+                <NotificationCenter onNavigate={handleNavigation} />
+                {notificationCount > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {notificationCount > 9 ? '9+' : notificationCount}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 border-b border-gray-200 lg:mt-0 mt-16">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-red-600 to-green-600 rounded-full flex items-center justify-center text-white font-semibold">
+                {profile?.full_name?.charAt(0)?.toUpperCase() ?? '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-900 truncate">
+                  {profile?.full_name}
+                </p>
+                {profile?.role === 'client' && profile?.building_name && (
+                  <p className="text-xs text-gray-600 truncate">
+                    {profile.building_name}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <nav className="flex-1 overflow-y-auto p-4 space-y-2">
+            {filteredSections.map((section) => (
+              <div key={section.label} className="space-y-1">
+                <button
+                  onClick={() => toggleSection(section.label)}
+                  className="w-full flex items-center justify-between px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition text-left"
+                >
+                  <span className="uppercase tracking-wide text-left flex-1">
+                    {section.label}
+                  </span>
+                  {expandedSections[section.label] ? (
+                    <ChevronDown className="w-4 h-4 flex-shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 flex-shrink-0" />
+                  )}
+                </button>
+
+                {expandedSections[section.label] && (
+                  <div className="space-y-1 pl-2">
+                    {section.items.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = currentView === item.path;
+
+                      return (
+                        <button
+                          key={item.path}
+                          onClick={() => handleNavigation(item.path)}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition text-sm text-left ${
+                            isActive
+                              ? 'bg-red-600 text-white'
+                              : 'text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 flex-shrink-0" />
+                          <span className="font-medium">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </nav>
+
+          <div className="p-4 border-t border-gray-200">
+            <button
+              onClick={signOut}
+              className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition font-medium"
+            >
+              <LogOut className="w-5 h-5" />
+              <span>Cerrar Sesión</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-10 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <main className="lg:ml-64 pt-16 lg:pt-0">
+        <div className="p-6 lg:p-8">{children}</div>
+      </main>
+    </div>
+  );
 }
