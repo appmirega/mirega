@@ -152,9 +152,9 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     internal_alias: '',
     rut: '',
     address: '',
-    city: '',
+    commune: '',
+    region: '',
     building_type: 'residencial' as BuildingType,
-    billing_address: '',
     self_managed: false,
     enable_building_contacts: false,
 
@@ -341,9 +341,9 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
       internal_alias: '',
       rut: '',
       address: '',
-      city: '',
+      commune: '',
+      region: '',
       building_type: 'residencial',
-      billing_address: '',
       self_managed: false,
       enable_building_contacts: false,
       primary_contact_name: '',
@@ -374,6 +374,14 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
 
     if (!sanitize(clientData.address)) {
       throw new Error('Debes ingresar la dirección principal del cliente.');
+    }
+
+    if (!sanitize(clientData.commune)) {
+      throw new Error('Debes ingresar la comuna.');
+    }
+
+    if (!sanitize(clientData.region)) {
+      throw new Error('Debes ingresar la región.');
     }
 
     if (clientData.self_managed) {
@@ -577,8 +585,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
             (contact) =>
               contact.name || contact.role || contact.email || contact.phone
           )
-      : []
-    ;
+      : [];
 
     return {
       self_managed: clientData.self_managed,
@@ -594,9 +601,9 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     internal_alias: sanitize(clientData.internal_alias),
     rut: sanitize(clientData.rut) || null,
     address: sanitize(clientData.address) || null,
-    city: sanitize(clientData.city) || null,
+    commune: sanitize(clientData.commune) || null,
+    city: sanitize(clientData.region) || null,
     building_type: clientData.building_type,
-    billing_address: sanitize(clientData.billing_address) || null,
 
     contact_name: showBuildingContacts
       ? sanitize(clientData.primary_contact_name) || null
@@ -621,6 +628,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
       ? null
       : sanitize(clientData.admin_phone) || null,
 
+    billing_address: null,
     is_active: true,
     client_code: `CLI-${Date.now()}`,
     alternate_contacts: buildAlternateContactsPayload(),
@@ -806,15 +814,22 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
               label="Dirección principal *"
               value={clientData.address}
               onChange={(v) => setClientData({ ...clientData, address: v })}
-              placeholder="Ej: Alcántara 44, Las Condes"
+              placeholder="Ej: Alcántara 44"
               icon={<MapPin className="h-4 w-4" />}
             />
 
             <Field
-              label="Ciudad"
-              value={clientData.city}
-              onChange={(v) => setClientData({ ...clientData, city: v })}
-              placeholder="Ej: Santiago"
+              label="Comuna *"
+              value={clientData.commune}
+              onChange={(v) => setClientData({ ...clientData, commune: v })}
+              placeholder="Ej: Las Condes"
+            />
+
+            <Field
+              label="Región *"
+              value={clientData.region}
+              onChange={(v) => setClientData({ ...clientData, region: v })}
+              placeholder="Ej: Región Metropolitana"
             />
 
             <SelectField
@@ -827,13 +842,6 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
                 { value: 'residencial', label: 'Residencial' },
                 { value: 'corporativo', label: 'Corporativo' },
               ]}
-            />
-
-            <Field
-              label="Dirección de facturación"
-              value={clientData.billing_address}
-              onChange={(v) => setClientData({ ...clientData, billing_address: v })}
-              placeholder="Opcional"
             />
           </div>
         </section>
@@ -1134,7 +1142,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
                         label="Dirección de este bloque *"
                         value={group.address}
                         onChange={(v) => updateGroup(groupIndex, 'address', v)}
-                        placeholder="Ej: Apoquindo 1234, Las Condes"
+                        placeholder="Ej: Apoquindo 1234"
                       />
                     </div>
                   )}
