@@ -32,7 +32,6 @@ interface AdditionalContact {
 }
 
 interface ElevatorTemplate {
-  internal_code: string;
   brand: string;
   brand_other: string;
   model: string;
@@ -82,7 +81,6 @@ const BRAND_OPTIONS = [
 
 function createEmptyTemplate(): ElevatorTemplate {
   return {
-    internal_code: '',
     brand: '',
     brand_other: '',
     model: '',
@@ -137,12 +135,6 @@ function parseOptionalNumber(value: string) {
   if (!clean) return null;
   const parsed = Number(clean);
   return Number.isNaN(parsed) ? null : parsed;
-}
-
-function buildInternalCode(base: string, elevatorNumber: number) {
-  const clean = sanitize(base);
-  if (!clean) return null;
-  return `${clean}-${elevatorNumber}`;
 }
 
 function hasAnyContactMethod(email: string, phone: string) {
@@ -585,7 +577,8 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
             (contact) =>
               contact.name || contact.role || contact.email || contact.phone
           )
-      : [];
+      : []
+    ;
 
     return {
       self_managed: clientData.self_managed,
@@ -660,9 +653,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
 
         payloads.push({
           client_id: clientId,
-          internal_code: sanitize(template.internal_code)
-            ? buildInternalCode(template.internal_code, globalElevatorNumber)
-            : null,
+          internal_code: null,
           elevator_number: globalElevatorNumber,
           tower_name: template.use_tower ? sanitize(template.tower_name) || null : null,
           brand: brand || null,
@@ -1163,15 +1154,6 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
                           <h5 className="mb-4 font-medium text-slate-900">{title}</h5>
 
                           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                            <Field
-                              label="Código interno (opcional)"
-                              value={template.internal_code}
-                              onChange={(v) =>
-                                updateTemplate(groupIndex, templateIndex, 'internal_code', v)
-                              }
-                              placeholder="Ej: ALC"
-                            />
-
                             <SelectField
                               label="Marca *"
                               value={template.brand}
