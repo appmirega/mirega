@@ -164,6 +164,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     building_type: 'residencial' as BuildingType,
     billing_address: '',
     self_managed: false,
+    enable_building_contacts: false,
 
     primary_contact_name: '',
     primary_contact_role: '',
@@ -193,6 +194,9 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     () => groups.reduce((acc, group) => acc + Number(group.quantity || 0), 0),
     [groups]
   );
+
+  const showBuildingContacts =
+    clientData.self_managed || clientData.enable_building_contacts;
 
   const updateGroup = <K extends keyof AddressGroup>(
     groupIndex: number,
@@ -349,6 +353,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
       building_type: 'residencial',
       billing_address: '',
       self_managed: false,
+      enable_building_contacts: false,
       primary_contact_name: '',
       primary_contact_role: '',
       primary_contact_email: '',
@@ -414,33 +419,60 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
           'Si el edificio tiene administrador, debes ingresar al menos correo o teléfono del administrador.'
         );
       }
+
+      if (clientData.enable_building_contacts) {
+        if (!sanitize(clientData.primary_contact_name)) {
+          throw new Error(
+            'Si activas encargados y contactos del edificio, el nombre del contacto principal es obligatorio.'
+          );
+        }
+
+        if (!sanitize(clientData.primary_contact_role)) {
+          throw new Error(
+            'Si activas encargados y contactos del edificio, el cargo o responsabilidad es obligatorio.'
+          );
+        }
+
+        if (
+          !hasAnyContactMethod(
+            clientData.primary_contact_email,
+            clientData.primary_contact_phone
+          )
+        ) {
+          throw new Error(
+            'Si activas encargados y contactos del edificio, debes ingresar al menos correo o teléfono del contacto principal.'
+          );
+        }
+      }
     }
 
-    additionalContacts.forEach((contact, index) => {
-      const hasAnyData =
-        sanitize(contact.name) ||
-        sanitize(contact.role) ||
-        sanitize(contact.email) ||
-        sanitize(contact.phone);
+    if (showBuildingContacts) {
+      additionalContacts.forEach((contact, index) => {
+        const hasAnyData =
+          sanitize(contact.name) ||
+          sanitize(contact.role) ||
+          sanitize(contact.email) ||
+          sanitize(contact.phone);
 
-      if (!hasAnyData) return;
+        if (!hasAnyData) return;
 
-      if (!sanitize(contact.name)) {
-        throw new Error(`Falta el nombre en contacto adicional #${index + 1}.`);
-      }
+        if (!sanitize(contact.name)) {
+          throw new Error(`Falta el nombre en contacto adicional #${index + 1}.`);
+        }
 
-      if (!sanitize(contact.role)) {
-        throw new Error(
-          `Falta el cargo o responsabilidad en contacto adicional #${index + 1}.`
-        );
-      }
+        if (!sanitize(contact.role)) {
+          throw new Error(
+            `Falta el cargo o responsabilidad en contacto adicional #${index + 1}.`
+          );
+        }
 
-      if (!hasAnyContactMethod(contact.email, contact.phone)) {
-        throw new Error(
-          `Debes ingresar correo o teléfono en contacto adicional #${index + 1}.`
-        );
-      }
-    });
+        if (!hasAnyContactMethod(contact.email, contact.phone)) {
+          throw new Error(
+            `Debes ingresar correo o teléfono en contacto adicional #${index + 1}.`
+          );
+        }
+      });
+    }
   };
 
   const validateTemplate = (
@@ -471,11 +503,11 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     }
 
     if (!sanitize(template.floors)) {
-      throw new Error(`Falta la cantidad de pisos en ${label}.`);
+      throw new Error(`Falta el N° de paradas en ${label}.`);
     }
 
     if (parseOptionalNumber(template.floors) === null) {
-      throw new Error(`La cantidad de pisos en ${label} debe ser numérica.`);
+      throw new Error(`El N° de paradas en ${label} debe ser numérico.`);
     }
 
     if (template.capacity_kg && parseOptionalNumber(template.capacity_kg) === null) {
@@ -541,21 +573,24 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
   };
 
   const buildAlternateContactsPayload = () => {
-    const filteredAdditionalContacts = additionalContacts
-      .map((contact) => ({
-        name: sanitize(contact.name),
-        role: sanitize(contact.role),
-        email: sanitize(contact.email),
-        phone: sanitize(contact.phone),
-      }))
-      .filter(
-        (contact) =>
-          contact.name || contact.role || contact.email || contact.phone
-      );
+    const filteredAdditionalContacts = showBuildingContacts
+      ? additionalContacts
+          .map((contact) => ({
+            name: sanitize(contact.name),
+            role: sanitize(contact.role),
+            email: sanitize(contact.email),
+            phone: sanitize(contact.phone),
+          }))
+          .filter(
+            (contact) =>
+              contact.name || contact.role || contact.email || contact.phone
+          )
+      : [];
 
     return {
       self_managed: clientData.self_managed,
       admin_company: sanitize(clientData.admin_company) || null,
+      enable_building_contacts: showBuildingContacts,
       additional_contacts: filteredAdditionalContacts,
     };
   };
@@ -570,10 +605,18 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     building_type: clientData.building_type,
     billing_address: sanitize(clientData.billing_address) || null,
 
-    contact_name: sanitize(clientData.primary_contact_name) || null,
-    contact_person: sanitize(clientData.primary_contact_role) || null,
-    contact_email: sanitize(clientData.primary_contact_email) || null,
-    contact_phone: sanitize(clientData.primary_contact_phone) || null,
+    contact_name: showBuildingContacts
+      ? sanitize(clientData.primary_contact_name) || null
+      : null,
+    contact_person: showBuildingContacts
+      ? sanitize(clientData.primary_contact_role) || null
+      : null,
+    contact_email: showBuildingContacts
+      ? sanitize(clientData.primary_contact_email) || null
+      : null,
+    contact_phone: showBuildingContacts
+      ? sanitize(clientData.primary_contact_phone) || null
+      : null,
 
     admin_name: clientData.self_managed
       ? null
@@ -816,178 +859,198 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
             <Checkbox
               label="Edificio autogestionado / sin administrador"
               checked={clientData.self_managed}
-              onChange={(v) => setClientData({ ...clientData, self_managed: v })}
+              onChange={(v) =>
+                setClientData({
+                  ...clientData,
+                  self_managed: v,
+                  enable_building_contacts: v ? true : clientData.enable_building_contacts,
+                })
+              }
             />
           </div>
 
           {!clientData.self_managed && (
+            <>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Field
+                  label="Nombre del administrador *"
+                  value={clientData.admin_name}
+                  onChange={(v) => setClientData({ ...clientData, admin_name: v })}
+                  placeholder="Nombre administrador"
+                />
+
+                <Field
+                  label="Empresa de administración"
+                  value={clientData.admin_company}
+                  onChange={(v) => setClientData({ ...clientData, admin_company: v })}
+                  placeholder="Ej: Administración XYZ"
+                />
+
+                <Field
+                  label="Correo administrador"
+                  value={clientData.admin_email}
+                  onChange={(v) => setClientData({ ...clientData, admin_email: v })}
+                  placeholder="Correo administrador"
+                  icon={<Mail className="h-4 w-4" />}
+                />
+
+                <Field
+                  label="Teléfono administrador"
+                  value={clientData.admin_phone}
+                  onChange={(v) => setClientData({ ...clientData, admin_phone: v })}
+                  placeholder="Teléfono administrador"
+                  icon={<Phone className="h-4 w-4" />}
+                />
+              </div>
+
+              <div className="mt-5">
+                <Checkbox
+                  label="Agregar encargados y contactos del edificio"
+                  checked={clientData.enable_building_contacts}
+                  onChange={(v) =>
+                    setClientData({ ...clientData, enable_building_contacts: v })
+                  }
+                />
+              </div>
+            </>
+          )}
+        </section>
+
+        {showBuildingContacts && (
+          <section className="rounded-xl border border-slate-200 p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <Users className="h-5 w-5 text-slate-700" />
+              <h3 className="text-lg font-semibold text-slate-900">
+                Encargados y contactos del edificio
+              </h3>
+            </div>
+
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field
-                label="Nombre del administrador *"
-                value={clientData.admin_name}
-                onChange={(v) => setClientData({ ...clientData, admin_name: v })}
-                placeholder="Nombre administrador"
+                label="Nombre contacto principal"
+                value={clientData.primary_contact_name}
+                onChange={(v) =>
+                  setClientData({ ...clientData, primary_contact_name: v })
+                }
+                placeholder="Ej: Arturo Contreras"
+                icon={<User className="h-4 w-4" />}
               />
 
               <Field
-                label="Empresa de administración"
-                value={clientData.admin_company}
-                onChange={(v) => setClientData({ ...clientData, admin_company: v })}
-                placeholder="Ej: Administración XYZ"
+                label="Cargo o responsabilidad"
+                value={clientData.primary_contact_role}
+                onChange={(v) =>
+                  setClientData({ ...clientData, primary_contact_role: v })
+                }
+                placeholder="Ej: Comité, conserje, encargado técnico"
               />
 
               <Field
-                label="Correo administrador"
-                value={clientData.admin_email}
-                onChange={(v) => setClientData({ ...clientData, admin_email: v })}
-                placeholder="Correo administrador"
+                label="Correo contacto principal"
+                value={clientData.primary_contact_email}
+                onChange={(v) =>
+                  setClientData({ ...clientData, primary_contact_email: v })
+                }
+                placeholder="Ej: contacto@empresa.cl"
                 icon={<Mail className="h-4 w-4" />}
               />
 
               <Field
-                label="Teléfono administrador"
-                value={clientData.admin_phone}
-                onChange={(v) => setClientData({ ...clientData, admin_phone: v })}
-                placeholder="Teléfono administrador"
+                label="Teléfono contacto principal"
+                value={clientData.primary_contact_phone}
+                onChange={(v) =>
+                  setClientData({ ...clientData, primary_contact_phone: v })
+                }
+                placeholder="Ej: +56 9 1234 5678"
                 icon={<Phone className="h-4 w-4" />}
               />
             </div>
-          )}
-        </section>
 
-        <section className="rounded-xl border border-slate-200 p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Users className="h-5 w-5 text-slate-700" />
-            <h3 className="text-lg font-semibold text-slate-900">
-              Encargados y contactos del edificio
-            </h3>
-          </div>
+            <div className="mt-6 flex items-center justify-between">
+              <div>
+                <h4 className="font-medium text-slate-900">
+                  Otros contactos responsables
+                </h4>
+                <p className="text-sm text-slate-500">
+                  Puedes agregar más personas encargadas del edificio.
+                </p>
+              </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field
-              label="Nombre contacto principal"
-              value={clientData.primary_contact_name}
-              onChange={(v) =>
-                setClientData({ ...clientData, primary_contact_name: v })
-              }
-              placeholder="Ej: Arturo Contreras"
-              icon={<User className="h-4 w-4" />}
-            />
-
-            <Field
-              label="Cargo o responsabilidad"
-              value={clientData.primary_contact_role}
-              onChange={(v) =>
-                setClientData({ ...clientData, primary_contact_role: v })
-              }
-              placeholder="Ej: Comité, conserje, encargado técnico"
-            />
-
-            <Field
-              label="Correo contacto principal"
-              value={clientData.primary_contact_email}
-              onChange={(v) =>
-                setClientData({ ...clientData, primary_contact_email: v })
-              }
-              placeholder="Ej: contacto@empresa.cl"
-              icon={<Mail className="h-4 w-4" />}
-            />
-
-            <Field
-              label="Teléfono contacto principal"
-              value={clientData.primary_contact_phone}
-              onChange={(v) =>
-                setClientData({ ...clientData, primary_contact_phone: v })
-              }
-              placeholder="Ej: +56 9 1234 5678"
-              icon={<Phone className="h-4 w-4" />}
-            />
-          </div>
-
-          <div className="mt-6 flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-slate-900">
-                Otros contactos responsables
-              </h4>
-              <p className="text-sm text-slate-500">
-                Puedes agregar más personas encargadas del edificio.
-              </p>
+              <button
+                type="button"
+                onClick={addAdditionalContact}
+                className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm hover:bg-slate-50"
+              >
+                <Plus className="h-4 w-4" />
+                Agregar contacto
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={addAdditionalContact}
-              className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm hover:bg-slate-50"
-            >
-              <Plus className="h-4 w-4" />
-              Agregar contacto
-            </button>
-          </div>
+            {additionalContacts.length > 0 && (
+              <div className="mt-4 space-y-4">
+                {additionalContacts.map((contact, index) => (
+                  <div
+                    key={contact.id}
+                    className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="mb-4 flex items-center justify-between">
+                      <h5 className="font-medium text-slate-900">
+                        Contacto adicional #{index + 1}
+                      </h5>
 
-          {additionalContacts.length > 0 && (
-            <div className="mt-4 space-y-4">
-              {additionalContacts.map((contact, index) => (
-                <div
-                  key={contact.id}
-                  className="rounded-lg border border-slate-200 bg-slate-50 p-4"
-                >
-                  <div className="mb-4 flex items-center justify-between">
-                    <h5 className="font-medium text-slate-900">
-                      Contacto adicional #{index + 1}
-                    </h5>
+                      <button
+                        type="button"
+                        onClick={() => removeAdditionalContact(contact.id)}
+                        className="inline-flex items-center gap-2 rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Quitar
+                      </button>
+                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() => removeAdditionalContact(contact.id)}
-                      className="inline-flex items-center gap-2 rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Quitar
-                    </button>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <Field
+                        label="Nombre"
+                        value={contact.name}
+                        onChange={(v) =>
+                          updateAdditionalContact(contact.id, 'name', v)
+                        }
+                        placeholder="Nombre"
+                      />
+
+                      <Field
+                        label="Cargo o responsabilidad"
+                        value={contact.role}
+                        onChange={(v) =>
+                          updateAdditionalContact(contact.id, 'role', v)
+                        }
+                        placeholder="Ej: mayordomo, comité, encargado"
+                      />
+
+                      <Field
+                        label="Correo"
+                        value={contact.email}
+                        onChange={(v) =>
+                          updateAdditionalContact(contact.id, 'email', v)
+                        }
+                        placeholder="Correo"
+                      />
+
+                      <Field
+                        label="Teléfono"
+                        value={contact.phone}
+                        onChange={(v) =>
+                          updateAdditionalContact(contact.id, 'phone', v)
+                        }
+                        placeholder="Teléfono"
+                      />
+                    </div>
                   </div>
-
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <Field
-                      label="Nombre"
-                      value={contact.name}
-                      onChange={(v) =>
-                        updateAdditionalContact(contact.id, 'name', v)
-                      }
-                      placeholder="Nombre"
-                    />
-
-                    <Field
-                      label="Cargo o responsabilidad"
-                      value={contact.role}
-                      onChange={(v) =>
-                        updateAdditionalContact(contact.id, 'role', v)
-                      }
-                      placeholder="Ej: mayordomo, comité, encargado"
-                    />
-
-                    <Field
-                      label="Correo"
-                      value={contact.email}
-                      onChange={(v) =>
-                        updateAdditionalContact(contact.id, 'email', v)
-                      }
-                      placeholder="Correo"
-                    />
-
-                    <Field
-                      label="Teléfono"
-                      value={contact.phone}
-                      onChange={(v) =>
-                        updateAdditionalContact(contact.id, 'phone', v)
-                      }
-                      placeholder="Teléfono"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         <section>
           <div className="mb-4 flex items-center justify-between gap-4">
@@ -1221,7 +1284,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
                             </div>
 
                             <Field
-                              label="Pisos *"
+                              label="N° de paradas *"
                               value={template.floors}
                               onChange={(v) =>
                                 updateTemplate(groupIndex, templateIndex, 'floors', v)
