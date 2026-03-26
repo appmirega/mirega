@@ -18,6 +18,7 @@ export type Database = {
           // ✅ NUEVO
           person_type: 'internal' | 'external'
           company_name: string | null
+          client_id: string | null
         }
 
         Insert: {
@@ -33,6 +34,7 @@ export type Database = {
           // ✅ NUEVO
           person_type?: 'internal' | 'external'
           company_name?: string | null
+          client_id?: string | null
         }
 
         Update: {
@@ -47,6 +49,7 @@ export type Database = {
           // ✅ NUEVO
           person_type?: 'internal' | 'external'
           company_name?: string | null
+          client_id?: string | null
         }
 
         Relationships: []

@@ -634,6 +634,97 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     alternate_contacts: buildAlternateContactsPayload(),
   });
 
+  const getDefaultClientPassword = () => `Mirega${new Date().getFullYear()}@@`;
+
+  const buildClientAccessUsers = () => {
+    const users = new Map<
+      string,
+      {
+        email: string;
+        full_name: string;
+        phone: string | null;
+      }
+    >();
+
+    const addUser = (email?: string | null, full_name?: string | null, phone?: string | null) => {
+      const normalizedEmail = sanitize(email || '').toLowerCase();
+      if (!normalizedEmail) return;
+
+      users.set(normalizedEmail, {
+        email: normalizedEmail,
+        full_name: sanitize(full_name || '') || normalizedEmail,
+        phone: sanitize(phone || '') || null,
+      });
+    };
+
+    if (!clientData.self_managed) {
+      addUser(clientData.admin_email, clientData.admin_name, clientData.admin_phone);
+    }
+
+    if (showBuildingContacts) {
+      addUser(
+        clientData.primary_contact_email,
+        clientData.primary_contact_name,
+        clientData.primary_contact_phone
+      );
+
+      additionalContacts.forEach((contact) => {
+        addUser(contact.email, contact.name || contact.role, contact.phone);
+      });
+    }
+
+    return Array.from(users.values());
+  };
+
+  const createClientAccessUsers = async (clientId: string) => {
+    const accessUsers = buildClientAccessUsers();
+    if (accessUsers.length === 0) return;
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      throw new Error('No hay sesión activa para crear accesos cliente.');
+    }
+
+    const defaultPassword = getDefaultClientPassword();
+
+    for (let i = 0; i < accessUsers.length; i += 1) {
+      const accessUser = accessUsers[i];
+
+      const res = await fetch('/api/users/create', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: accessUser.email,
+          password: defaultPassword,
+          full_name: accessUser.full_name,
+          phone: accessUser.phone,
+          role: 'client',
+          person_type: 'internal',
+          company_name: null,
+          grant_access: true,
+          client_id: clientId,
+          set_as_primary_client_user: i === 0,
+        }),
+      });
+
+      const result = await res.json().catch(() => ({}));
+
+      if (!res.ok || !result?.ok) {
+        throw new Error(
+          `No se pudo crear acceso cliente para ${accessUser.email}: ${
+            result?.error || 'Error desconocido'
+          }`
+        );
+      }
+    }
+  };
+
   const buildElevatorPayloads = (clientId: string) => {
     const payloads: Record<string, any>[] = [];
     let globalElevatorNumber = 1;
@@ -735,8 +826,10 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
         }
       }
 
+      await createClientAccessUsers(insertedClient.id);
+
       setSuccess(
-        `Cliente creado correctamente con ${elevatorPayloads.length} ascensor(es).`
+        `Cliente creado correctamente con ${elevatorPayloads.length} ascensor(es) y accesos cliente generados. Contraseña inicial: ${getDefaultClientPassword()}`
       );
       resetForm();
       onSuccess?.();

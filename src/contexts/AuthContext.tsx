@@ -12,6 +12,7 @@ interface Profile {
   phone: string | null;
   avatar_url: string | null;
   is_active: boolean;
+  client_id?: string | null;
   building_name?: string | null;
 }
 
@@ -44,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       (async () => {
         setSession(session);
         setUser(session?.user ?? null);
@@ -73,13 +74,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data && data.role === 'client') {
         const { data: clientData } = await supabase
           .from('clients')
-          .select('company_name')
-          .eq('profile_id', userId)
+          .select('id, company_name, building_name')
+          .eq('id', data.client_id)
           .maybeSingle();
 
         setProfile({
           ...data,
-          building_name: clientData?.company_name || null
+          client_id: data.client_id ?? null,
+          building_name: clientData?.building_name || clientData?.company_name || null,
         });
       } else {
         setProfile(data);

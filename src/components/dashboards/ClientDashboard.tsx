@@ -40,7 +40,7 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
       const { data: client, error: clientError } = await supabase
         .from('clients')
         .select('*')
-        .eq('user_id', profile?.id)
+        .eq('id', profile?.client_id)
         .maybeSingle();
 
       if (clientError) throw clientError;

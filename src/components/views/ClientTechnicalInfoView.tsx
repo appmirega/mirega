@@ -66,7 +66,7 @@ export function ClientTechnicalInfoView() {
       const { data: client } = await supabase
         .from('clients')
         .select('id')
-        .eq('profile_id', profile?.id)
+        .eq('id', profile?.client_id)
         .single();
 
       if (!client) {
