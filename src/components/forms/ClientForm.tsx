@@ -14,7 +14,40 @@ import {
   Users,
 } from 'lucide-react';
 
+interface ClientAlternateContactsPayload {
+  self_managed?: boolean;
+  admin_company?: string | null;
+  enable_building_contacts?: boolean;
+  additional_contacts?: Array<{
+    name?: string | null;
+    role?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  }>;
+}
+
+interface EditableClient {
+  id: string;
+  company_name?: string | null;
+  building_name?: string | null;
+  internal_alias?: string | null;
+  rut?: string | null;
+  address?: string | null;
+  commune?: string | null;
+  city?: string | null;
+  building_type?: BuildingType | null;
+  contact_name?: string | null;
+  contact_person?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  admin_name?: string | null;
+  admin_email?: string | null;
+  admin_phone?: string | null;
+  alternate_contacts?: ClientAlternateContactsPayload | null;
+}
+
 interface ClientFormProps {
+  client?: EditableClient | null;
   onSuccess?: () => void;
   onCancel?: () => void;
 }
@@ -208,12 +241,8 @@ function hasAnyContactMethod(email: string, phone: string) {
   return Boolean(sanitize(email) || sanitize(phone));
 }
 
-export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  const [clientData, setClientData] = useState({
+function createInitialClientData() {
+  return {
     company_name: '',
     building_name: '',
     internal_alias: '',
@@ -224,17 +253,35 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     building_type: 'residencial' as BuildingType,
     self_managed: false,
     enable_building_contacts: false,
-
     primary_contact_name: '',
     primary_contact_role: '',
     primary_contact_email: '',
     primary_contact_phone: '',
-
     admin_name: '',
     admin_email: '',
     admin_phone: '',
     admin_company: '',
-  });
+  };
+}
+
+function mapAdditionalContacts(payload?: ClientAlternateContactsPayload | null): AdditionalContact[] {
+  return (payload?.additional_contacts || []).map((contact) => ({
+    id: crypto.randomUUID(),
+    name: contact?.name || '',
+    role: contact?.role || '',
+    email: contact?.email || '',
+    phone: contact?.phone || '',
+  }));
+}
+
+export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const isEditMode = Boolean(client?.id);
+
+  const [clientData, setClientData] = useState(createInitialClientData);
 
   const [additionalContacts, setAdditionalContacts] = useState<AdditionalContact[]>([]);
   const [groups, setGroups] = useState<AddressGroup[]>([createAddressGroup('')]);
@@ -248,6 +295,45 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
       )
     );
   }, [clientData.address]);
+
+  useEffect(() => {
+    if (!client) {
+      setClientData(createInitialClientData());
+      setAdditionalContacts([]);
+      setGroups([createAddressGroup('')]);
+      return;
+    }
+
+    const payload = client.alternate_contacts || {};
+    const selfManaged = Boolean(payload.self_managed);
+    const additional = mapAdditionalContacts(payload);
+    const hasPrimaryContact = Boolean(
+      client.contact_name || client.contact_email || client.contact_phone || client.contact_person
+    );
+
+    setClientData({
+      company_name: client.company_name || '',
+      building_name: client.building_name || '',
+      internal_alias: client.internal_alias || '',
+      rut: client.rut || '',
+      address: client.address || '',
+      commune: client.commune || '',
+      region: client.city || '',
+      building_type: (client.building_type as BuildingType) || 'residencial',
+      self_managed: selfManaged,
+      enable_building_contacts: selfManaged || Boolean(payload.enable_building_contacts) || hasPrimaryContact || additional.length > 0,
+      primary_contact_name: client.contact_name || '',
+      primary_contact_role: client.contact_person || '',
+      primary_contact_email: client.contact_email || '',
+      primary_contact_phone: client.contact_phone || '',
+      admin_name: client.admin_name || '',
+      admin_email: client.admin_email || '',
+      admin_phone: client.admin_phone || '',
+      admin_company: payload.admin_company || '',
+    });
+    setAdditionalContacts(additional);
+    setGroups([createAddressGroup(client.address || '')]);
+  }, [client]);
 
   const totalElevators = useMemo(
     () => groups.reduce((acc, group) => acc + Number(group.quantity || 0), 0),
@@ -506,26 +592,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
   };
 
   const resetForm = () => {
-    setClientData({
-      company_name: '',
-      building_name: '',
-      internal_alias: '',
-      rut: '',
-      address: '',
-      commune: '',
-      region: '',
-      building_type: 'residencial',
-      self_managed: false,
-      enable_building_contacts: false,
-      primary_contact_name: '',
-      primary_contact_role: '',
-      primary_contact_email: '',
-      primary_contact_phone: '',
-      admin_name: '',
-      admin_email: '',
-      admin_phone: '',
-      admin_company: '',
-    });
+    setClientData(createInitialClientData());
     setAdditionalContacts([]);
     setGroups([createAddressGroup('')]);
   };
@@ -792,7 +859,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     };
   };
 
-  const buildClientPayload = () => ({
+  const buildBaseClientPayload = () => ({
     company_name: sanitize(clientData.company_name),
     building_name: sanitize(clientData.building_name),
     internal_alias: sanitize(clientData.internal_alias),
@@ -801,34 +868,25 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     commune: sanitize(clientData.commune) || null,
     city: sanitize(clientData.region) || null,
     building_type: clientData.building_type,
+    contact_name: showBuildingContacts ? sanitize(clientData.primary_contact_name) || null : null,
+    contact_person: showBuildingContacts ? sanitize(clientData.primary_contact_role) || null : null,
+    contact_email: showBuildingContacts ? sanitize(clientData.primary_contact_email) || null : null,
+    contact_phone: showBuildingContacts ? sanitize(clientData.primary_contact_phone) || null : null,
+    admin_name: clientData.self_managed ? null : sanitize(clientData.admin_name) || null,
+    admin_email: clientData.self_managed ? null : sanitize(clientData.admin_email) || null,
+    admin_phone: clientData.self_managed ? null : sanitize(clientData.admin_phone) || null,
+    alternate_contacts: buildAlternateContactsPayload(),
+  });
 
-    contact_name: showBuildingContacts
-      ? sanitize(clientData.primary_contact_name) || null
-      : null,
-    contact_person: showBuildingContacts
-      ? sanitize(clientData.primary_contact_role) || null
-      : null,
-    contact_email: showBuildingContacts
-      ? sanitize(clientData.primary_contact_email) || null
-      : null,
-    contact_phone: showBuildingContacts
-      ? sanitize(clientData.primary_contact_phone) || null
-      : null,
-
-    admin_name: clientData.self_managed
-      ? null
-      : sanitize(clientData.admin_name) || null,
-    admin_email: clientData.self_managed
-      ? null
-      : sanitize(clientData.admin_email) || null,
-    admin_phone: clientData.self_managed
-      ? null
-      : sanitize(clientData.admin_phone) || null,
-
+  const buildClientInsertPayload = () => ({
+    ...buildBaseClientPayload(),
     billing_address: null,
     is_active: true,
     client_code: `CLI-${Date.now()}`,
-    alternate_contacts: buildAlternateContactsPayload(),
+  });
+
+  const buildClientUpdatePayload = () => ({
+    ...buildBaseClientPayload(),
   });
 
   const buildElevatorPayloads = (clientId: string) => {
@@ -1005,43 +1063,56 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
 
     try {
       validateClient();
-      validateGroups();
 
-      const { data: insertedClient, error: clientError } = await supabase
-        .from('clients')
-        .insert(buildClientPayload())
-        .select('id')
-        .single();
+      if (isEditMode && client?.id) {
+        const { error: updateError } = await supabase
+          .from('clients')
+          .update(buildClientUpdatePayload())
+          .eq('id', client.id);
 
-      if (clientError) throw clientError;
-      if (!insertedClient?.id) {
-        throw new Error('No se pudo recuperar el cliente creado.');
-      }
+        if (updateError) throw updateError;
 
-      const elevatorPayloads = buildElevatorPayloads(insertedClient.id);
+        setSuccess('Cliente actualizado correctamente.');
+        onSuccess?.();
+      } else {
+        validateGroups();
 
-      if (elevatorPayloads.length > 0) {
-        const { error: elevatorError } = await supabase
-          .from('elevators')
-          .insert(elevatorPayloads);
+        const { data: insertedClient, error: clientError } = await supabase
+          .from('clients')
+          .insert(buildClientInsertPayload())
+          .select('id')
+          .single();
 
-        if (elevatorError) {
-          throw new Error(
-            `Cliente creado, pero falló la creación de ascensores: ${elevatorError.message}`
-          );
+        if (clientError) throw clientError;
+        if (!insertedClient?.id) {
+          throw new Error('No se pudo recuperar el cliente creado.');
         }
+
+        const elevatorPayloads = buildElevatorPayloads(insertedClient.id);
+
+        if (elevatorPayloads.length > 0) {
+          const { error: elevatorError } = await supabase
+            .from('elevators')
+            .insert(elevatorPayloads);
+
+          if (elevatorError) {
+            throw new Error(
+              `Cliente creado, pero falló la creación de ascensores: ${elevatorError.message}`
+            );
+          }
+        }
+
+        await createClientAccessUsers(insertedClient.id);
+
+        setSuccess(
+          `Cliente creado correctamente con ${elevatorPayloads.length} ascensor(es) y accesos cliente generados. Contraseña inicial: ${getDefaultClientPassword()}`
+        );
+        resetForm();
+        onSuccess?.();
       }
-
-      await createClientAccessUsers(insertedClient.id);
-
-      setSuccess(
-        `Cliente creado correctamente con ${elevatorPayloads.length} ascensor(es) y accesos cliente generados. Contraseña inicial: ${getDefaultClientPassword()}`
-      );
-      resetForm();
-      onSuccess?.();
     } catch (err: any) {
-      console.error('Error creating client:', err);
-      setError(err?.message || 'Error al crear cliente.');
+      console.error('Error saving client:', err);
+      setError(err?.message || 'Error al guardar cliente.');
     } finally {
       setLoading(false);
     }
@@ -1052,7 +1123,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
       <div className="mb-6 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
           <Building2 className="h-6 w-6 text-green-600" />
-          Nuevo Cliente
+          {isEditMode ? 'Editar Cliente' : 'Nuevo Cliente'}
         </h2>
 
         {onCancel && (
@@ -1350,7 +1421,8 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
           </section>
         )}
 
-        <section>
+        {!isEditMode && (
+          <section>
           <div className="mb-4 flex items-center justify-between gap-4">
             <div>
               <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
@@ -1827,6 +1899,13 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
             })}
           </div>
         </section>
+        )}
+
+        {isEditMode && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            Estás editando los datos del cliente y sus contactos. Para evitar duplicidades, esta vista no vuelve a crear ascensores ni accesos automáticamente.
+          </div>
+        )}
 
         <div className="flex gap-3 pt-2">
           {onCancel && (
@@ -1844,7 +1923,7 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
             disabled={loading}
             className="flex-1 rounded bg-green-600 py-2 text-white"
           >
-            {loading ? 'Guardando...' : 'Crear Cliente'}
+            {loading ? 'Guardando...' : isEditMode ? 'Guardar cambios' : 'Crear Cliente'}
           </button>
         </div>
       </form>
