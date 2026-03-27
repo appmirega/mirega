@@ -40,6 +40,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     person_type = 'internal',
     company_name = null,
     grant_access = true,
+    client_id = null,
+    set_as_primary_client_user = false,
   } = body as {
     email: string
     password: string | null
@@ -49,6 +51,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     person_type?: PersonType
     company_name?: string | null
     grant_access?: boolean
+    client_id?: string | null
+    set_as_primary_client_user?: boolean
   }
 
   if (!email || !full_name) {
@@ -61,7 +65,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return json(res, 400, { ok: false, error: 'Para técnico externo falta company_name.' })
   }
 
-  // ✅ Password segura cuando NO se entrega acceso
   const effectivePassword =
     grant_access && password
       ? password
@@ -72,9 +75,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   })
 
   try {
-    // 1) Buscar si ya existe usuario por email
-    // Nota: listUsers es paginado; para la mayoría de proyectos chicos/medios sirve bien.
-    // Si tu proyecto tiene miles de usuarios, lo hacemos con otra estrategia.
     const { data: listData, error: listErr } = await admin.auth.admin.listUsers({ page: 1, perPage: 2000 })
     if (listErr) throw listErr
 
@@ -82,7 +82,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let userId: string
 
     if (!existing) {
-      // 2) Crear usuario auth
       const { data: created, error: createErr } = await admin.auth.admin.createUser({
         email,
         password: effectivePassword,
@@ -93,6 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           role,
           person_type: normalizedPersonType,
           company_name: normalizedPersonType === 'external' ? company_name : null,
+          client_id,
         },
       })
 
@@ -103,8 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else {
       userId = existing.id
 
-      // 3) Si ya existía, actualizamos metadata y (si grant_access=true) actualizamos password
-      await admin.auth.admin.updateUserById(userId, {
+      const { error: updateUserErr } = await admin.auth.admin.updateUserById(userId, {
         email,
         ...(grant_access ? { password: effectivePassword } : {}),
         user_metadata: {
@@ -113,11 +112,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           role,
           person_type: normalizedPersonType,
           company_name: normalizedPersonType === 'external' ? company_name : null,
+          client_id,
         },
       } as any)
+
+      if (updateUserErr) throw updateUserErr
     }
 
-    // 4) Control acceso: ban/unban
     if (!grant_access) {
       await admin.auth.admin.updateUserById(userId, {
         banned_until: '2999-12-31T00:00:00Z',
@@ -128,7 +129,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } as any)
     }
 
-    // 5) Upsert en profiles (FUENTE ÚNICA)
     const profilePayload = {
       id: userId,
       email,
@@ -138,11 +138,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       is_active: !!grant_access,
       person_type: normalizedPersonType,
       company_name: normalizedPersonType === 'external' ? company_name : null,
+      client_id: role === 'client' ? client_id : null,
       updated_at: new Date().toISOString(),
     }
 
-    const { error: upsertErr } = await admin.from('profiles').upsert(profilePayload, { onConflict: 'id' })
+    const { error: upsertErr } = await admin
+      .from('profiles')
+      .upsert(profilePayload, { onConflict: 'id' })
+
     if (upsertErr) throw upsertErr
+
+    if (role === 'client' && client_id && set_as_primary_client_user) {
+      const { error: clientLinkErr } = await admin
+        .from('clients')
+        .update({ user_id: userId, updated_at: new Date().toISOString() })
+        .eq('id', client_id)
+
+      if (clientLinkErr) throw clientLinkErr
+    }
 
     return json(res, 200, { ok: true, user_id: userId })
   } catch (err: any) {
