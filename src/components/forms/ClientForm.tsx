@@ -22,6 +22,7 @@ interface ClientFormProps {
 type BuildingType = 'residencial' | 'corporativo';
 type ElevatorDriveType = 'electromecanico' | 'hidraulico';
 type ElevatorClassification = 'ascensor' | 'montacarga' | 'montaplatos' | 'otro';
+type StopPattern = 'all' | 'odd' | 'even';
 
 interface AdditionalContact {
   id: string;
@@ -62,6 +63,7 @@ interface AddressGroup {
   quantity: number;
   all_equal: boolean;
   templates: ElevatorTemplate[];
+  stop_assignments: StopPattern[];
 }
 
 const BRAND_OPTIONS = [
@@ -78,6 +80,70 @@ const BRAND_OPTIONS = [
   'LG',
   'Otros',
 ] as const;
+
+
+function applyStopPattern(template: ElevatorTemplate, pattern: StopPattern): ElevatorTemplate {
+  return {
+    ...template,
+    stops_all_floors: pattern === 'all',
+    stops_odd_floors: pattern === 'odd',
+    stops_even_floors: pattern === 'even',
+  };
+}
+
+function getStopPattern(template: ElevatorTemplate): StopPattern {
+  if (template.stops_odd_floors) return 'odd';
+  if (template.stops_even_floors) return 'even';
+  return 'all';
+}
+
+function createStopAssignments(quantity: number, basePattern: StopPattern = 'all'): StopPattern[] {
+  const total = Math.max(1, Number(quantity || 1));
+
+  if (total === 1) {
+    return ['all'];
+  }
+
+  if (basePattern === 'all') {
+    return Array.from({ length: total }, () => 'all');
+  }
+
+  if (total === 2) {
+    return [basePattern, basePattern === 'odd' ? 'even' : 'odd'];
+  }
+
+  return Array.from({ length: total }, (_, index) =>
+    index % 2 === 0 ? basePattern : basePattern === 'odd' ? 'even' : 'odd'
+  );
+}
+
+function normalizeStopAssignments(
+  quantity: number,
+  assignments: StopPattern[] = [],
+  fallbackPattern: StopPattern = 'all'
+): StopPattern[] {
+  const total = Math.max(1, Number(quantity || 1));
+
+  if (total === 1) {
+    return ['all'];
+  }
+
+  const base = assignments[0] && assignments[0] !== 'all' ? assignments[0] : fallbackPattern;
+
+  if (base === 'all') {
+    return Array.from({ length: total }, () => 'all');
+  }
+
+  if (total === 2) {
+    return [base, base === 'odd' ? 'even' : 'odd'];
+  }
+
+  return Array.from({ length: total }, (_, index) => {
+    const current = assignments[index];
+    if (current === 'odd' || current === 'even') return current;
+    return index % 2 === 0 ? base : base === 'odd' ? 'even' : 'odd';
+  });
+}
 
 function createEmptyTemplate(): ElevatorTemplate {
   return {
@@ -113,6 +179,7 @@ function createAddressGroup(clientAddress = ''): AddressGroup {
     quantity: 1,
     all_equal: true,
     templates: [createEmptyTemplate()],
+    stop_assignments: ['all'],
   };
 }
 
@@ -207,29 +274,71 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
 
         if (field === 'quantity') {
           const nextQuantity = Math.max(1, Number(value || 1));
+          nextGroup.quantity = nextQuantity;
 
           if (nextGroup.all_equal) {
-            nextGroup.templates = [nextGroup.templates[0] || createEmptyTemplate()];
+            const baseTemplate = nextGroup.templates[0] || createEmptyTemplate();
+            const basePattern: StopPattern = nextQuantity === 1
+              ? 'all'
+              : getStopPattern(baseTemplate) === 'all'
+              ? 'odd'
+              : getStopPattern(baseTemplate);
+
+            nextGroup.templates = [
+              applyStopPattern(baseTemplate, nextQuantity === 1 ? 'all' : getStopPattern(baseTemplate)),
+            ];
+            nextGroup.stop_assignments = normalizeStopAssignments(
+              nextQuantity,
+              nextGroup.stop_assignments,
+              basePattern
+            );
           } else {
             const currentTemplates = [...nextGroup.templates];
             if (currentTemplates.length < nextQuantity) {
               while (currentTemplates.length < nextQuantity) {
-                currentTemplates.push(createEmptyTemplate());
+                currentTemplates.push(
+                  applyStopPattern(
+                    createEmptyTemplate(),
+                    nextQuantity === 1 ? 'all' : currentTemplates.length % 2 === 0 ? 'odd' : 'even'
+                  )
+                );
               }
             } else {
               currentTemplates.splice(nextQuantity);
             }
-            nextGroup.templates = currentTemplates;
+
+            nextGroup.templates = currentTemplates.map((template, templateIndex) =>
+              nextQuantity === 1
+                ? applyStopPattern(template, 'all')
+                : getStopPattern(template) === 'all'
+                ? applyStopPattern(template, templateIndex % 2 === 0 ? 'odd' : 'even')
+                : template
+            );
+            nextGroup.stop_assignments = normalizeStopAssignments(nextQuantity, nextGroup.stop_assignments);
           }
         }
 
         if (field === 'all_equal') {
+          const target = Math.max(1, Number(nextGroup.quantity || 1));
+
           if (value === true) {
-            nextGroup.templates = [nextGroup.templates[0] || createEmptyTemplate()];
+            const firstTemplate = nextGroup.templates[0] || createEmptyTemplate();
+            const firstPattern = target === 1 ? 'all' : getStopPattern(firstTemplate);
+
+            nextGroup.templates = [
+              applyStopPattern(firstTemplate, target === 1 ? 'all' : firstPattern),
+            ];
+            nextGroup.stop_assignments = normalizeStopAssignments(
+              target,
+              nextGroup.stop_assignments,
+              target === 1
+                ? 'all'
+                : firstPattern === 'all'
+                ? 'odd'
+                : firstPattern
+            );
           } else {
             const currentTemplates = [...nextGroup.templates];
-            const target = Math.max(1, Number(nextGroup.quantity || 1));
-
             if (currentTemplates.length < target) {
               while (currentTemplates.length < target) {
                 currentTemplates.push(createEmptyTemplate());
@@ -238,7 +347,19 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
               currentTemplates.splice(target);
             }
 
-            nextGroup.templates = currentTemplates;
+            nextGroup.templates = currentTemplates.map((template, templateIndex) => {
+              if (target === 1) {
+                return applyStopPattern(template, 'all');
+              }
+
+              const assignment = nextGroup.stop_assignments[templateIndex];
+              if (assignment === 'odd' || assignment === 'even') {
+                return applyStopPattern(template, assignment);
+              }
+
+              return applyStopPattern(template, templateIndex % 2 === 0 ? 'odd' : 'even');
+            });
+            nextGroup.stop_assignments = normalizeStopAssignments(target, nextGroup.stop_assignments);
           }
         }
 
@@ -290,15 +411,65 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
             nextTemplate.has_machine_room = false;
           }
 
-          if (field === 'stops_all_floors' && value === true) {
-            nextTemplate.stops_odd_floors = false;
-            nextTemplate.stops_even_floors = false;
+          if (field === 'stops_all_floors') {
+            if (value === true) {
+              nextTemplate.stops_odd_floors = false;
+              nextTemplate.stops_even_floors = false;
+            } else if (!nextTemplate.stops_odd_floors && !nextTemplate.stops_even_floors) {
+              nextTemplate.stops_odd_floors = true;
+            }
+          }
+
+          if (field === 'stops_odd_floors') {
+            if (value === true) {
+              nextTemplate.stops_all_floors = false;
+              nextTemplate.stops_even_floors = false;
+            } else if (!nextTemplate.stops_all_floors && !nextTemplate.stops_even_floors) {
+              nextTemplate.stops_all_floors = true;
+            }
+          }
+
+          if (field === 'stops_even_floors') {
+            if (value === true) {
+              nextTemplate.stops_all_floors = false;
+              nextTemplate.stops_odd_floors = false;
+            } else if (!nextTemplate.stops_all_floors && !nextTemplate.stops_odd_floors) {
+              nextTemplate.stops_all_floors = true;
+            }
           }
 
           return nextTemplate;
         });
 
         return { ...group, templates };
+      })
+    );
+  };
+
+  const updateGroupStopAssignment = (
+    groupIndex: number,
+    elevatorIndex: number,
+    pattern: Exclude<StopPattern, 'all'>
+  ) => {
+    setGroups((prev) =>
+      prev.map((group, index) => {
+        if (index !== groupIndex) return group;
+
+        const quantity = Math.max(1, Number(group.quantity || 1));
+        const nextAssignments = normalizeStopAssignments(quantity, group.stop_assignments, pattern);
+
+        if (quantity === 2) {
+          nextAssignments[0] = pattern;
+          nextAssignments[1] = pattern === 'odd' ? 'even' : 'odd';
+        } else {
+          nextAssignments[elevatorIndex] = pattern;
+        }
+
+        return {
+          ...group,
+          stop_assignments: nextAssignments,
+          templates: [applyStopPattern(group.templates[0] || createEmptyTemplate(), 'all')],
+        };
       })
     );
   };
@@ -529,6 +700,16 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
       throw new Error(`Debes especificar la clasificación "otro" en ${label}.`);
     }
 
+    const stopFlags = [
+      template.stops_all_floors,
+      template.stops_odd_floors,
+      template.stops_even_floors,
+    ].filter(Boolean).length;
+
+    if (stopFlags !== 1) {
+      throw new Error(`Debes definir correctamente el tipo de detención en ${label}.`);
+    }
+
     if (requireAddress && !sanitize(groupAddress)) {
       throw new Error(`Falta la dirección del bloque para ${label}.`);
     }
@@ -547,12 +728,28 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
       }
 
       if (group.all_equal) {
+        const baseTemplate = group.templates[0] || createEmptyTemplate();
         validateTemplate(
-          group.templates[0] || createEmptyTemplate(),
+          applyStopPattern(
+            baseTemplate,
+            quantity === 1 ? 'all' : baseTemplate.stops_all_floors ? 'all' : 'odd'
+          ),
           `bloque ${groupIndex + 1}`,
           true,
           group.address
         );
+
+        if (quantity === 1 && !baseTemplate.stops_all_floors) {
+          throw new Error(`Si el bloque ${groupIndex + 1} tiene un solo ascensor, debe detenerse en todos los pisos.`);
+        }
+
+        if (quantity > 1 && !baseTemplate.stops_all_floors) {
+          const assignments = normalizeStopAssignments(quantity, group.stop_assignments, 'odd');
+          const hasInvalid = assignments.some((assignment) => assignment === 'all');
+          if (hasInvalid) {
+            throw new Error(`Debes definir par o impar para todos los ascensores del bloque ${groupIndex + 1}.`);
+          }
+        }
       } else {
         if (group.templates.length !== quantity) {
           throw new Error(
@@ -634,17 +831,90 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
     alternate_contacts: buildAlternateContactsPayload(),
   });
 
+  const buildElevatorPayloads = (clientId: string) => {
+    const payloads: Record<string, any>[] = [];
+    let globalElevatorNumber = 1;
+
+    groups.forEach((group) => {
+      const quantity = Math.max(1, Number(group.quantity || 1));
+      const blockAddress = group.same_address_as_client
+        ? sanitize(clientData.address)
+        : sanitize(group.address);
+
+      const templatesToUse = group.all_equal
+        ? (() => {
+            const baseTemplate = group.templates[0] || createEmptyTemplate();
+            const assignments = baseTemplate.stops_all_floors || quantity === 1
+              ? Array.from({ length: quantity }, () => 'all' as StopPattern)
+              : normalizeStopAssignments(quantity, group.stop_assignments, 'odd');
+
+            return Array.from({ length: quantity }, (_, templateIndex) =>
+              applyStopPattern(baseTemplate, assignments[templateIndex] || 'all')
+            );
+          })()
+        : group.templates.slice(0, quantity).map((template) =>
+            quantity === 1 ? applyStopPattern(template, 'all') : template
+          );
+
+      templatesToUse.forEach((template) => {
+        const brand =
+          template.brand === 'Otros'
+            ? sanitize(template.brand_other)
+            : sanitize(template.brand);
+
+        const classification =
+          template.classification === 'otro'
+            ? sanitize(template.classification_other)
+            : template.classification;
+
+        payloads.push({
+          client_id: clientId,
+          internal_code: null,
+          elevator_number: globalElevatorNumber,
+          tower_name: template.use_tower ? sanitize(template.tower_name) || null : null,
+          brand: brand || null,
+          model: template.model_unknown ? null : sanitize(template.model) || null,
+          serial_number: template.serial_number_not_legible
+            ? null
+            : sanitize(template.serial_number) || null,
+          serial_number_not_legible: template.serial_number_not_legible,
+          installation_date: template.installation_date_unknown
+            ? null
+            : sanitize(template.installation_date) || null,
+          floors: parseOptionalNumber(template.floors),
+          capacity_kg: parseOptionalNumber(template.capacity_kg),
+          capacity_persons: parseOptionalNumber(template.capacity_persons),
+          location_address: blockAddress || null,
+          address_asc: blockAddress || null,
+          location_building: sanitize(clientData.building_name) || null,
+          manufacturer: null,
+          elevator_type: template.elevator_type,
+          classification: classification || null,
+          is_hydraulic: template.elevator_type === 'hidraulico',
+          has_machine_room: template.has_machine_room,
+          no_machine_room: template.no_machine_room,
+          stops_all_floors: template.stops_all_floors,
+          stops_odd_floors: template.stops_odd_floors,
+          stops_even_floors: template.stops_even_floors,
+          status: 'active',
+        });
+
+        globalElevatorNumber += 1;
+      });
+    });
+
+    return payloads;
+  };
+
+
   const getDefaultClientPassword = () => `Mirega${new Date().getFullYear()}@@`;
 
   const buildClientAccessUsers = () => {
-    const users = new Map<
-      string,
-      {
-        email: string;
-        full_name: string;
-        phone: string | null;
-      }
-    >();
+    const users = new Map<string, {
+      email: string;
+      full_name: string;
+      phone: string | null;
+    }>();
 
     const addUser = (email?: string | null, full_name?: string | null, phone?: string | null) => {
       const normalizedEmail = sanitize(email || '').toLowerCase();
@@ -723,70 +993,6 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
         );
       }
     }
-  };
-
-  const buildElevatorPayloads = (clientId: string) => {
-    const payloads: Record<string, any>[] = [];
-    let globalElevatorNumber = 1;
-
-    groups.forEach((group) => {
-      const quantity = Math.max(1, Number(group.quantity || 1));
-      const blockAddress = group.same_address_as_client
-        ? sanitize(clientData.address)
-        : sanitize(group.address);
-
-      const templatesToUse = group.all_equal
-        ? Array.from({ length: quantity }, () => group.templates[0])
-        : group.templates.slice(0, quantity);
-
-      templatesToUse.forEach((template) => {
-        const brand =
-          template.brand === 'Otros'
-            ? sanitize(template.brand_other)
-            : sanitize(template.brand);
-
-        const classification =
-          template.classification === 'otro'
-            ? sanitize(template.classification_other)
-            : template.classification;
-
-        payloads.push({
-          client_id: clientId,
-          internal_code: null,
-          elevator_number: globalElevatorNumber,
-          tower_name: template.use_tower ? sanitize(template.tower_name) || null : null,
-          brand: brand || null,
-          model: template.model_unknown ? null : sanitize(template.model) || null,
-          serial_number: template.serial_number_not_legible
-            ? null
-            : sanitize(template.serial_number) || null,
-          serial_number_not_legible: template.serial_number_not_legible,
-          installation_date: template.installation_date_unknown
-            ? null
-            : sanitize(template.installation_date) || null,
-          floors: parseOptionalNumber(template.floors),
-          capacity_kg: parseOptionalNumber(template.capacity_kg),
-          capacity_persons: parseOptionalNumber(template.capacity_persons),
-          location_address: blockAddress || null,
-          address_asc: blockAddress || null,
-          location_building: sanitize(clientData.building_name) || null,
-          manufacturer: null,
-          elevator_type: template.elevator_type,
-          classification: classification || null,
-          is_hydraulic: template.elevator_type === 'hidraulico',
-          has_machine_room: template.has_machine_room,
-          no_machine_room: template.no_machine_room,
-          stops_all_floors: template.stops_all_floors,
-          stops_odd_floors: template.stops_odd_floors,
-          stops_even_floors: template.stops_even_floors,
-          status: 'active',
-        });
-
-        globalElevatorNumber += 1;
-      });
-    });
-
-    return payloads;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1451,95 +1657,166 @@ export function ClientForm({ onSuccess, onCancel }: ClientFormProps) {
                             )}
                           </div>
 
-                          <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                            <Checkbox
-                              label="Usar torre"
-                              checked={template.use_tower}
-                              onChange={(v) =>
-                                updateTemplate(groupIndex, templateIndex, 'use_tower', v)
-                              }
-                            />
+                          <div className="mt-5 space-y-4">
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                              <Checkbox
+                                label="Usar torre"
+                                checked={template.use_tower}
+                                onChange={(v) =>
+                                  updateTemplate(groupIndex, templateIndex, 'use_tower', v)
+                                }
+                              />
 
-                            {template.use_tower && (
-                              <Field
-                                label="Torre *"
-                                value={template.tower_name}
+                              {template.use_tower && (
+                                <Field
+                                  label="Torre *"
+                                  value={template.tower_name}
+                                  onChange={(v) =>
+                                    updateTemplate(
+                                      groupIndex,
+                                      templateIndex,
+                                      'tower_name',
+                                      v
+                                    )
+                                  }
+                                  placeholder="Ej: Torre A"
+                                />
+                              )}
+
+                              <Checkbox
+                                label="Tiene sala de máquinas"
+                                checked={template.has_machine_room}
                                 onChange={(v) =>
                                   updateTemplate(
                                     groupIndex,
                                     templateIndex,
-                                    'tower_name',
+                                    'has_machine_room',
                                     v
                                   )
                                 }
-                                placeholder="Ej: Torre A"
                               />
+
+                              <Checkbox
+                                label="Sin sala de máquinas"
+                                checked={template.no_machine_room}
+                                onChange={(v) =>
+                                  updateTemplate(
+                                    groupIndex,
+                                    templateIndex,
+                                    'no_machine_room',
+                                    v
+                                  )
+                                }
+                              />
+                            </div>
+
+                            {group.quantity === 1 ? (
+                              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                                Este bloque tiene un solo ascensor, por lo tanto queda marcado automáticamente que se detiene en todos los pisos.
+                              </div>
+                            ) : group.all_equal ? (
+                              <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                                <Checkbox
+                                  label="Se detiene en todos los pisos"
+                                  checked={template.stops_all_floors}
+                                  onChange={(v) =>
+                                    updateTemplate(
+                                      groupIndex,
+                                      templateIndex,
+                                      'stops_all_floors',
+                                      v
+                                    )
+                                  }
+                                />
+
+                                {!template.stops_all_floors && (
+                                  <div className="space-y-3">
+                                    <p className="text-sm font-medium text-slate-700">
+                                      Asignación por ascensor
+                                    </p>
+
+                                    {group.quantity === 2 ? (
+                                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                        <StopPatternSelector
+                                          label="Ascensor 1"
+                                          value={group.stop_assignments[0] === 'even' ? 'even' : 'odd'}
+                                          onChange={(pattern) =>
+                                            updateGroupStopAssignment(groupIndex, 0, pattern)
+                                          }
+                                        />
+
+                                        <div className="rounded border bg-white px-4 py-3 text-sm text-slate-700">
+                                          <div className="font-medium text-slate-900">Ascensor 2</div>
+                                          <div className="mt-1">
+                                            Queda automáticamente en{' '}
+                                            <strong>
+                                              {group.stop_assignments[0] === 'even' ? 'impares' : 'pares'}
+                                            </strong>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                        {Array.from({ length: group.quantity }, (_, elevatorIndex) => (
+                                          <StopPatternSelector
+                                            key={`${group.id}-stop-${elevatorIndex}`}
+                                            label={`Ascensor ${elevatorIndex + 1}`}
+                                            value={
+                                              group.stop_assignments[elevatorIndex] === 'even'
+                                                ? 'even'
+                                                : 'odd'
+                                            }
+                                            onChange={(pattern) =>
+                                              updateGroupStopAssignment(
+                                                groupIndex,
+                                                elevatorIndex,
+                                                pattern
+                                              )
+                                            }
+                                          />
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                                <Checkbox
+                                  label="Se detiene en todos los pisos"
+                                  checked={template.stops_all_floors}
+                                  onChange={(v) =>
+                                    updateTemplate(
+                                      groupIndex,
+                                      templateIndex,
+                                      'stops_all_floors',
+                                      v
+                                    )
+                                  }
+                                />
+
+                                {!template.stops_all_floors && (
+                                  <StopPatternSelector
+                                    label={`Ascensor ${templateIndex + 1}`}
+                                    value={template.stops_even_floors ? 'even' : 'odd'}
+                                    onChange={(pattern) => {
+                                      updateTemplate(
+                                        groupIndex,
+                                        templateIndex,
+                                        'stops_odd_floors',
+                                        pattern === 'odd'
+                                      );
+                                      updateTemplate(
+                                        groupIndex,
+                                        templateIndex,
+                                        'stops_even_floors',
+                                        pattern === 'even'
+                                      );
+                                    }}
+                                  />
+                                )}
+                              </div>
                             )}
-
-                            <Checkbox
-                              label="Tiene sala de máquinas"
-                              checked={template.has_machine_room}
-                              onChange={(v) =>
-                                updateTemplate(
-                                  groupIndex,
-                                  templateIndex,
-                                  'has_machine_room',
-                                  v
-                                )
-                              }
-                            />
-
-                            <Checkbox
-                              label="Sin sala de máquinas"
-                              checked={template.no_machine_room}
-                              onChange={(v) =>
-                                updateTemplate(
-                                  groupIndex,
-                                  templateIndex,
-                                  'no_machine_room',
-                                  v
-                                )
-                              }
-                            />
-
-                            <Checkbox
-                              label="Se detiene en todos los pisos"
-                              checked={template.stops_all_floors}
-                              onChange={(v) =>
-                                updateTemplate(
-                                  groupIndex,
-                                  templateIndex,
-                                  'stops_all_floors',
-                                  v
-                                )
-                              }
-                            />
-
-                            <Checkbox
-                              label="Se detiene en pisos impares"
-                              checked={template.stops_odd_floors}
-                              onChange={(v) =>
-                                updateTemplate(
-                                  groupIndex,
-                                  templateIndex,
-                                  'stops_odd_floors',
-                                  v
-                                )
-                              }
-                            />
-
-                            <Checkbox
-                              label="Se detiene en pisos pares"
-                              checked={template.stops_even_floors}
-                              onChange={(v) =>
-                                updateTemplate(
-                                  groupIndex,
-                                  templateIndex,
-                                  'stops_even_floors',
-                                  v
-                                )
-                              }
-                            />
                           </div>
                         </div>
                       );
@@ -1634,6 +1911,46 @@ function SelectField({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function StopPatternSelector({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: 'odd' | 'even';
+  onChange: (value: 'odd' | 'even') => void;
+}) {
+  return (
+    <div className="rounded border bg-white p-3">
+      <div className="mb-2 text-sm font-medium text-slate-700">{label}</div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => onChange('odd')}
+          className={`rounded border px-3 py-2 text-sm ${
+            value === 'odd'
+              ? 'border-green-600 bg-green-50 text-green-700'
+              : 'border-slate-300 bg-white text-slate-700'
+          }`}
+        >
+          Impares
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange('even')}
+          className={`rounded border px-3 py-2 text-sm ${
+            value === 'even'
+              ? 'border-green-600 bg-green-50 text-green-700'
+              : 'border-slate-300 bg-white text-slate-700'
+          }`}
+        >
+          Pares
+        </button>
+      </div>
     </div>
   );
 }
