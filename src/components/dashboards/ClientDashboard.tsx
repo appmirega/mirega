@@ -7,8 +7,6 @@ import {
   CheckCircle,
   Clock,
   Calendar,
-  FileText,
-  TrendingUp,
   Building2,
 } from 'lucide-react';
 
@@ -16,8 +14,8 @@ interface ClientDashboardProps {
   onNavigate?: (path: string) => void;
 }
 
-export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
-  const { profile } = useAuth();
+export function ClientDashboard({ onNavigate: _onNavigate }: ClientDashboardProps = {}) {
+  const { profile, selectedClientId, selectedClient } = useAuth();
   const [clientData, setClientData] = useState<any>(null);
   const [elevators, setElevators] = useState<any[]>([]);
   const [stats, setStats] = useState({
@@ -26,21 +24,27 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
     maintenanceThisMonth: 0,
     pendingIssues: 0,
   });
-  const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (profile?.id) {
+    if (profile?.id && selectedClientId) {
       loadClientData();
+    } else {
+      setLoading(false);
     }
-  }, [profile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, selectedClientId]);
 
   const loadClientData = async () => {
+    if (!selectedClientId) return;
+
     try {
+      setLoading(true);
+
       const { data: client, error: clientError } = await supabase
         .from('clients')
         .select('*')
-        .eq('id', profile?.client_id)
+        .eq('id', selectedClientId)
         .maybeSingle();
 
       if (clientError) throw clientError;
@@ -50,22 +54,30 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
         const { data: elevatorsData, error: elevatorsError } = await supabase
           .from('elevators')
           .select('*')
-          .eq('client_id', client.id);
+          .eq('client_id', client.id)
+          .order('elevator_number', { ascending: true });
 
         if (elevatorsError) throw elevatorsError;
         setElevators(elevatorsData || []);
 
-        const activeCount = elevatorsData?.filter(e => e.status === 'active').length || 0;
+        const activeCount = elevatorsData?.filter((e) => e.status === 'active').length || 0;
 
         const startOfMonth = new Date();
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);
 
-        const { count: maintenanceCount } = await supabase
-          .from('maintenance_schedules')
-          .select('id', { count: 'exact', head: true })
-          .in('elevator_id', elevatorsData?.map(e => e.id) || [])
-          .gte('scheduled_date', startOfMonth.toISOString().split('T')[0]);
+        const elevatorIds = elevatorsData?.map((e) => e.id) || [];
+
+        let maintenanceCount = 0;
+        if (elevatorIds.length > 0) {
+          const { count } = await supabase
+            .from('maintenance_schedules')
+            .select('id', { count: 'exact', head: true })
+            .in('elevator_id', elevatorIds)
+            .gte('scheduled_date', startOfMonth.toISOString().split('T')[0]);
+
+          maintenanceCount = count || 0;
+        }
 
         const { count: issuesCount } = await supabase
           .from('emergency_visits')
@@ -76,7 +88,7 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
         setStats({
           totalElevators: elevatorsData?.length || 0,
           activeElevators: activeCount,
-          maintenanceThisMonth: maintenanceCount || 0,
+          maintenanceThisMonth: maintenanceCount,
           pendingIssues: issuesCount || 0,
         });
       }
@@ -113,6 +125,11 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
     }
   };
 
+  const getElevatorDisplayName = (elevator: any) => {
+    const main = elevator.elevator_number ? `Ascensor ${elevator.elevator_number}` : 'Ascensor';
+    return elevator.tower_name ? `${main} · ${elevator.tower_name}` : main;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -121,11 +138,28 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
     );
   }
 
+  if (!selectedClientId) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+        <Building2 className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+        <p className="text-slate-600 font-medium">No hay edificio seleccionado</p>
+      </div>
+    );
+  }
+
+  const title =
+    selectedClient?.internal_alias ||
+    clientData?.building_name ||
+    clientData?.company_name ||
+    'Edificio';
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Atajos Rápidos</h1>
-        <p className="text-slate-600 mt-1">{clientData?.company_name} - Acceso rápido a información de sus ascensores</p>
+        <p className="text-slate-600 mt-1">
+          {title} - Acceso rápido a información de sus ascensores
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -180,22 +214,24 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
           <div className="text-center py-12">
             <Wrench className="w-16 h-16 text-slate-300 mx-auto mb-4" />
             <p className="text-slate-600 font-medium">No hay ascensores registrados</p>
-            <p className="text-sm text-slate-500 mt-1">Contacte con administración para agregar ascensores</p>
+            <p className="text-sm text-slate-500 mt-1">
+              Contacte con administración para agregar ascensores
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {elevators.map((elevator) => (
               <div
                 key={elevator.id}
-                className="border border-slate-200 rounded-lg p-5 hover:border-slate-300 transition cursor-pointer"
+                className="border border-slate-200 rounded-lg p-5 hover:border-slate-300 transition"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <h3 className="font-bold text-slate-900 text-lg mb-1">
-                      {elevator.internal_code}
+                      {getElevatorDisplayName(elevator)}
                     </h3>
                     <p className="text-sm text-slate-600">
-                      {elevator.brand} {elevator.model}
+                      {elevator.brand || 'Marca no informada'} {elevator.model || ''}
                     </p>
                   </div>
                   <span
@@ -210,16 +246,24 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
                 <div className="space-y-2 mb-4">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-600">Ubicación:</span>
-                    <span className="font-medium text-slate-900">{elevator.location_building}</span>
+                    <span className="font-medium text-slate-900">
+                      {elevator.location_building || elevator.location_address || 'N/A'}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600">Pisos:</span>
-                    <span className="font-medium text-slate-900">{elevator.floors || 'N/A'}</span>
+                    <span className="text-slate-600">Paradas:</span>
+                    <span className="font-medium text-slate-900">
+                      {elevator.floors || 'N/A'}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-600">Capacidad:</span>
                     <span className="font-medium text-slate-900">
-                      {elevator.capacity_persons ? `${elevator.capacity_persons} personas` : 'N/A'}
+                      {elevator.capacity_persons
+                        ? `${elevator.capacity_persons} personas`
+                        : elevator.capacity_kg
+                        ? `${elevator.capacity_kg} kg`
+                        : 'N/A'}
                     </span>
                   </div>
                 </div>
@@ -229,7 +273,9 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
                     <div className="flex items-start gap-2">
                       <Clock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                       <div>
-                        <p className="text-xs font-semibold text-amber-900">Próxima Certificación</p>
+                        <p className="text-xs font-semibold text-amber-900">
+                          Próxima Certificación
+                        </p>
                         <p className="text-xs text-amber-700">
                           {new Date(elevator.next_certification_date).toLocaleDateString('es-CL')}
                         </p>
@@ -237,136 +283,10 @@ export function ClientDashboard({ onNavigate }: ClientDashboardProps = {}) {
                     </div>
                   </div>
                 )}
-
-                <button className="w-full mt-4 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition">
-                  Ver Detalles
-                </button>
               </div>
             ))}
           </div>
         )}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <FileText className="w-6 h-6 text-slate-900" />
-            <h2 className="text-xl font-bold text-slate-900">Actividad Reciente</h2>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-lg">
-              <div className="bg-green-100 p-2 rounded-lg">
-                <CheckCircle className="w-5 h-5 text-green-600" />
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold text-slate-900">Mantenimiento Completado</p>
-                <p className="text-sm text-slate-600">Ascensor A - Torre Principal</p>
-                <p className="text-xs text-slate-500 mt-1">Hace 2 días</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-lg">
-              <div className="bg-blue-100 p-2 rounded-lg">
-                <FileText className="w-5 h-5 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold text-slate-900">Nueva Cotización</p>
-                <p className="text-sm text-slate-600">Reparación bomba hidráulica</p>
-                <p className="text-xs text-slate-500 mt-1">Hace 5 días</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <TrendingUp className="w-6 h-6 text-slate-900" />
-            <h2 className="text-xl font-bold text-slate-900">Resumen Mensual</h2>
-          </div>
-          <div className="space-y-4">
-            <div className="p-4 bg-slate-50 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <p className="font-semibold text-slate-900">Disponibilidad</p>
-                <span className="text-lg font-bold text-green-600">98.5%</span>
-              </div>
-              <div className="w-full bg-slate-200 rounded-full h-2">
-                <div className="bg-green-500 h-2 rounded-full" style={{ width: '98.5%' }}></div>
-              </div>
-            </div>
-            <div className="p-4 bg-slate-50 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <p className="font-semibold text-slate-900">Mantenimientos Realizados</p>
-                <span className="text-lg font-bold text-blue-600">12</span>
-              </div>
-              <p className="text-xs text-slate-600">Todos completados a tiempo</p>
-            </div>
-            <div className="p-4 bg-slate-50 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <p className="font-semibold text-slate-900">Tiempo de Respuesta Promedio</p>
-                <span className="text-lg font-bold text-purple-600">1.8h</span>
-              </div>
-              <p className="text-xs text-slate-600">En emergencias</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 className="text-xl font-bold text-slate-900 mb-6">Accesos Rápidos</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <button
-            onClick={() => onNavigate?.('client-emergencies')}
-            className="p-6 bg-red-50 border-2 border-red-200 rounded-xl hover:bg-red-100 transition text-left"
-          >
-            <AlertTriangle className="w-8 h-8 text-red-600 mb-3" />
-            <h3 className="font-bold text-slate-900 mb-1">Emergencias</h3>
-            <p className="text-sm text-slate-600">Historial de visitas de emergencia</p>
-          </button>
-
-          <button
-            onClick={() => onNavigate?.('client-quotations')}
-            className="p-6 bg-blue-50 border-2 border-blue-200 rounded-xl hover:bg-blue-100 transition text-left"
-          >
-            <FileText className="w-8 h-8 text-blue-600 mb-3" />
-            <h3 className="font-bold text-slate-900 mb-1">Cotizaciones</h3>
-            <p className="text-sm text-slate-600">Ver y aprobar cotizaciones</p>
-          </button>
-
-          <button
-            onClick={() => onNavigate?.('carpeta-cero')}
-            className="p-6 bg-green-50 border-2 border-green-200 rounded-xl hover:bg-green-100 transition text-left"
-          >
-            <FileText className="w-8 h-8 text-green-600 mb-3" />
-            <h3 className="font-bold text-slate-900 mb-1">Carpeta Cero</h3>
-            <p className="text-sm text-slate-600">Documentación legal</p>
-          </button>
-
-          <button
-            onClick={() => onNavigate?.('rescue-training')}
-            className="p-6 bg-purple-50 border-2 border-purple-200 rounded-xl hover:bg-purple-100 transition text-left"
-          >
-            <FileText className="w-8 h-8 text-purple-600 mb-3" />
-            <h3 className="font-bold text-slate-900 mb-1">Capacitaciones</h3>
-            <p className="text-sm text-slate-600">Inducción de rescate</p>
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-xl shadow-lg p-8 text-white">
-        <h2 className="text-2xl font-bold mb-2">¿Necesita Asistencia?</h2>
-        <p className="text-slate-300 mb-6">
-          Estamos disponibles 24/7 para atender cualquier emergencia o consulta
-        </p>
-        <div className="flex flex-wrap gap-4">
-          <button className="bg-white text-slate-900 px-6 py-3 rounded-lg font-semibold hover:bg-slate-100 transition">
-            Reportar Emergencia
-          </button>
-          <button className="bg-slate-800 text-white px-6 py-3 rounded-lg font-semibold hover:bg-slate-700 transition border border-slate-700">
-            Solicitar Cotización
-          </button>
-          <button className="bg-slate-800 text-white px-6 py-3 rounded-lg font-semibold hover:bg-slate-700 transition border border-slate-700">
-            Contactar Soporte
-          </button>
-        </div>
       </div>
     </div>
   );

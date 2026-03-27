@@ -5,20 +5,22 @@ import { useAuth } from '../../contexts/AuthContext';
 
 interface Elevator {
   id: string;
-  location_name: string;
+  elevator_number: number | null;
+  tower_name: string | null;
   elevator_type: string;
-  manufacturer: string;
-  model: string;
-  serial_number: string;
+  manufacturer: string | null;
+  brand: string | null;
+  model: string | null;
+  serial_number: string | null;
   serial_number_not_legible: boolean;
-  capacity_kg: number;
-  floors: number;
-  installation_date: string;
+  capacity_kg: number | null;
+  floors: number | null;
+  installation_date: string | null;
   has_machine_room: boolean;
   stops_all_floors: boolean;
   stops_odd_floors: boolean;
   stops_even_floors: boolean;
-  classification: string;
+  classification: string | null;
 }
 
 interface PartsForm {
@@ -48,7 +50,7 @@ interface PartsPhoto {
 }
 
 export function ClientTechnicalInfoView() {
-  const { profile } = useAuth();
+  const { selectedClientId } = useAuth();
   const [elevators, setElevators] = useState<Elevator[]>([]);
   const [selectedElevator, setSelectedElevator] = useState<Elevator | null>(null);
   const [partsForm, setPartsForm] = useState<PartsForm | null>(null);
@@ -57,32 +59,28 @@ export function ClientTechnicalInfoView() {
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
 
   useEffect(() => {
-    loadElevators();
-  }, [profile]);
+    if (selectedClientId) {
+      loadElevators();
+    } else {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClientId]);
 
   const loadElevators = async () => {
+    if (!selectedClientId) return;
+
     try {
-      // Obtener cliente del perfil actual
-      const { data: client } = await supabase
-        .from('clients')
-        .select('id')
-        .eq('id', profile?.client_id)
-        .single();
+      setLoading(true);
 
-      if (!client) {
-        setLoading(false);
-        return;
-      }
-
-      // Obtener ascensores del cliente
       const { data: elevatorsData, error } = await supabase
         .from('elevators')
         .select('*')
-        .eq('client_id', client.id)
-        .order('location_name');
+        .eq('client_id', selectedClientId)
+        .order('elevator_number', { ascending: true });
 
       if (error) throw error;
-      setElevators(elevatorsData || []);
+      setElevators((elevatorsData as Elevator[]) || []);
     } catch (error) {
       console.error('Error loading elevators:', error);
     } finally {
@@ -92,7 +90,6 @@ export function ClientTechnicalInfoView() {
 
   const loadPartsInfo = async (elevatorId: string) => {
     try {
-      // Cargar formulario de partes
       const { data: formData } = await supabase
         .from('elevator_parts_forms')
         .select('*')
@@ -101,7 +98,6 @@ export function ClientTechnicalInfoView() {
 
       setPartsForm(formData);
 
-      // Cargar fotos si existe el formulario
       if (formData) {
         const { data: photosData } = await supabase
           .from('elevator_parts_photos')
@@ -124,27 +120,50 @@ export function ClientTechnicalInfoView() {
 
   const getElevatorTypeLabel = (type: string) => {
     switch (type) {
-      case 'hydraulic': return 'Hidráulico';
-      case 'electromechanical': return 'Electromecánico';
-      case 'traction': return 'Tracción';
-      default: return type;
+      case 'hydraulic':
+      case 'hidraulico':
+        return 'Hidráulico';
+      case 'electromechanical':
+      case 'electromecanico':
+        return 'Electromecánico';
+      case 'traction':
+        return 'Tracción';
+      default:
+        return type || 'No informado';
     }
   };
 
-  const getClassificationLabel = (classification: string) => {
+  const getClassificationLabel = (classification: string | null) => {
     switch (classification) {
-      case 'ascensor_corporativo': return 'Ascensor Corporativo';
-      case 'ascensor_residencial': return 'Ascensor Residencial';
-      case 'montacargas': return 'Montacargas';
-      case 'montaplatos': return 'Montaplatos';
-      default: return classification;
+      case 'ascensor_corporativo':
+        return 'Ascensor Corporativo';
+      case 'ascensor_residencial':
+        return 'Ascensor Residencial';
+      case 'montacargas':
+      case 'montacarga':
+        return 'Montacarga';
+      case 'montaplatos':
+        return 'Montaplatos';
+      case 'ascensor':
+        return 'Ascensor';
+      default:
+        return classification || 'No informado';
     }
+  };
+
+  const getElevatorTitle = (elevator: Elevator) => {
+    const base = elevator.elevator_number
+      ? `Ascensor ${elevator.elevator_number}`
+      : 'Ascensor';
+    return elevator.tower_name ? `${base} · ${elevator.tower_name}` : base;
   };
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">Información Técnica de Mis Ascensores</h1>
+        <h1 className="text-3xl font-bold text-slate-900">
+          Información Técnica de Mis Ascensores
+        </h1>
         <p className="text-slate-600 mt-1">
           Visualiza las especificaciones técnicas y el estado de partes y piezas de tus ascensores
         </p>
@@ -172,23 +191,29 @@ export function ClientTechnicalInfoView() {
                   <Wrench className="w-6 h-6 text-blue-600" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900">{elevator.location_name}</h3>
-                  <p className="text-sm text-slate-500">{getClassificationLabel(elevator.classification)}</p>
+                  <h3 className="font-bold text-slate-900">{getElevatorTitle(elevator)}</h3>
+                  <p className="text-sm text-slate-500">
+                    {getClassificationLabel(elevator.classification)}
+                  </p>
                 </div>
               </div>
 
               <div className="space-y-2 text-sm">
                 <div>
-                  <span className="text-slate-500">Fabricante:</span>
-                  <p className="font-medium text-slate-900">{elevator.manufacturer}</p>
+                  <span className="text-slate-500">Marca / Fabricante:</span>
+                  <p className="font-medium text-slate-900">
+                    {elevator.brand || elevator.manufacturer || 'No informado'}
+                  </p>
                 </div>
                 <div>
                   <span className="text-slate-500">Modelo:</span>
-                  <p className="text-slate-700">{elevator.model}</p>
+                  <p className="text-slate-700">{elevator.model || 'No informado'}</p>
                 </div>
                 <div>
                   <span className="text-slate-500">Capacidad:</span>
-                  <p className="text-slate-700">{elevator.capacity_kg} kg</p>
+                  <p className="text-slate-700">
+                    {elevator.capacity_kg ? `${elevator.capacity_kg} kg` : 'N/A'}
+                  </p>
                 </div>
               </div>
 
@@ -219,7 +244,6 @@ export function ClientTechnicalInfoView() {
             </div>
 
             <div className="p-6 space-y-6">
-              {/* Especificaciones Generales */}
               <div>
                 <h3 className="font-bold text-lg text-slate-900 mb-3 flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-blue-600" />
@@ -227,213 +251,130 @@ export function ClientTechnicalInfoView() {
                 </h3>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <span className="text-slate-500 text-xs">Ubicación</span>
-                    <p className="font-medium">{selectedElevator.location_name}</p>
+                    <span className="text-slate-500 text-xs">Ascensor</span>
+                    <p className="font-medium">{getElevatorTitle(selectedElevator)}</p>
                   </div>
                   <div>
                     <span className="text-slate-500 text-xs">Clasificación</span>
-                    <p className="font-medium">{getClassificationLabel(selectedElevator.classification)}</p>
+                    <p className="font-medium">
+                      {getClassificationLabel(selectedElevator.classification)}
+                    </p>
                   </div>
                   <div>
                     <span className="text-slate-500 text-xs">Tipo</span>
-                    <p className="font-medium">{getElevatorTypeLabel(selectedElevator.elevator_type)}</p>
+                    <p className="font-medium">
+                      {getElevatorTypeLabel(selectedElevator.elevator_type)}
+                    </p>
                   </div>
                   <div>
-                    <span className="text-slate-500 text-xs">Fabricante</span>
-                    <p className="font-medium">{selectedElevator.manufacturer}</p>
+                    <span className="text-slate-500 text-xs">Marca / Fabricante</span>
+                    <p className="font-medium">
+                      {selectedElevator.brand ||
+                        selectedElevator.manufacturer ||
+                        'No informado'}
+                    </p>
                   </div>
                   <div>
                     <span className="text-slate-500 text-xs">Modelo</span>
-                    <p className="font-medium">{selectedElevator.model}</p>
+                    <p className="font-medium">{selectedElevator.model || 'No informado'}</p>
                   </div>
                   <div>
                     <span className="text-slate-500 text-xs">Número de Serie</span>
                     {selectedElevator.serial_number_not_legible ? (
                       <p className="text-orange-600 italic text-xs">No disponible</p>
                     ) : (
-                      <p className="font-mono">{selectedElevator.serial_number}</p>
+                      <p className="font-mono">{selectedElevator.serial_number || 'N/A'}</p>
                     )}
                   </div>
                   <div>
                     <span className="text-slate-500 text-xs">Capacidad</span>
-                    <p className="font-medium">{selectedElevator.capacity_kg} kg</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 text-xs">Número de Pisos</span>
-                    <p className="font-medium">{selectedElevator.floors}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 text-xs">Sala de Máquinas</span>
                     <p className="font-medium">
-                      {selectedElevator.has_machine_room ? 'Con sala de máquinas' : 'Sin sala de máquinas'}
+                      {selectedElevator.capacity_kg ? `${selectedElevator.capacity_kg} kg` : 'N/A'}
                     </p>
                   </div>
                   <div>
-                    <span className="text-slate-500 text-xs">Paradas</span>
+                    <span className="text-slate-500 text-xs">N° de Paradas</span>
+                    <p className="font-medium">{selectedElevator.floors ?? 'N/A'}</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-xs">Fecha instalación</span>
                     <p className="font-medium">
-                      {selectedElevator.stops_all_floors && 'Todos los pisos'}
-                      {selectedElevator.stops_odd_floors && 'Pisos impares'}
-                      {selectedElevator.stops_even_floors && 'Pisos pares'}
+                      {selectedElevator.installation_date || 'No informada'}
                     </p>
                   </div>
                   <div>
-                    <span className="text-slate-500 text-xs">Fecha de Instalación</span>
+                    <span className="text-slate-500 text-xs">Sala de máquinas</span>
                     <p className="font-medium">
-                      {new Date(selectedElevator.installation_date).toLocaleDateString('es-ES')}
+                      {selectedElevator.has_machine_room ? 'Sí' : 'No / no informado'}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Información de Partes y Piezas */}
-              <div className="border-t border-slate-200 pt-6">
-                <h3 className="font-bold text-lg text-slate-900 mb-3 flex items-center gap-2">
-                  <Package className="w-5 h-5 text-green-600" />
-                  Partes y Piezas
-                </h3>
+              {partsForm && (
+                <div>
+                  <h3 className="font-bold text-lg text-slate-900 mb-3 flex items-center gap-2">
+                    <Package className="w-5 h-5 text-green-600" />
+                    Partes y Piezas
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <DetailItem label="Tablero de control" value={partsForm.control_board_model} />
+                    <DetailItem label="Tipo de motor" value={partsForm.motor_type} />
+                    <DetailItem label="Contactor" value={partsForm.contactor_model} />
+                    <DetailItem label="Relés" value={partsForm.relay_types} />
+                    <DetailItem label="Operador de puerta" value={partsForm.door_operator_model} />
+                    <DetailItem label="Encoder" value={partsForm.encoder_model} />
+                    <DetailItem label="Inversor" value={partsForm.inverter_model} />
+                    <DetailItem label="Freno" value={partsForm.brake_type} />
+                    <DetailItem label="Cables" value={partsForm.cable_specifications} />
+                    <DetailItem label="Guías" value={partsForm.guide_rail_type} />
+                    <DetailItem label="Paracaídas" value={partsForm.safety_gear_model} />
+                    <DetailItem label="Gobernador" value={partsForm.governor_model} />
+                    <DetailItem label="Buffer" value={partsForm.buffer_type} />
+                  </div>
 
-                {partsForm ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="flex-1 bg-slate-200 rounded-full h-3">
-                        <div
-                          className={`h-3 rounded-full transition-all ${
-                            partsForm.completion_percentage === 100 ? 'bg-green-500' : 'bg-blue-500'
-                          }`}
-                          style={{ width: `${partsForm.completion_percentage}%` }}
-                        ></div>
-                      </div>
-                      <span className="text-sm font-medium text-slate-700">
-                        {partsForm.completion_percentage}%
-                      </span>
+                  {partsForm.additional_notes && (
+                    <div className="mt-4">
+                      <span className="text-slate-500 text-xs">Notas adicionales</span>
+                      <p className="mt-1 text-sm text-slate-700">{partsForm.additional_notes}</p>
                     </div>
+                  )}
+                </div>
+              )}
 
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      {partsForm.control_board_model && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Tarjeta de Control</span>
-                          <p className="font-medium">{partsForm.control_board_model}</p>
-                        </div>
-                      )}
-                      {partsForm.motor_type && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Tipo de Motor</span>
-                          <p className="font-medium">{partsForm.motor_type}</p>
-                        </div>
-                      )}
-                      {partsForm.contactor_model && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Modelo de Contactores</span>
-                          <p className="font-medium">{partsForm.contactor_model}</p>
-                        </div>
-                      )}
-                      {partsForm.relay_types && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Tipos de Relés</span>
-                          <p className="font-medium">{partsForm.relay_types}</p>
-                        </div>
-                      )}
-                      {partsForm.door_operator_model && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Operador de Puertas</span>
-                          <p className="font-medium">{partsForm.door_operator_model}</p>
-                        </div>
-                      )}
-                      {partsForm.encoder_model && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Encoder</span>
-                          <p className="font-medium">{partsForm.encoder_model}</p>
-                        </div>
-                      )}
-                      {partsForm.inverter_model && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Inversor</span>
-                          <p className="font-medium">{partsForm.inverter_model}</p>
-                        </div>
-                      )}
-                      {partsForm.brake_type && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Tipo de Freno</span>
-                          <p className="font-medium">{partsForm.brake_type}</p>
-                        </div>
-                      )}
-                      {partsForm.cable_specifications && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Especificaciones de Cables</span>
-                          <p className="font-medium">{partsForm.cable_specifications}</p>
-                        </div>
-                      )}
-                      {partsForm.guide_rail_type && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Rieles Guía</span>
-                          <p className="font-medium">{partsForm.guide_rail_type}</p>
-                        </div>
-                      )}
-                      {partsForm.safety_gear_model && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Paracaídas</span>
-                          <p className="font-medium">{partsForm.safety_gear_model}</p>
-                        </div>
-                      )}
-                      {partsForm.governor_model && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Limitador de Velocidad</span>
-                          <p className="font-medium">{partsForm.governor_model}</p>
-                        </div>
-                      )}
-                      {partsForm.buffer_type && (
-                        <div>
-                          <span className="text-slate-500 text-xs">Amortiguadores</span>
-                          <p className="font-medium">{partsForm.buffer_type}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {partsForm.additional_notes && (
-                      <div className="mt-4">
-                        <span className="text-slate-500 text-xs">Notas Adicionales</span>
-                        <p className="text-sm mt-1 text-slate-700 bg-slate-50 p-3 rounded-lg">
-                          {partsForm.additional_notes}
+              {photos.length > 0 && (
+                <div>
+                  <h3 className="font-bold text-lg text-slate-900 mb-3 flex items-center gap-2">
+                    <Image className="w-5 h-5 text-purple-600" />
+                    Fotografías
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {photos.map((photo) => (
+                      <button
+                        key={photo.id}
+                        onClick={() => setViewingPhoto(photo.photo_url)}
+                        className="border rounded-lg p-2 text-left hover:bg-slate-50"
+                      >
+                        <img
+                          src={photo.photo_url}
+                          alt={photo.description || 'Foto'}
+                          className="w-full h-32 object-cover rounded"
+                        />
+                        <p className="text-xs text-slate-600 mt-2">
+                          {photo.description || 'Sin descripción'}
                         </p>
-                      </div>
-                    )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-                    {photos.length > 0 && (
-                      <div className="mt-4">
-                        <h4 className="font-medium text-slate-900 mb-2 flex items-center gap-2">
-                          <Image className="w-4 h-4" />
-                          Fotos
-                        </h4>
-                        <div className="grid grid-cols-2 gap-3">
-                          {photos.map((photo) => (
-                            <div
-                              key={photo.id}
-                              className="relative cursor-pointer group"
-                              onClick={() => setViewingPhoto(photo.photo_url)}
-                            >
-                              <img
-                                src={photo.photo_url}
-                                alt={photo.description || 'Foto del ascensor'}
-                                className="w-full h-40 object-cover rounded-lg border border-slate-200 group-hover:border-blue-400 transition"
-                              />
-                              {photo.description && (
-                                <p className="text-xs text-slate-600 mt-1">{photo.description}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 bg-slate-50 rounded-lg">
-                    <FileText className="w-12 h-12 text-slate-300 mx-auto mb-2" />
-                    <p className="text-slate-600">
-                      La información técnica de partes y piezas aún no ha sido registrada por el equipo técnico.
-                    </p>
-                  </div>
-                )}
-              </div>
+              {!partsForm && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  No existe ficha técnica detallada cargada para este ascensor.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -441,16 +382,25 @@ export function ClientTechnicalInfoView() {
 
       {viewingPhoto && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60] p-4"
           onClick={() => setViewingPhoto(null)}
         >
           <img
             src={viewingPhoto}
-            alt="Vista completa"
-            className="max-w-full max-h-full object-contain"
+            alt="Vista ampliada"
+            className="max-w-full max-h-full rounded-lg"
           />
         </div>
       )}
+    </div>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <span className="text-slate-500 text-xs">{label}</span>
+      <p className="font-medium">{value || 'No informado'}</p>
     </div>
   );
 }

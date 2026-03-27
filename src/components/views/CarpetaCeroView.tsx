@@ -8,7 +8,6 @@ import {
   FileText,
   Trash2,
   Search,
-  Filter,
   Eye,
 } from 'lucide-react';
 
@@ -33,7 +32,7 @@ interface Elevator {
 }
 
 export function CarpetaCeroView() {
-  const { profile } = useAuth();
+  const { profile, selectedClientId } = useAuth();
   const [documents, setDocuments] = useState<LegalDocument[]>([]);
   const [filteredDocuments, setFilteredDocuments] = useState<LegalDocument[]>([]);
   const [elevators, setElevators] = useState<Elevator[]>([]);
@@ -52,7 +51,8 @@ export function CarpetaCeroView() {
     file: null as File | null,
   });
 
-  const canUpload = profile?.role === 'admin' || profile?.role === 'developer' || profile?.role === 'client';
+  const canUpload =
+    profile?.role === 'admin' || profile?.role === 'developer' || profile?.role === 'client';
 
   const documentTypes = [
     { value: 'mechanical_plans', label: 'Planos Mecánicos' },
@@ -65,27 +65,23 @@ export function CarpetaCeroView() {
   ];
 
   useEffect(() => {
-    if (profile?.id) {
+    if (selectedClientId) {
       loadData();
+    } else {
+      setLoading(false);
     }
-  }, [profile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClientId]);
 
   useEffect(() => {
     filterDocuments();
   }, [searchTerm, selectedType, selectedElevator, documents]);
 
   const loadData = async () => {
-    try {
-      const { data: client } = await supabase
-        .from('clients')
-        .select('id')
-        .eq('id', profile?.client_id)
-        .maybeSingle();
+    if (!selectedClientId) return;
 
-      if (!client) {
-        setLoading(false);
-        return;
-      }
+    try {
+      setLoading(true);
 
       const [docsResult, elevatorsResult] = await Promise.all([
         supabase
@@ -96,20 +92,20 @@ export function CarpetaCeroView() {
               location_name
             )
           `)
-          .eq('client_id', client.id)
+          .eq('client_id', selectedClientId)
           .order('created_at', { ascending: false }),
         supabase
           .from('elevators')
           .select('id, location_name')
-          .eq('client_id', client.id)
+          .eq('client_id', selectedClientId)
           .order('location_name'),
       ]);
 
       if (docsResult.error) throw docsResult.error;
       if (elevatorsResult.error) throw elevatorsResult.error;
 
-      setDocuments(docsResult.data || []);
-      setElevators(elevatorsResult.data || []);
+      setDocuments((docsResult.data as LegalDocument[]) || []);
+      setElevators((elevatorsResult.data as Elevator[]) || []);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -122,18 +118,18 @@ export function CarpetaCeroView() {
 
     if (searchTerm) {
       filtered = filtered.filter(
-        doc =>
+        (doc) =>
           doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
           doc.description?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     if (selectedType !== 'all') {
-      filtered = filtered.filter(doc => doc.document_type === selectedType);
+      filtered = filtered.filter((doc) => doc.document_type === selectedType);
     }
 
     if (selectedElevator !== 'all') {
-      filtered = filtered.filter(doc => doc.elevator_id === selectedElevator);
+      filtered = filtered.filter((doc) => doc.elevator_id === selectedElevator);
     }
 
     setFilteredDocuments(filtered);
@@ -141,23 +137,17 @@ export function CarpetaCeroView() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadForm.file) {
+    if (!uploadForm.file || !selectedClientId) {
       alert('Por favor selecciona un archivo');
       return;
     }
 
     setUploading(true);
     try {
-      const { data: client } = await supabase
-        .from('clients')
-        .select('id')
-        .eq('id', profile?.client_id)
-        .maybeSingle();
-
-      if (!client) throw new Error('Cliente no encontrado');
-
       const fileExt = uploadForm.file.name.split('.').pop();
-      const fileName = `${client.id}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+      const fileName = `${selectedClientId}/${Date.now()}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from('legal-documents')
@@ -165,23 +155,21 @@ export function CarpetaCeroView() {
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('legal-documents')
-        .getPublicUrl(fileName);
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from('legal-documents').getPublicUrl(fileName);
 
-      const { error: insertError } = await supabase
-        .from('legal_documents')
-        .insert({
-          client_id: client.id,
-          elevator_id: uploadForm.elevator_id || null,
-          title: uploadForm.title,
-          description: uploadForm.description || null,
-          document_type: uploadForm.document_type,
-          file_url: publicUrl,
-          file_name: uploadForm.file.name,
-          file_size: uploadForm.file.size,
-          uploaded_by: profile?.id,
-        });
+      const { error: insertError } = await supabase.from('legal_documents').insert({
+        client_id: selectedClientId,
+        elevator_id: uploadForm.elevator_id || null,
+        title: uploadForm.title,
+        description: uploadForm.description || null,
+        document_type: uploadForm.document_type,
+        file_url: publicUrl,
+        file_name: uploadForm.file.name,
+        file_size: uploadForm.file.size,
+        uploaded_by: profile?.id,
+      });
 
       if (insertError) throw insertError;
 
@@ -205,21 +193,14 @@ export function CarpetaCeroView() {
 
   const handleDelete = async (doc: LegalDocument) => {
     if (!confirm(`¿Estás seguro de eliminar "${doc.title}"?`)) return;
+    if (!selectedClientId) return;
 
     try {
       const fileName = doc.file_url.split('/').pop();
       if (fileName) {
-        const { data: client } = await supabase
-          .from('clients')
-          .select('id')
-          .eq('id', profile?.client_id)
-          .maybeSingle();
-
-        if (client) {
-          await supabase.storage
-            .from('legal-documents')
-            .remove([`${client.id}/${fileName}`]);
-        }
+        await supabase.storage
+          .from('legal-documents')
+          .remove([`${selectedClientId}/${fileName}`]);
       }
 
       const { error } = await supabase
@@ -249,7 +230,7 @@ export function CarpetaCeroView() {
   };
 
   const getTypeLabel = (type: string) => {
-    return documentTypes.find(t => t.value === type)?.label || type;
+    return documentTypes.find((t) => t.value === type)?.label || type;
   };
 
   if (loading) {
@@ -260,22 +241,29 @@ export function CarpetaCeroView() {
     );
   }
 
+  if (!selectedClientId) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+        <FolderOpen className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+        <p className="text-slate-600 font-medium">No hay edificio seleccionado</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-            <FolderOpen className="w-8 h-8" />
-            Carpeta Cero
-          </h1>
+          <h1 className="text-3xl font-bold text-slate-900">Carpeta Cero</h1>
           <p className="text-slate-600 mt-1">
-            Documentación legal y técnica de los ascensores
+            Documentación legal, técnica y municipal asociada al edificio
           </p>
         </div>
+
         {canUpload && (
           <button
             onClick={() => setShowUploadModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition"
           >
             <Upload className="w-4 h-4" />
             Subir Documento
@@ -283,250 +271,190 @@ export function CarpetaCeroView() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
-              <Search className="w-4 h-4" />
-              Buscar
-            </label>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por título o descripción..."
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
+          <input
+            type="text"
+            placeholder="Buscar por título o descripción"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2"
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-2">
-              <Filter className="w-4 h-4" />
-              Tipo de Documento
-            </label>
-            <select
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">Todos los tipos</option>
-              {documentTypes.map(type => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2"
+          >
+            <option value="all">Todos los tipos</option>
+            {documentTypes.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.label}
+              </option>
+            ))}
+          </select>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Ascensor
-            </label>
-            <select
-              value={selectedElevator}
-              onChange={(e) => setSelectedElevator(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">Todos los ascensores</option>
-              <option value="general">General (sin ascensor específico)</option>
-              {elevators.map(elevator => (
-                <option key={elevator.id} value={elevator.id}>
-                  {elevator.location_name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={selectedElevator}
+            onChange={(e) => setSelectedElevator(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2"
+          >
+            <option value="all">Todos los ascensores</option>
+            {elevators.map((elevator) => (
+              <option key={elevator.id} value={elevator.id}>
+                {elevator.location_name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {filteredDocuments.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
-          <FolderOpen className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-          <p className="text-slate-600 font-medium">No hay documentos</p>
-          <p className="text-sm text-slate-500 mt-1">
-            {documents.length === 0
-              ? 'Sube documentos para comenzar'
-              : 'Prueba cambiando los filtros de búsqueda'}
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredDocuments.map((doc) => (
-            <div
-              key={doc.id}
-              className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:border-slate-300 transition"
-            >
-              <div className="flex items-start gap-4 mb-4">
-                <div className="bg-blue-100 p-3 rounded-lg">
-                  <FileText className="w-6 h-6 text-blue-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-slate-900 mb-1 truncate">{doc.title}</h3>
-                  <span className="text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        {filteredDocuments.length === 0 ? (
+          <div className="p-12 text-center">
+            <FolderOpen className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+            <p className="text-slate-600 font-medium">No hay documentos cargados</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-200">
+            {filteredDocuments.map((doc) => (
+              <div
+                key={doc.id}
+                className="p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+              >
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-slate-900 truncate">{doc.title}</h3>
+                  <p className="text-sm text-slate-500 mt-1">
                     {getTypeLabel(doc.document_type)}
-                  </span>
+                    {doc.elevators?.location_name ? ` · ${doc.elevators.location_name}` : ''}
+                  </p>
+                  {doc.description && (
+                    <p className="text-sm text-slate-600 mt-2">{doc.description}</p>
+                  )}
+                  <p className="text-xs text-slate-500 mt-2">
+                    {doc.file_name} · {formatFileSize(doc.file_size)}
+                  </p>
                 </div>
-              </div>
 
-              {doc.description && (
-                <p className="text-sm text-slate-600 mb-4 line-clamp-2">{doc.description}</p>
-              )}
-
-              <div className="space-y-2 mb-4 text-sm text-slate-600">
-                {doc.elevators && (
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">Ascensor:</span>
-                    <span>{doc.elevators.location_name}</span>
-                  </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">Tamaño:</span>
-                  <span>{formatFileSize(doc.file_size)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">Subido:</span>
-                  <span>{new Date(doc.created_at).toLocaleDateString('es-ES')}</span>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => downloadDocument(doc)}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
-                >
-                  <Download className="w-4 h-4" />
-                  Descargar
-                </button>
-                {canUpload && (
+                <div className="flex gap-2">
                   <button
-                    onClick={() => handleDelete(doc)}
-                    className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                    onClick={() => window.open(doc.file_url, '_blank')}
+                    className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Eye className="w-4 h-4" />
+                    Ver
                   </button>
-                )}
+
+                  <button
+                    onClick={() => downloadDocument(doc)}
+                    className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
+                  >
+                    <Download className="w-4 h-4" />
+                    Descargar
+                  </button>
+
+                  {canUpload && (
+                    <button
+                      onClick={() => handleDelete(doc)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-red-200 text-red-600 px-3 py-2 text-sm hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Eliminar
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-slate-900 mb-4">Subir Documento</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">Subir Documento</h2>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="p-2 hover:bg-slate-100 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
 
-            <form onSubmit={handleUpload} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Título *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={uploadForm.title}
-                  onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
+            <form onSubmit={handleUpload} className="p-5 space-y-4">
+              <input
+                type="text"
+                placeholder="Título"
+                value={uploadForm.title}
+                onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                required
+              />
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Descripción
-                </label>
-                <textarea
-                  value={uploadForm.description}
-                  onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
-                  rows={3}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
+              <textarea
+                placeholder="Descripción"
+                value={uploadForm.description}
+                onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 min-h-[100px]"
+              />
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Tipo de Documento *
-                </label>
-                <select
-                  value={uploadForm.document_type}
-                  onChange={(e) => setUploadForm({ ...uploadForm, document_type: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  {documentTypes.map(type => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={uploadForm.document_type}
+                onChange={(e) =>
+                  setUploadForm({ ...uploadForm, document_type: e.target.value })
+                }
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                {documentTypes.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Ascensor (opcional)
-                </label>
-                <select
-                  value={uploadForm.elevator_id}
-                  onChange={(e) => setUploadForm({ ...uploadForm, elevator_id: e.target.value })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">General (no específico)</option>
-                  {elevators.map(elevator => (
-                    <option key={elevator.id} value={elevator.id}>
-                      {elevator.location_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={uploadForm.elevator_id}
+                onChange={(e) => setUploadForm({ ...uploadForm, elevator_id: e.target.value })}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                <option value="">Documento general del edificio</option>
+                {elevators.map((elevator) => (
+                  <option key={elevator.id} value={elevator.id}>
+                    {elevator.location_name}
+                  </option>
+                ))}
+              </select>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Archivo PDF *
-                </label>
-                <input
-                  type="file"
-                  required
-                  accept=".pdf"
-                  onChange={(e) => setUploadForm({ ...uploadForm, file: e.target.files?.[0] || null })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <p className="text-xs text-slate-500 mt-1">Solo archivos PDF</p>
-              </div>
+              <input
+                type="file"
+                onChange={(e) =>
+                  setUploadForm({ ...uploadForm, file: e.target.files?.[0] || null })
+                }
+                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                required
+              />
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowUploadModal(false)}
-                  disabled={uploading}
-                  className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition disabled:opacity-50"
+                  className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={uploading}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+                  className="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-60"
                 >
-                  {uploading ? 'Subiendo...' : 'Subir Documento'}
+                  {uploading ? 'Subiendo...' : 'Subir'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-        <h3 className="font-bold text-blue-900 mb-3">Acerca de Carpeta Cero</h3>
-        <p className="text-sm text-blue-800 mb-3">
-          La Carpeta Cero es un repositorio digital que contiene toda la documentación legal y técnica
-          relacionada con tus ascensores.
-        </p>
-        <ul className="space-y-2 text-sm text-blue-800 list-disc list-inside">
-          <li>Planos mecánicos, eléctricos y de montaje</li>
-          <li>Permisos y certificaciones municipales</li>
-          <li>Contratos de mantenimiento y servicios</li>
-          <li>Certificaciones de seguridad</li>
-          <li>Cualquier otra documentación relevante</li>
-        </ul>
-      </div>
     </div>
   );
 }

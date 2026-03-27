@@ -3,7 +3,6 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   AlertTriangle,
-  Filter,
   Download,
   FileText,
   Clock,
@@ -31,7 +30,7 @@ interface EmergencyVisit {
 }
 
 export function ClientEmergenciesView() {
-  const { profile } = useAuth();
+  const { selectedClientId } = useAuth();
   const [emergencies, setEmergencies] = useState<EmergencyVisit[]>([]);
   const [filteredEmergencies, setFilteredEmergencies] = useState<EmergencyVisit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,36 +43,35 @@ export function ClientEmergenciesView() {
   });
 
   useEffect(() => {
-    if (profile?.id) {
+    if (selectedClientId) {
       loadEmergencies();
+    } else {
+      setLoading(false);
     }
-  }, [profile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClientId]);
 
   useEffect(() => {
     filterEmergencies();
   }, [selectedCategory, emergencies]);
 
   const loadEmergencies = async () => {
-    try {
-      const { data: client } = await supabase
-        .from('clients')
-        .select('id')
-        .eq('id', profile?.client_id)
-        .maybeSingle();
+    if (!selectedClientId) return;
 
-      if (!client) {
-        setLoading(false);
-        return;
-      }
+    try {
+      setLoading(true);
 
       const { data: elevatorsData } = await supabase
         .from('elevators')
         .select('id')
-        .eq('client_id', client.id);
+        .eq('client_id', selectedClientId);
 
-      const elevatorIds = elevatorsData?.map(e => e.id) || [];
+      const elevatorIds = elevatorsData?.map((e) => e.id) || [];
 
       if (elevatorIds.length === 0) {
+        setEmergencies([]);
+        setFilteredEmergencies([]);
+        setStats({ total: 0, technical: 0, external: 0, other: 0 });
         setLoading(false);
         return;
       }
@@ -101,12 +99,16 @@ export function ClientEmergenciesView() {
 
       if (error) throw error;
 
-      const emergenciesData = data || [];
+      const emergenciesData = (data as EmergencyVisit[]) || [];
       setEmergencies(emergenciesData);
 
-      const technicalCount = emergenciesData.filter(e => e.failure_category === 'technical_failure').length;
-      const externalCount = emergenciesData.filter(e => e.failure_category === 'external_failure').length;
-      const otherCount = emergenciesData.filter(e => e.failure_category === 'other').length;
+      const technicalCount = emergenciesData.filter(
+        (e) => e.failure_category === 'technical_failure'
+      ).length;
+      const externalCount = emergenciesData.filter(
+        (e) => e.failure_category === 'external_failure'
+      ).length;
+      const otherCount = emergenciesData.filter((e) => e.failure_category === 'other').length;
 
       setStats({
         total: emergenciesData.length,
@@ -126,7 +128,7 @@ export function ClientEmergenciesView() {
       setFilteredEmergencies(emergencies);
     } else {
       setFilteredEmergencies(
-        emergencies.filter(e => e.failure_category === selectedCategory)
+        emergencies.filter((e) => e.failure_category === selectedCategory)
       );
     }
   };
@@ -197,8 +199,18 @@ export function ClientEmergenciesView() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Fecha', 'Hora', 'Ascensor', 'Categoría', 'Problema Reportado', 'Solución', 'Técnico', 'Estado'];
-    const rows = filteredEmergencies.map(e => [
+    const headers = [
+      'Fecha',
+      'Hora',
+      'Ascensor',
+      'Categoría',
+      'Problema Reportado',
+      'Solución',
+      'Técnico',
+      'Estado',
+    ];
+
+    const rows = filteredEmergencies.map((e) => [
       e.visit_date,
       e.visit_time,
       e.elevators?.location_name || 'N/A',
@@ -211,7 +223,7 @@ export function ClientEmergenciesView() {
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -225,6 +237,15 @@ export function ClientEmergenciesView() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
+      </div>
+    );
+  }
+
+  if (!selectedClientId) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+        <AlertTriangle className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+        <p className="text-slate-600 font-medium">No hay edificio seleccionado</p>
       </div>
     );
   }
@@ -249,179 +270,88 @@ export function ClientEmergenciesView() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="bg-slate-100 p-2 rounded-lg">
-              <FileText className="w-5 h-5 text-slate-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
-              <p className="text-sm text-slate-600">Total</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="bg-red-100 p-2 rounded-lg">
-              <Wrench className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{stats.technical}</p>
-              <p className="text-sm text-slate-600">Fallas Técnicas</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="bg-orange-100 p-2 rounded-lg">
-              <Zap className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{stats.external}</p>
-              <p className="text-sm text-slate-600">Fallas Externas</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="bg-blue-100 p-2 rounded-lg">
-              <HelpCircle className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{stats.other}</p>
-              <p className="text-sm text-slate-600">Otros</p>
-            </div>
-          </div>
-        </div>
+        <StatCard label="Total" value={stats.total} icon={<FileText className="w-5 h-5 text-slate-600" />} />
+        <StatCard label="Falla técnica" value={stats.technical} icon={<Wrench className="w-5 h-5 text-red-600" />} />
+        <StatCard label="Falla externa" value={stats.external} icon={<Zap className="w-5 h-5 text-orange-600" />} />
+        <StatCard label="Otros" value={stats.other} icon={<HelpCircle className="w-5 h-5 text-blue-600" />} />
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Filter className="w-5 h-5 text-slate-600" />
-          <h2 className="text-lg font-bold text-slate-900">Filtrar por Categoría</h2>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => setSelectedCategory('all')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              selectedCategory === 'all'
-                ? 'bg-slate-900 text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            Todas ({stats.total})
-          </button>
-          <button
-            onClick={() => setSelectedCategory('technical_failure')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              selectedCategory === 'technical_failure'
-                ? 'bg-red-600 text-white'
-                : 'bg-red-100 text-red-700 hover:bg-red-200'
-            }`}
-          >
-            Fallas Técnicas ({stats.technical})
-          </button>
-          <button
-            onClick={() => setSelectedCategory('external_failure')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              selectedCategory === 'external_failure'
-                ? 'bg-orange-600 text-white'
-                : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-            }`}
-          >
-            Fallas Externas ({stats.external})
-          </button>
-          <button
-            onClick={() => setSelectedCategory('other')}
-            className={`px-4 py-2 rounded-lg font-medium transition ${
-              selectedCategory === 'other'
-                ? 'bg-blue-600 text-white'
-                : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-            }`}
-          >
-            Otros ({stats.other})
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200">
-        <div className="p-6 border-b border-slate-200">
-          <h2 className="text-xl font-bold text-slate-900">
-            {filteredEmergencies.length} Emergencia{filteredEmergencies.length !== 1 ? 's' : ''}
-          </h2>
+        <div className="flex flex-wrap gap-2 mb-6">
+          {[
+            { value: 'all', label: 'Todas' },
+            { value: 'technical_failure', label: 'Falla Técnica' },
+            { value: 'external_failure', label: 'Falla Externa' },
+            { value: 'other', label: 'Otros' },
+          ].map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setSelectedCategory(option.value)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                selectedCategory === option.value
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
 
         {filteredEmergencies.length === 0 ? (
-          <div className="p-12 text-center">
+          <div className="text-center py-12">
             <AlertTriangle className="w-16 h-16 text-slate-300 mx-auto mb-4" />
             <p className="text-slate-600 font-medium">No hay emergencias registradas</p>
-            <p className="text-sm text-slate-500 mt-1">
-              {selectedCategory !== 'all'
-                ? 'Prueba cambiando el filtro'
-                : 'Las emergencias aparecerán aquí cuando se registren'}
-            </p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-200">
+          <div className="space-y-4">
             {filteredEmergencies.map((emergency) => (
-              <div key={emergency.id} className="p-6 hover:bg-slate-50 transition">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-start gap-4 flex-1">
-                    <div className={`p-3 rounded-lg border ${getCategoryColor(emergency.failure_category)}`}>
+              <div key={emergency.id} className="border border-slate-200 rounded-lg p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <div className={`p-2 rounded-lg border ${getCategoryColor(emergency.failure_category)}`}>
                       {getCategoryIcon(emergency.failure_category)}
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="font-bold text-slate-900 text-lg">
-                          {emergency.elevators?.location_name || 'Ascensor'}
-                        </h3>
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold border ${getCategoryColor(
-                            emergency.failure_category
-                          )}`}
-                        >
-                          {getCategoryLabel(emergency.failure_category)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-slate-600 mb-3">
-                        {emergency.elevators?.address || 'Sin dirección'}
+                    <div>
+                      <h3 className="font-semibold text-slate-900">
+                        {emergency.elevators?.location_name || 'Ascensor'}
+                      </h3>
+                      <p className="text-sm text-slate-500">
+                        {emergency.visit_date} · {emergency.visit_time}
                       </p>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                          <p className="text-xs text-slate-500 font-medium mb-1">Problema Reportado</p>
-                          <p className="text-sm text-slate-900">{emergency.reported_issue}</p>
-                        </div>
-                        {emergency.resolution_description && (
-                          <div>
-                            <p className="text-xs text-slate-500 font-medium mb-1">Solución</p>
-                            <p className="text-sm text-slate-900">{emergency.resolution_description}</p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4" />
-                          <span>
-                            {new Date(emergency.visit_date).toLocaleDateString('es-ES')} a las{' '}
-                            {emergency.visit_time}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Wrench className="w-4 h-4" />
-                          <span>Técnico: {emergency.technician_name}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {getStatusIcon(emergency.status)}
-                          <span>{getStatusLabel(emergency.status)}</span>
-                        </div>
-                      </div>
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {getStatusIcon(emergency.status)}
+                    <span className="text-sm font-medium text-slate-700">
+                      {getStatusLabel(emergency.status)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-slate-500">Categoría</span>
+                    <p className="font-medium text-slate-900">
+                      {getCategoryLabel(emergency.failure_category)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Técnico</span>
+                    <p className="font-medium text-slate-900">
+                      {emergency.technician_name || 'No informado'}
+                    </p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <span className="text-slate-500">Problema reportado</span>
+                    <p className="text-slate-900">{emergency.reported_issue || 'N/A'}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <span className="text-slate-500">Solución</span>
+                    <p className="text-slate-900">
+                      {emergency.resolution_description || 'N/A'}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -429,42 +359,26 @@ export function ClientEmergenciesView() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-        <h3 className="font-bold text-blue-900 mb-3 flex items-center gap-2">
-          <AlertTriangle className="w-5 h-5" />
-          Acerca de las Categorías
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-blue-800">
-          <div>
-            <p className="font-semibold mb-1 flex items-center gap-2">
-              <Wrench className="w-4 h-4" />
-              Fallas Técnicas
-            </p>
-            <p className="text-blue-700">
-              Problemas mecánicos, eléctricos o de componentes del ascensor que requieren reparación o
-              mantenimiento especializado.
-            </p>
-          </div>
-          <div>
-            <p className="font-semibold mb-1 flex items-center gap-2">
-              <Zap className="w-4 h-4" />
-              Fallas Externas
-            </p>
-            <p className="text-blue-700">
-              Problemas originados por factores externos al ascensor como cortes de energía, vandalismo o uso
-              inadecuado.
-            </p>
-          </div>
-          <div>
-            <p className="font-semibold mb-1 flex items-center gap-2">
-              <HelpCircle className="w-4 h-4" />
-              Otros
-            </p>
-            <p className="text-blue-700">
-              Situaciones que no clasifican en las categorías anteriores o requieren evaluación adicional.
-            </p>
-          </div>
+function StatCard({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+      <div className="flex items-center gap-3 mb-2">
+        <div className="bg-slate-100 p-2 rounded-lg">{icon}</div>
+        <div>
+          <p className="text-2xl font-bold text-slate-900">{value}</p>
+          <p className="text-sm text-slate-600">{label}</p>
         </div>
       </div>
     </div>
