@@ -1,302 +1,279 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   AlertTriangle,
   Wrench,
+  ClipboardCheck,
+  Clock3,
+  Users,
   FileText,
+  UserCheck,
+  Activity,
 } from 'lucide-react';
 
-type EmergencyVisitRow = {
-  id: string;
-  status: string | null;
-  final_status: string | null;
-  reactivation_date?: string | null;
-  created_at?: string | null;
-  completed_at?: string | null;
-};
-
-type MaintenanceChecklistRow = {
-  id: string;
-  elevator_id: string;
-  status: string | null;
-  month: number | null;
-  year: number | null;
-  completion_date?: string | null;
-};
-
-type ServiceRequestRow = {
-  id: string;
-  status: string | null;
-  created_at?: string | null;
-  created_by_client?: boolean | null;
-};
-
-interface PanelCardProps {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  accentClass: string;
-  stats: Array<{
-    label: string;
-    value: number;
-    valueClass: string;
-    boxClass: string;
-  }>;
-  emptyMessage?: string;
+interface AlertDashboardProps {
+  onNavigate?: (section: string) => void;
 }
 
-function PanelCard({ title, icon: Icon, accentClass, stats, emptyMessage }: PanelCardProps) {
+interface AlertStats {
+  activeEmergencies: number;
+  elevatorsWithProblems: number;
+  pendingApprovals: number;
+  overdueTasks: number;
+  clientRequests: number;
+  pendingQuotes: number;
+  availableTechnicians: number;
+  maintenancesToday: number;
+}
+
+function StatCard({
+  title,
+  value,
+  description,
+  icon,
+  actionLabel,
+  onClick,
+}: {
+  title: string;
+  value: number;
+  description: string;
+  icon: React.ReactNode;
+  actionLabel: string;
+  onClick?: () => void;
+}) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 min-h-[320px]">
-      <div className="flex items-center gap-3 mb-6">
-        <Icon className={`w-7 h-7 ${accentClass}`} />
-        <h3 className="text-[18px] md:text-[20px] font-bold text-slate-900">{title}</h3>
-      </div>
-
-      <div className="grid grid-cols-3 gap-5">
-        {stats.map((stat) => (
-          <div key={stat.label} className={`rounded-2xl px-4 py-5 ${stat.boxClass}`}>
-            <p className="text-sm md:text-[15px] font-medium mb-2">{stat.label}</p>
-            <p className={`text-2xl md:text-[26px] leading-none font-bold ${stat.valueClass}`}>
-              {stat.value}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {emptyMessage ? (
-        <div className="flex items-center justify-center h-[110px] text-center text-slate-600 text-[16px]">
-          {emptyMessage}
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className="text-slate-600">{icon}</div>
+          <h3 className="text-[15px] font-semibold text-slate-900">{title}</h3>
         </div>
-      ) : null}
+        <span className="text-3xl font-bold text-slate-900">{value}</span>
+      </div>
+
+      <p className="text-sm text-slate-600 min-h-[48px]">{description}</p>
+
+      <button
+        type="button"
+        onClick={onClick}
+        className="mt-4 w-full rounded-xl bg-slate-100 hover:bg-slate-200 transition px-4 py-3 text-sm font-semibold text-slate-900"
+      >
+        {actionLabel}
+      </button>
     </div>
   );
 }
 
-function isToday(value?: string | null): boolean {
-  if (!value) return false;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return false;
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
-}
+export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
+  const [stats, setStats] = useState<AlertStats>({
+    activeEmergencies: 0,
+    elevatorsWithProblems: 0,
+    pendingApprovals: 0,
+    overdueTasks: 0,
+    clientRequests: 0,
+    pendingQuotes: 0,
+    availableTechnicians: 0,
+    maintenancesToday: 0,
+  });
 
-function isEmergencyStillOpen(row: EmergencyVisitRow): boolean {
-  const status = (row.status || '').toLowerCase();
-  const finalStatus = (row.final_status || '').toLowerCase();
+  const todayRange = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
 
-  const workflowOpen = ['reported', 'assigned', 'in_progress', 'pending'].includes(status);
-  const unresolvedFinalState =
-    ['stopped', 'observation'].includes(finalStatus) && !row.reactivation_date;
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
 
-  return workflowOpen || unresolvedFinalState;
-}
+    return {
+      startIso: start.toISOString(),
+      endIso: end.toISOString(),
+    };
+  }, []);
 
-function isPendingServiceRequest(status: string | null | undefined): boolean {
-  const normalized = (status || '').toLowerCase();
-  return [
-    'new',
-    'created',
-    'pending',
-    'submitted',
-    'in_review',
-    'awaiting_approval',
-    'analysis',
-  ].includes(normalized);
-}
+  useEffect(() => {
+    loadStats();
+  }, []);
 
-export default function AdminDashboardPanels() {
-  const [loading, setLoading] = useState(true);
-  const [emergencyRows, setEmergencyRows] = useState<EmergencyVisitRow[]>([]);
-  const [maintenanceRows, setMaintenanceRows] = useState<MaintenanceChecklistRow[]>([]);
-  const [serviceRequestRows, setServiceRequestRows] = useState<ServiceRequestRow[]>([]);
-  const [activeElevatorsCount, setActiveElevatorsCount] = useState(0);
-
-  const currentMonth = new Date().getMonth() + 1;
-  const currentYear = new Date().getFullYear();
-
-  const loadDashboardData = useCallback(async () => {
-    setLoading(true);
+  const loadStats = async () => {
     try {
       const [
-        emergencyResult,
-        maintenanceResult,
-        serviceRequestResult,
-        elevatorCountResult,
+        emergenciesRes,
+        serviceRequestsRes,
+        workOrdersRes,
+        techniciansRes,
+        maintenancesTodayRes,
       ] = await Promise.all([
         supabase
           .from('emergency_visits')
-          .select('id, status, final_status, reactivation_date, created_at, completed_at')
-          .order('created_at', { ascending: false })
-          .limit(200),
-        supabase
-          .from('mnt_checklists')
-          .select('id, elevator_id, status, month, year, completion_date')
-          .eq('month', currentMonth)
-          .eq('year', currentYear)
-          .limit(5000),
+          .select('id, status, final_status, reactivation_date', { count: 'exact' }),
+
         supabase
           .from('service_requests')
-          .select('id, status, created_at, created_by_client')
-          .limit(5000),
+          .select('id, status, created_by_client, request_type', { count: 'exact' }),
+
         supabase
-          .from('elevators')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'active'),
+          .from('work_orders')
+          .select('id, status, created_at', { count: 'exact' }),
+
+        supabase
+          .from('profiles')
+          .select('id, is_active, role', { count: 'exact' })
+          .eq('role', 'technician')
+          .eq('is_active', true),
+
+        supabase
+          .from('mnt_checklists')
+          .select('id, status, completion_date', { count: 'exact' })
+          .eq('status', 'completed')
+          .gte('completion_date', todayRange.startIso)
+          .lte('completion_date', todayRange.endIso),
       ]);
 
-      if (emergencyResult.error) throw emergencyResult.error;
-      if (maintenanceResult.error) throw maintenanceResult.error;
-      if (serviceRequestResult.error) throw serviceRequestResult.error;
-      if (elevatorCountResult.error) throw elevatorCountResult.error;
+      const emergencies = emergenciesRes.data || [];
+      const serviceRequests = serviceRequestsRes.data || [];
+      const workOrders = workOrdersRes.data || [];
 
-      setEmergencyRows((emergencyResult.data as EmergencyVisitRow[]) || []);
-      setMaintenanceRows((maintenanceResult.data as MaintenanceChecklistRow[]) || []);
-      setServiceRequestRows((serviceRequestResult.data as ServiceRequestRow[]) || []);
-      setActiveElevatorsCount(elevatorCountResult.count || 0);
+      const activeEmergencies = emergencies.filter((item: any) => {
+        const status = item?.status;
+        const finalStatus = item?.final_status;
+        const reactivationDate = item?.reactivation_date;
+
+        const inFlow =
+          status === 'reported' ||
+          status === 'assigned' ||
+          status === 'in_progress' ||
+          status === 'pending';
+
+        const stoppedWithoutReactivation =
+          (finalStatus === 'stopped' || finalStatus === 'observation') &&
+          !reactivationDate;
+
+        return inFlow || stoppedWithoutReactivation;
+      }).length;
+
+      const elevatorsWithProblems = emergencies.filter((item: any) => {
+        const finalStatus = item?.final_status;
+        const reactivationDate = item?.reactivation_date;
+        return (finalStatus === 'stopped' || finalStatus === 'observation') && !reactivationDate;
+      }).length;
+
+      const pendingApprovals = workOrders.filter((item: any) =>
+        ['pending_approval', 'awaiting_approval', 'submitted'].includes(item?.status)
+      ).length;
+
+      const overdueTasks = workOrders.filter((item: any) => {
+        if (['completed', 'cancelled', 'rejected'].includes(item?.status)) return false;
+        const createdAt = item?.created_at ? new Date(item.created_at).getTime() : 0;
+        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+        return createdAt > 0 && Date.now() - createdAt > threeDaysMs;
+      }).length;
+
+      const clientRequests = serviceRequests.filter((item: any) => item?.created_by_client === true).length;
+
+      const pendingQuotes = serviceRequests.filter((item: any) =>
+        ['quote_pending', 'quotation_pending', 'pending_quote'].includes(item?.status)
+      ).length;
+
+      const availableTechnicians = techniciansRes.count || 0;
+      const maintenancesToday = maintenancesTodayRes.count || 0;
+
+      setStats({
+        activeEmergencies,
+        elevatorsWithProblems,
+        pendingApprovals,
+        overdueTasks,
+        clientRequests,
+        pendingQuotes,
+        availableTechnicians,
+        maintenancesToday,
+      });
     } catch (error) {
-      console.error('Error loading admin dashboard panels:', error);
-      setEmergencyRows([]);
-      setMaintenanceRows([]);
-      setServiceRequestRows([]);
-      setActiveElevatorsCount(0);
-    } finally {
-      setLoading(false);
+      console.error('Error cargando AlertDashboard:', error);
     }
-  }, [currentMonth, currentYear]);
-
-  useEffect(() => {
-    loadDashboardData();
-  }, [loadDashboardData]);
-
-  const emergencyStats = useMemo(() => {
-    const total = emergencyRows.length;
-    const active = emergencyRows.filter(isEmergencyStillOpen).length;
-    const today = emergencyRows.filter((row) => isToday(row.created_at || row.completed_at)).length;
-    return { total, active, today };
-  }, [emergencyRows]);
-
-  const maintenanceStats = useMemo(() => {
-    const completedElevatorIds = new Set(
-      maintenanceRows
-        .filter((row) => (row.status || '').toLowerCase() === 'completed' && !!row.elevator_id)
-        .map((row) => row.elevator_id)
-    );
-
-    const total = activeElevatorsCount;
-    const completed = completedElevatorIds.size;
-    const pending = Math.max(total - completed, 0);
-
-    return { total, completed, pending };
-  }, [maintenanceRows, activeElevatorsCount]);
-
-  const requestStats = useMemo(() => {
-    const technician = serviceRequestRows.filter((row) => !row.created_by_client).length;
-    const clients = serviceRequestRows.filter((row) => !!row.created_by_client).length;
-    const pending = serviceRequestRows.filter((row) => isPendingServiceRequest(row.status)).length;
-    return { technician, clients, pending };
-  }, [serviceRequestRows]);
-
-  if (loading) {
-    return (
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 min-h-[320px] animate-pulse">
-            <div className="h-8 w-56 bg-slate-200 rounded mb-6" />
-            <div className="grid grid-cols-3 gap-5">
-              {[1, 2, 3].map((j) => (
-                <div key={j} className="h-28 rounded-2xl bg-slate-100" />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
+  };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-      <PanelCard
-        title="Emergencias Recientes"
-        icon={AlertTriangle}
-        accentClass="text-red-500"
-        stats={[
-          {
-            label: 'Total',
-            value: emergencyStats.total,
-            valueClass: 'text-red-700',
-            boxClass: 'bg-red-50 text-red-600',
-          },
-          {
-            label: 'Activas',
-            value: emergencyStats.active,
-            valueClass: 'text-orange-700',
-            boxClass: 'bg-orange-50 text-orange-600',
-          },
-          {
-            label: 'Hoy',
-            value: emergencyStats.today,
-            valueClass: 'text-amber-700',
-            boxClass: 'bg-amber-50 text-amber-700',
-          },
-        ]}
-        emptyMessage={emergencyStats.total === 0 ? 'No hay emergencias registradas' : undefined}
-      />
+    <section className="space-y-6">
+      <div className="flex items-center gap-3">
+        <AlertTriangle className="w-8 h-8 text-red-500" />
+        <h2 className="text-4xl font-bold text-slate-900">Centro de Alertas y Notificaciones</h2>
+      </div>
 
-      <PanelCard
-        title="Mantenimientos del Mes"
-        icon={Wrench}
-        accentClass="text-blue-500"
-        stats={[
-          {
-            label: 'Total',
-            value: maintenanceStats.total,
-            valueClass: 'text-blue-700',
-            boxClass: 'bg-blue-50 text-blue-600',
-          },
-          {
-            label: 'Completados',
-            value: maintenanceStats.completed,
-            valueClass: 'text-green-700',
-            boxClass: 'bg-green-50 text-green-600',
-          },
-          {
-            label: 'Pendientes',
-            value: maintenanceStats.pending,
-            valueClass: 'text-orange-700',
-            boxClass: 'bg-orange-50 text-orange-600',
-          },
-        ]}
-      />
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+        <StatCard
+          title="Emergencias Activas"
+          value={stats.activeEmergencies}
+          description="Llamadas de emergencia que requieren atención inmediata"
+          icon={<AlertTriangle className="w-7 h-7" />}
+          actionLabel="Ver emergencias →"
+          onClick={() => onNavigate?.('emergencies')}
+        />
 
-      <PanelCard
-        title="Solicitudes de Servicio"
-        icon={FileText}
-        accentClass="text-violet-500"
-        stats={[
-          {
-            label: 'Técnicos',
-            value: requestStats.technician,
-            valueClass: 'text-violet-700',
-            boxClass: 'bg-violet-50 text-violet-600',
-          },
-          {
-            label: 'Clientes',
-            value: requestStats.clients,
-            valueClass: 'text-blue-700',
-            boxClass: 'bg-blue-50 text-blue-600',
-          },
-          {
-            label: 'Pendientes',
-            value: requestStats.pending,
-            valueClass: 'text-orange-700',
-            boxClass: 'bg-orange-50 text-orange-600',
-          },
-        ]}
-      />
-    </div>
+        <StatCard
+          title="Ascensores con Problemas"
+          value={stats.elevatorsWithProblems}
+          description="Reportes de fallas en ascensores"
+          icon={<Activity className="w-7 h-7" />}
+          actionLabel="Revisar reportes →"
+          onClick={() => onNavigate?.('emergencies')}
+        />
+
+        <StatCard
+          title="Pendientes de Aprobación"
+          value={stats.pendingApprovals}
+          description="Órdenes de trabajo aguardando aprobación"
+          icon={<Clock3 className="w-7 h-7" />}
+          actionLabel="Aprobar órdenes →"
+          onClick={() => onNavigate?.('work_orders')}
+        />
+
+        <StatCard
+          title="Tareas Vencidas"
+          value={stats.overdueTasks}
+          description="Órdenes sin completar por más de 3 días"
+          icon={<AlertTriangle className="w-7 h-7" />}
+          actionLabel="Gestionar urgentes →"
+          onClick={() => onNavigate?.('work_orders')}
+        />
+
+        <StatCard
+          title="Solicitudes de Clientes"
+          value={stats.clientRequests}
+          description="Nuevas solicitudes de servicio"
+          icon={<Users className="w-7 h-7" />}
+          actionLabel="Ver solicitudes →"
+          onClick={() => onNavigate?.('service_requests')}
+        />
+
+        <StatCard
+          title="Cotizaciones Pendientes"
+          value={stats.pendingQuotes}
+          description="Cotizaciones en espera"
+          icon={<FileText className="w-7 h-7" />}
+          actionLabel="Seguimiento →"
+          onClick={() => onNavigate?.('quotes')}
+        />
+
+        <StatCard
+          title="Técnicos Disponibles"
+          value={stats.availableTechnicians}
+          description="Técnicos activos en el sistema"
+          icon={<UserCheck className="w-7 h-7" />}
+          actionLabel="Ver equipo →"
+          onClick={() => onNavigate?.('technicians')}
+        />
+
+        <StatCard
+          title="Mantenimientos Hoy"
+          value={stats.maintenancesToday}
+          description="Mantenimientos completados hoy"
+          icon={<Wrench className="w-7 h-7" />}
+          actionLabel="Ver cronograma →"
+          onClick={() => onNavigate?.('maintenances')}
+        />
+      </div>
+    </section>
   );
 }
+
+export default AlertDashboard;
