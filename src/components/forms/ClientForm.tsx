@@ -93,6 +93,8 @@ interface AddressGroup {
   id: string;
   same_address_as_client: boolean;
   address: string;
+  commune: string;
+  region: string;
   quantity: number;
   all_equal: boolean;
   templates: ElevatorTemplate[];
@@ -183,11 +185,17 @@ function createEmptyTemplate(): ElevatorTemplate {
   };
 }
 
-function createAddressGroup(clientAddress = ''): AddressGroup {
+function createAddressGroup(
+  clientAddress = '',
+  clientCommune = '',
+  clientRegion = ''
+): AddressGroup {
   return {
     id: crypto.randomUUID(),
     same_address_as_client: true,
     address: clientAddress,
+    commune: clientCommune,
+    region: clientRegion,
     quantity: 1,
     all_equal: true,
     templates: [createEmptyTemplate()],
@@ -262,24 +270,29 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
   const [clientData, setClientData] = useState(createInitialClientData);
   const [additionalContacts, setAdditionalContacts] = useState<AdditionalContact[]>([]);
-  const [groups, setGroups] = useState<AddressGroup[]>([createAddressGroup('')]);
+  const [groups, setGroups] = useState<AddressGroup[]>([createAddressGroup('', '', '')]);
   const [globalNumbering, setGlobalNumbering] = useState(true);
 
   useEffect(() => {
     setGroups((prev) =>
       prev.map((group) =>
         group.same_address_as_client
-          ? { ...group, address: clientData.address }
+          ? {
+              ...group,
+              address: clientData.address,
+              commune: clientData.commune,
+              region: clientData.region,
+            }
           : group
       )
     );
-  }, [clientData.address]);
+  }, [clientData.address, clientData.commune, clientData.region]);
 
   useEffect(() => {
     if (!client) {
       setClientData(createInitialClientData());
       setAdditionalContacts([]);
-      setGroups([createAddressGroup('')]);
+      setGroups([createAddressGroup('', '', '')]);
       setGlobalNumbering(true);
       return;
     }
@@ -301,7 +314,8 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       region: client.city || '',
       building_type: (client.building_type as BuildingType) || 'residencial',
       self_managed: selfManaged,
-      enable_building_contacts: selfManaged || Boolean(payload.enable_building_contacts) || hasPrimaryContact || additional.length > 0,
+      enable_building_contacts:
+        selfManaged || Boolean(payload.enable_building_contacts) || hasPrimaryContact || additional.length > 0,
       primary_contact_name: client.contact_name || '',
       primary_contact_role: client.contact_person || '',
       primary_contact_email: client.contact_email || '',
@@ -311,8 +325,9 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       admin_phone: client.admin_phone || '',
       admin_company: payload.admin_company || '',
     });
+
     setAdditionalContacts(additional);
-    setGroups([createAddressGroup(client.address || '')]);
+    setGroups([createAddressGroup(client.address || '', client.commune || '', client.city || '')]);
     setGlobalNumbering(true);
   }, [client]);
 
@@ -321,8 +336,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     [groups]
   );
 
-  const showBuildingContacts =
-    clientData.self_managed || clientData.enable_building_contacts;
+  const showBuildingContacts = clientData.self_managed || clientData.enable_building_contacts;
 
   const updateGroup = <K extends keyof AddressGroup>(
     groupIndex: number,
@@ -337,6 +351,8 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
         if (field === 'same_address_as_client' && value === true) {
           nextGroup.address = clientData.address;
+          nextGroup.commune = clientData.commune;
+          nextGroup.region = clientData.region;
         }
 
         if (field === 'quantity') {
@@ -345,11 +361,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
           if (nextGroup.all_equal) {
             const baseTemplate = nextGroup.templates[0] || createEmptyTemplate();
-            const basePattern: StopPattern = nextQuantity === 1
-              ? 'all'
-              : getStopPattern(baseTemplate) === 'all'
-              ? 'odd'
-              : getStopPattern(baseTemplate);
+            const basePattern: StopPattern =
+              nextQuantity === 1
+                ? 'all'
+                : getStopPattern(baseTemplate) === 'all'
+                ? 'odd'
+                : getStopPattern(baseTemplate);
 
             nextGroup.templates = [
               applyStopPattern(baseTemplate, nextQuantity === 1 ? 'all' : getStopPattern(baseTemplate)),
@@ -542,13 +559,18 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   };
 
   const addAddressGroup = () => {
-    setGroups((prev) => [...prev, createAddressGroup(clientData.address)]);
+    setGroups((prev) => [
+      ...prev,
+      createAddressGroup(clientData.address, clientData.commune, clientData.region),
+    ]);
   };
 
   const removeAddressGroup = (groupIndex: number) => {
     setGroups((prev) => {
       const next = prev.filter((_, index) => index !== groupIndex);
-      return next.length > 0 ? next : [createAddressGroup(clientData.address)];
+      return next.length > 0
+        ? next
+        : [createAddressGroup(clientData.address, clientData.commune, clientData.region)];
     });
   };
 
@@ -575,7 +597,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   const resetForm = () => {
     setClientData(createInitialClientData());
     setAdditionalContacts([]);
-    setGroups([createAddressGroup('')]);
+    setGroups([createAddressGroup('', '', '')]);
     setGlobalNumbering(true);
   };
 
@@ -734,10 +756,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       throw new Error(`La capacidad KG en ${label} debe ser numérica.`);
     }
 
-    if (
-      template.capacity_persons &&
-      parseOptionalNumber(template.capacity_persons) === null
-    ) {
+    if (template.capacity_persons && parseOptionalNumber(template.capacity_persons) === null) {
       throw new Error(`La capacidad de personas en ${label} debe ser numérica.`);
     }
 
@@ -772,12 +791,23 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     groups.forEach((group, groupIndex) => {
       const quantity = Math.max(1, Number(group.quantity || 1));
 
-      if (!group.same_address_as_client && !sanitize(group.address)) {
-        throw new Error(`Debes ingresar la dirección del bloque ${groupIndex + 1}.`);
+      if (!group.same_address_as_client) {
+        if (!sanitize(group.address)) {
+          throw new Error(`Debes ingresar la dirección del bloque ${groupIndex + 1}.`);
+        }
+
+        if (!sanitize(group.commune)) {
+          throw new Error(`Debes ingresar la comuna del bloque ${groupIndex + 1}.`);
+        }
+
+        if (!sanitize(group.region)) {
+          throw new Error(`Debes ingresar la región del bloque ${groupIndex + 1}.`);
+        }
       }
 
       if (group.all_equal) {
         const baseTemplate = group.templates[0] || createEmptyTemplate();
+
         validateTemplate(
           applyStopPattern(
             baseTemplate,
@@ -801,9 +831,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
         }
       } else {
         if (group.templates.length !== quantity) {
-          throw new Error(
-            `Faltan fichas por completar en el bloque ${groupIndex + 1}.`
-          );
+          throw new Error(`Faltan fichas por completar en el bloque ${groupIndex + 1}.`);
         }
 
         group.templates.forEach((template, templateIndex) => {
@@ -882,12 +910,25 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
         ? sanitize(clientData.address)
         : sanitize(group.address);
 
+      const blockCommune = group.same_address_as_client
+        ? sanitize(clientData.commune)
+        : sanitize(group.commune);
+
+      const blockRegion = group.same_address_as_client
+        ? sanitize(clientData.region)
+        : sanitize(group.region);
+
+      const blockBuildingLabel = group.same_address_as_client
+        ? sanitize(clientData.building_name)
+        : `${sanitize(clientData.building_name)} - ${blockAddress}`;
+
       const templatesToUse = group.all_equal
         ? (() => {
             const baseTemplate = group.templates[0] || createEmptyTemplate();
-            const assignments = baseTemplate.stops_all_floors || quantity === 1
-              ? Array.from({ length: quantity }, () => 'all' as StopPattern)
-              : normalizeStopAssignments(quantity, group.stop_assignments, 'odd');
+            const assignments =
+              baseTemplate.stops_all_floors || quantity === 1
+                ? Array.from({ length: quantity }, () => 'all' as StopPattern)
+                : normalizeStopAssignments(quantity, group.stop_assignments, 'odd');
 
             return Array.from({ length: quantity }, (_, templateIndex) =>
               applyStopPattern(baseTemplate, assignments[templateIndex] || 'all')
@@ -934,7 +975,9 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
           capacity_persons: parseOptionalNumber(template.capacity_persons),
           location_address: blockAddress || null,
           address_asc: blockAddress || null,
-          location_building: sanitize(clientData.building_name) || null,
+          location_building: blockBuildingLabel || null,
+          location_commune: blockCommune || null,
+          location_city: blockRegion || null,
           manufacturer: null,
           elevator_type: template.elevator_type,
           classification: classification || null,
@@ -955,13 +998,20 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   const getDefaultClientPassword = () => `Mirega${new Date().getFullYear()}@@`;
 
   const buildClientAccessUsers = () => {
-    const users = new Map<string, {
-      email: string;
-      full_name: string;
-      phone: string | null;
-    }>();
+    const users = new Map<
+      string,
+      {
+        email: string;
+        full_name: string;
+        phone: string | null;
+      }
+    >();
 
-    const addUser = (email?: string | null, full_name?: string | null, phone?: string | null) => {
+    const addUser = (
+      email?: string | null,
+      full_name?: string | null,
+      phone?: string | null
+    ) => {
       const normalizedEmail = sanitize(email || '').toLowerCase();
       if (!normalizedEmail) return;
 
@@ -1564,12 +1614,26 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                     </div>
 
                     {!group.same_address_as_client && (
-                      <div className="mb-5">
+                      <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
                         <Field
                           label="Dirección de este bloque *"
                           value={group.address}
                           onChange={(v) => updateGroup(groupIndex, 'address', v)}
                           placeholder="Ej: Apoquindo 1234"
+                        />
+
+                        <Field
+                          label="Comuna de este bloque *"
+                          value={group.commune}
+                          onChange={(v) => updateGroup(groupIndex, 'commune', v)}
+                          placeholder="Ej: Las Condes"
+                        />
+
+                        <Field
+                          label="Región de este bloque *"
+                          value={group.region}
+                          onChange={(v) => updateGroup(groupIndex, 'region', v)}
+                          placeholder="Ej: Región Metropolitana"
                         />
                       </div>
                     )}
@@ -1629,12 +1693,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                     label="Modelo no conocido"
                                     checked={template.model_unknown}
                                     onChange={(v) =>
-                                      updateTemplate(
-                                        groupIndex,
-                                        templateIndex,
-                                        'model_unknown',
-                                        v
-                                      )
+                                      updateTemplate(groupIndex, templateIndex, 'model_unknown', v)
                                     }
                                   />
                                 </div>
@@ -1645,12 +1704,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   label="N° serie"
                                   value={template.serial_number}
                                   onChange={(v) =>
-                                    updateTemplate(
-                                      groupIndex,
-                                      templateIndex,
-                                      'serial_number',
-                                      v
-                                    )
+                                    updateTemplate(groupIndex, templateIndex, 'serial_number', v)
                                   }
                                   placeholder="Ej: SN-12345"
                                 />
@@ -1676,12 +1730,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   type="date"
                                   value={template.installation_date}
                                   onChange={(v) =>
-                                    updateTemplate(
-                                      groupIndex,
-                                      templateIndex,
-                                      'installation_date',
-                                      v
-                                    )
+                                    updateTemplate(groupIndex, templateIndex, 'installation_date', v)
                                   }
                                 />
                                 <div className="mt-2">
@@ -1722,12 +1771,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 label="Capacidad personas"
                                 value={template.capacity_persons}
                                 onChange={(v) =>
-                                  updateTemplate(
-                                    groupIndex,
-                                    templateIndex,
-                                    'capacity_persons',
-                                    v
-                                  )
+                                  updateTemplate(groupIndex, templateIndex, 'capacity_persons', v)
                                 }
                                 placeholder="Ej: 8"
                               />
@@ -1800,12 +1844,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                     label="Torre *"
                                     value={template.tower_name}
                                     onChange={(v) =>
-                                      updateTemplate(
-                                        groupIndex,
-                                        templateIndex,
-                                        'tower_name',
-                                        v
-                                      )
+                                      updateTemplate(groupIndex, templateIndex, 'tower_name', v)
                                     }
                                     placeholder="Ej: Torre A"
                                   />
@@ -1815,12 +1854,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   label="Tiene sala de máquinas"
                                   checked={template.has_machine_room}
                                   onChange={(v) =>
-                                    updateTemplate(
-                                      groupIndex,
-                                      templateIndex,
-                                      'has_machine_room',
-                                      v
-                                    )
+                                    updateTemplate(groupIndex, templateIndex, 'has_machine_room', v)
                                   }
                                 />
 
@@ -1828,12 +1862,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   label="Sin sala de máquinas"
                                   checked={template.no_machine_room}
                                   onChange={(v) =>
-                                    updateTemplate(
-                                      groupIndex,
-                                      templateIndex,
-                                      'no_machine_room',
-                                      v
-                                    )
+                                    updateTemplate(groupIndex, templateIndex, 'no_machine_room', v)
                                   }
                                 />
                               </div>
