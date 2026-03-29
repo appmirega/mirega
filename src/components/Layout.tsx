@@ -111,7 +111,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
     selectedClient,
     setSelectedClientId,
   } = useAuth();
-
   const { canAccessView } = useViewPermissions();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);

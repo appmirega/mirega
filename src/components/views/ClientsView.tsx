@@ -290,11 +290,7 @@ export function ClientsView() {
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>}
 
       <div className="flex-1 overflow-auto bg-white rounded-xl border border-slate-100 shadow-sm">
         {loading ? (
@@ -350,22 +346,11 @@ export function ClientsView() {
                           <div className="text-xs text-slate-400">Sin contactos visibles</div>
                         ) : (
                           client.contacts.map((contact, index) => (
-                            <div
-                              key={`${client.id}-contact-${index}`}
-                              className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
-                            >
+                            <div key={`${client.id}-contact-${index}`} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
                               <div className="text-sm font-medium text-slate-800">{contact.name}</div>
-                              {contact.role && (
-                                <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                                  {contact.role}
-                                </div>
-                              )}
-                              {contact.email && (
-                                <div className="text-xs text-slate-600">{contact.email}</div>
-                              )}
-                              {contact.phone && (
-                                <div className="text-xs text-slate-600">{contact.phone}</div>
-                              )}
+                              {contact.role && <div className="text-[11px] uppercase tracking-wide text-slate-500">{contact.role}</div>}
+                              {contact.email && <div className="text-xs text-slate-600">{contact.email}</div>}
+                              {contact.phone && <div className="text-xs text-slate-600">{contact.phone}</div>}
                             </div>
                           ))
                         )}
@@ -436,11 +421,7 @@ export function ClientsView() {
         <div className="fixed inset-0 z-40 flex">
           <div className="flex-1 bg-black/20" onClick={closeDrawer} />
           <div className="w-full max-w-3xl bg-white shadow-2xl h-full overflow-y-auto p-6">
-            <ClientForm
-              client={drawerMode === 'edit' ? selectedClient : null}
-              onSuccess={handleFormSuccess}
-              onCancel={closeDrawer}
-            />
+            <ClientForm client={drawerMode === 'edit' ? selectedClient : null} onSuccess={handleFormSuccess} onCancel={closeDrawer} />
           </div>
         </div>
       )}

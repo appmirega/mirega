@@ -129,26 +129,6 @@ function getStopPattern(template: ElevatorTemplate): StopPattern {
   return 'all';
 }
 
-function createStopAssignments(quantity: number, basePattern: StopPattern = 'all'): StopPattern[] {
-  const total = Math.max(1, Number(quantity || 1));
-
-  if (total === 1) {
-    return ['all'];
-  }
-
-  if (basePattern === 'all') {
-    return Array.from({ length: total }, () => 'all');
-  }
-
-  if (total === 2) {
-    return [basePattern, basePattern === 'odd' ? 'even' : 'odd'];
-  }
-
-  return Array.from({ length: total }, (_, index) =>
-    index % 2 === 0 ? basePattern : basePattern === 'odd' ? 'even' : 'odd'
-  );
-}
-
 function normalizeStopAssignments(
   quantity: number,
   assignments: StopPattern[] = [],
@@ -283,6 +263,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   const [clientData, setClientData] = useState(createInitialClientData);
   const [additionalContacts, setAdditionalContacts] = useState<AdditionalContact[]>([]);
   const [groups, setGroups] = useState<AddressGroup[]>([createAddressGroup('')]);
+  const [globalNumbering, setGlobalNumbering] = useState(true);
 
   useEffect(() => {
     setGroups((prev) =>
@@ -299,6 +280,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       setClientData(createInitialClientData());
       setAdditionalContacts([]);
       setGroups([createAddressGroup('')]);
+      setGlobalNumbering(true);
       return;
     }
 
@@ -319,11 +301,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       region: client.city || '',
       building_type: (client.building_type as BuildingType) || 'residencial',
       self_managed: selfManaged,
-      enable_building_contacts:
-        selfManaged ||
-        Boolean(payload.enable_building_contacts) ||
-        hasPrimaryContact ||
-        additional.length > 0,
+      enable_building_contacts: selfManaged || Boolean(payload.enable_building_contacts) || hasPrimaryContact || additional.length > 0,
       primary_contact_name: client.contact_name || '',
       primary_contact_role: client.contact_person || '',
       primary_contact_email: client.contact_email || '',
@@ -335,6 +313,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     });
     setAdditionalContacts(additional);
     setGroups([createAddressGroup(client.address || '')]);
+    setGlobalNumbering(true);
   }, [client]);
 
   const totalElevators = useMemo(
@@ -354,7 +333,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       prev.map((group, index) => {
         if (index !== groupIndex) return group;
 
-        const nextGroup: AddressGroup = { ...group, [field]: value };
+        let nextGroup: AddressGroup = { ...group, [field]: value };
 
         if (field === 'same_address_as_client' && value === true) {
           nextGroup.address = clientData.address;
@@ -366,18 +345,14 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
           if (nextGroup.all_equal) {
             const baseTemplate = nextGroup.templates[0] || createEmptyTemplate();
-            const basePattern: StopPattern =
-              nextQuantity === 1
-                ? 'all'
-                : getStopPattern(baseTemplate) === 'all'
-                ? 'odd'
-                : getStopPattern(baseTemplate);
+            const basePattern: StopPattern = nextQuantity === 1
+              ? 'all'
+              : getStopPattern(baseTemplate) === 'all'
+              ? 'odd'
+              : getStopPattern(baseTemplate);
 
             nextGroup.templates = [
-              applyStopPattern(
-                baseTemplate,
-                nextQuantity === 1 ? 'all' : getStopPattern(baseTemplate)
-              ),
+              applyStopPattern(baseTemplate, nextQuantity === 1 ? 'all' : getStopPattern(baseTemplate)),
             ];
             nextGroup.stop_assignments = normalizeStopAssignments(
               nextQuantity,
@@ -406,10 +381,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                 ? applyStopPattern(template, templateIndex % 2 === 0 ? 'odd' : 'even')
                 : template
             );
-            nextGroup.stop_assignments = normalizeStopAssignments(
-              nextQuantity,
-              nextGroup.stop_assignments
-            );
+            nextGroup.stop_assignments = normalizeStopAssignments(nextQuantity, nextGroup.stop_assignments);
           }
         }
 
@@ -452,15 +424,9 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                 return applyStopPattern(template, assignment);
               }
 
-              return applyStopPattern(
-                template,
-                templateIndex % 2 === 0 ? 'odd' : 'even'
-              );
+              return applyStopPattern(template, templateIndex % 2 === 0 ? 'odd' : 'even');
             });
-            nextGroup.stop_assignments = normalizeStopAssignments(
-              target,
-              nextGroup.stop_assignments
-            );
+            nextGroup.stop_assignments = normalizeStopAssignments(target, nextGroup.stop_assignments);
           }
         }
 
@@ -557,11 +523,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
         if (index !== groupIndex) return group;
 
         const quantity = Math.max(1, Number(group.quantity || 1));
-        const nextAssignments = normalizeStopAssignments(
-          quantity,
-          group.stop_assignments,
-          pattern
-        );
+        const nextAssignments = normalizeStopAssignments(quantity, group.stop_assignments, pattern);
 
         if (quantity === 2) {
           nextAssignments[0] = pattern;
@@ -614,6 +576,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     setClientData(createInitialClientData());
     setAdditionalContacts([]);
     setGroups([createAddressGroup('')]);
+    setGlobalNumbering(true);
   };
 
   const validateClient = () => {
@@ -826,23 +789,21 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
         );
 
         if (quantity === 1 && !baseTemplate.stops_all_floors) {
-          throw new Error(
-            `Si el bloque ${groupIndex + 1} tiene un solo ascensor, debe detenerse en todos los pisos.`
-          );
+          throw new Error(`Si el bloque ${groupIndex + 1} tiene un solo ascensor, debe detenerse en todos los pisos.`);
         }
 
         if (quantity > 1 && !baseTemplate.stops_all_floors) {
           const assignments = normalizeStopAssignments(quantity, group.stop_assignments, 'odd');
           const hasInvalid = assignments.some((assignment) => assignment === 'all');
           if (hasInvalid) {
-            throw new Error(
-              `Debes definir par o impar para todos los ascensores del bloque ${groupIndex + 1}.`
-            );
+            throw new Error(`Debes definir par o impar para todos los ascensores del bloque ${groupIndex + 1}.`);
           }
         }
       } else {
         if (group.templates.length !== quantity) {
-          throw new Error(`Faltan fichas por completar en el bloque ${groupIndex + 1}.`);
+          throw new Error(
+            `Faltan fichas por completar en el bloque ${groupIndex + 1}.`
+          );
         }
 
         group.templates.forEach((template, templateIndex) => {
@@ -915,6 +876,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     let globalElevatorNumber = 1;
 
     groups.forEach((group) => {
+      let localElevatorNumber = 1;
       const quantity = Math.max(1, Number(group.quantity || 1));
       const blockAddress = group.same_address_as_client
         ? sanitize(clientData.address)
@@ -923,10 +885,9 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       const templatesToUse = group.all_equal
         ? (() => {
             const baseTemplate = group.templates[0] || createEmptyTemplate();
-            const assignments =
-              baseTemplate.stops_all_floors || quantity === 1
-                ? Array.from({ length: quantity }, () => 'all' as StopPattern)
-                : normalizeStopAssignments(quantity, group.stop_assignments, 'odd');
+            const assignments = baseTemplate.stops_all_floors || quantity === 1
+              ? Array.from({ length: quantity }, () => 'all' as StopPattern)
+              : normalizeStopAssignments(quantity, group.stop_assignments, 'odd');
 
             return Array.from({ length: quantity }, (_, templateIndex) =>
               applyStopPattern(baseTemplate, assignments[templateIndex] || 'all')
@@ -935,6 +896,13 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
         : group.templates.slice(0, quantity).map((template) =>
             quantity === 1 ? applyStopPattern(template, 'all') : template
           );
+
+      const getNextNumber = () => {
+        if (globalNumbering) {
+          return globalElevatorNumber++;
+        }
+        return localElevatorNumber++;
+      };
 
       templatesToUse.forEach((template) => {
         const brand =
@@ -950,7 +918,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
         payloads.push({
           client_id: clientId,
           internal_code: null,
-          elevator_number: globalElevatorNumber,
+          elevator_number: getNextNumber(),
           tower_name: template.use_tower ? sanitize(template.tower_name) || null : null,
           brand: brand || null,
           model: template.model_unknown ? null : sanitize(template.model) || null,
@@ -978,8 +946,6 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
           stops_even_floors: template.stops_even_floors,
           status: 'active',
         });
-
-        globalElevatorNumber += 1;
       });
     });
 
@@ -989,20 +955,13 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   const getDefaultClientPassword = () => `Mirega${new Date().getFullYear()}@@`;
 
   const buildClientAccessUsers = () => {
-    const users = new Map<
-      string,
-      {
-        email: string;
-        full_name: string;
-        phone: string | null;
-      }
-    >();
+    const users = new Map<string, {
+      email: string;
+      full_name: string;
+      phone: string | null;
+    }>();
 
-    const addUser = (
-      email?: string | null,
-      full_name?: string | null,
-      phone?: string | null
-    ) => {
+    const addUser = (email?: string | null, full_name?: string | null, phone?: string | null) => {
       const normalizedEmail = sanitize(email || '').toLowerCase();
       if (!normalizedEmail) return;
 
@@ -1525,6 +1484,20 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               </button>
             </div>
 
+            <div className="mb-4">
+              <Checkbox
+                label="Numeración continua entre torres y direcciones"
+                checked={globalNumbering}
+                onChange={setGlobalNumbering}
+              />
+            </div>
+
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800 mb-6">
+              {globalNumbering
+                ? 'La numeración será correlativa entre todos los ascensores del formulario: 1 → N.'
+                : 'La numeración se reiniciará por cada bloque/dirección: 1 → N en cada grupo.'}
+            </div>
+
             <div className="space-y-6">
               {groups.map((group, groupIndex) => {
                 const templateCount = group.all_equal ? 1 : group.quantity;
@@ -1581,9 +1554,11 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       />
 
                       <div className="rounded border bg-white px-3 py-2 text-sm text-slate-600">
-                        Numeración automática:{' '}
+                        Numeración esperada:{' '}
                         <strong>
-                          {Array.from({ length: group.quantity }, (_, i) => i + 1).join(', ')}
+                          {globalNumbering
+                            ? 'continua entre bloques'
+                            : `1 a ${Math.max(1, Number(group.quantity || 1))}`}
                         </strong>
                       </div>
                     </div>
@@ -1654,7 +1629,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                     label="Modelo no conocido"
                                     checked={template.model_unknown}
                                     onChange={(v) =>
-                                      updateTemplate(groupIndex, templateIndex, 'model_unknown', v)
+                                      updateTemplate(
+                                        groupIndex,
+                                        templateIndex,
+                                        'model_unknown',
+                                        v
+                                      )
                                     }
                                   />
                                 </div>
@@ -1665,7 +1645,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   label="N° serie"
                                   value={template.serial_number}
                                   onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'serial_number', v)
+                                    updateTemplate(
+                                      groupIndex,
+                                      templateIndex,
+                                      'serial_number',
+                                      v
+                                    )
                                   }
                                   placeholder="Ej: SN-12345"
                                 />
@@ -1691,7 +1676,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   type="date"
                                   value={template.installation_date}
                                   onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'installation_date', v)
+                                    updateTemplate(
+                                      groupIndex,
+                                      templateIndex,
+                                      'installation_date',
+                                      v
+                                    )
                                   }
                                 />
                                 <div className="mt-2">
@@ -1732,7 +1722,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 label="Capacidad personas"
                                 value={template.capacity_persons}
                                 onChange={(v) =>
-                                  updateTemplate(groupIndex, templateIndex, 'capacity_persons', v)
+                                  updateTemplate(
+                                    groupIndex,
+                                    templateIndex,
+                                    'capacity_persons',
+                                    v
+                                  )
                                 }
                                 placeholder="Ej: 8"
                               />
@@ -1805,7 +1800,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                     label="Torre *"
                                     value={template.tower_name}
                                     onChange={(v) =>
-                                      updateTemplate(groupIndex, templateIndex, 'tower_name', v)
+                                      updateTemplate(
+                                        groupIndex,
+                                        templateIndex,
+                                        'tower_name',
+                                        v
+                                      )
                                     }
                                     placeholder="Ej: Torre A"
                                   />
@@ -1815,7 +1815,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   label="Tiene sala de máquinas"
                                   checked={template.has_machine_room}
                                   onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'has_machine_room', v)
+                                    updateTemplate(
+                                      groupIndex,
+                                      templateIndex,
+                                      'has_machine_room',
+                                      v
+                                    )
                                   }
                                 />
 
@@ -1823,7 +1828,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   label="Sin sala de máquinas"
                                   checked={template.no_machine_room}
                                   onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'no_machine_room', v)
+                                    updateTemplate(
+                                      groupIndex,
+                                      templateIndex,
+                                      'no_machine_room',
+                                      v
+                                    )
                                   }
                                 />
                               </div>
@@ -2002,7 +2012,7 @@ function Field({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border px-3 py-2"
+        className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
         placeholder={placeholder}
       />
     </div>
@@ -2028,10 +2038,10 @@ function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border px-3 py-2"
+        className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={`${option.value}-${option.label}`} value={option.value}>
             {option.label}
           </option>
         ))}
