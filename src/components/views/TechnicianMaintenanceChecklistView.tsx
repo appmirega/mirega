@@ -48,6 +48,38 @@ interface ChecklistProgress {
 
 type ViewMode = 'main' | 'client-selection' | 'elevator-selection' | 'checklist-form' | 'history' | 'in-progress';
 
+
+function sanitizeStorageSegment(value?: string | null): string {
+  if (!value) return 'general';
+
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase() || 'general';
+}
+
+function buildSafeMaintenancePdfName(
+  internalAlias: string | null | undefined,
+  elevatorNumber: number | string | null | undefined,
+  month: number,
+  year: number
+) {
+  const safeAlias = sanitizeStorageSegment(internalAlias || 'cliente');
+  const safeElevator = `asc${elevatorNumber ?? 'x'}`;
+  const fileName = `mantenimiento_${safeAlias}_${safeElevator}_${month}-${year}_${Date.now()}.pdf`;
+
+  return {
+    safeAlias,
+    fileName,
+    filePath: `${safeAlias}/${fileName}`,
+  };
+}
+
+
+
 interface TechnicianMaintenanceChecklistViewProps {
   initialMode?: ViewMode;
 }
@@ -589,103 +621,59 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
       `)
       .eq('id', checklistId)
       .single();
-    
+
     if (checklistError || !checklistData) {
       throw new Error('No se pudo obtener los datos del checklist');
     }
-    
+
     // Obtener respuestas del checklist
     const { data: responses, error: responsesError } = await supabase
       .from('mnt_checklist_answers')
       .select('question_id, status, observations')
       .eq('checklist_id', checklistId);
-    
+
     if (responsesError) {
       console.error('Error obteniendo respuestas:', responsesError);
       throw new Error(`No se pudieron obtener las respuestas del checklist: ${responsesError.message}`);
     }
-    
-    // Obtener las preguntas del maestro con frecuencia y is_hydraulic_only
+
+    // Obtener las preguntas del maestro con frecuencia e is_hydraulic_only
     const { data: questions, error: questionsError } = await supabase
       .from('mnt_checklist_questions')
       .select('id, question_number, section, question_text, frequency, is_hydraulic_only')
       .order('question_number');
-    
+
     if (questionsError) {
       console.error('Error obteniendo preguntas:', questionsError);
       throw new Error(`No se pudieron obtener las preguntas: ${questionsError.message}`);
     }
-    
+
     console.log('📊 Total de preguntas obtenidas:', questions?.length);
-    console.log('📋 Preguntas hidráulicas encontradas:', questions?.filter(q => q.is_hydraulic_only).map(q => ({
-      num: q.question_number,
-      text: q.question_text.substring(0, 50) + '...'
-    })));
-    
-    // Crear mapa de preguntas por ID
-    const questionMap = new Map(questions?.map(q => [q.id, q]) || []);
+
     const responsesMap = new Map((responses || []).map((r: any) => [r.question_id, r]));
-    
-    
-    // Determinar qué preguntas mostrar y con qué estado
+
     const elevatorType = checklistData.elevators?.elevator_type || 'electromechanical';
     const currentMonth = checklistData.month;
-    
-    console.log('🏢 TIPO DE ASCENSOR:', {
-      raw: checklistData.elevators?.elevator_type,
-      final: elevatorType,
-      comparison: elevatorType === 'electromechanical',
-      trimmed: elevatorType.trim(),
-      length: elevatorType.length
-    });
-    
-    // Lógica de frecuencias (igual que DynamicChecklistForm)
+
     const isQuarterlyMonth = (month: number) => [3, 6, 9, 12].includes(month);
     const isSemesterMonth = (month: number) => [6, 12].includes(month);
-    
+
     const allQuestions = (questions || []).map((q: any) => {
       const response = responsesMap.get(q.id);
       let finalStatus: string;
-      
-      // IMPORTANTE: Primero obtener la respuesta del técnico
+
       const technicianStatus = response?.status || 'approved';
-      
-      // Debug para preguntas hidráulicas
-      if (q.question_number >= 18 && q.question_number <= 20) {
-        console.log(`🔍 Pregunta ${q.question_number}:`, {
-          is_hydraulic_only: q.is_hydraulic_only,
-          type: typeof q.is_hydraulic_only,
-          elevatorType: elevatorType,
-          technicianStatus: technicianStatus,
-          condition1: q.is_hydraulic_only,
-          condition2: elevatorType === 'electromechanical',
-          bothTrue: q.is_hydraulic_only && elevatorType === 'electromechanical'
-        });
-      }
-      
-      // Determinar estado según reglas (PRIORIDAD: reglas automáticas > respuesta técnico)
+
       if (q.is_hydraulic_only && elevatorType === 'electromechanical') {
-        console.log(`✅ Pregunta ${q.question_number} marcada como NO APLICA (hidráulica en electromecánico)`);
-        finalStatus = 'not_applicable'; // Gris automático - IGNORA respuesta del técnico
+        finalStatus = 'not_applicable';
       } else if (q.frequency === 'T' && !isQuarterlyMonth(currentMonth)) {
-        finalStatus = 'out_of_period'; // Celeste automático - IGNORA respuesta del técnico
+        finalStatus = 'out_of_period';
       } else if (q.frequency === 'S' && !isSemesterMonth(currentMonth)) {
-        finalStatus = 'out_of_period'; // Celeste automático - IGNORA respuesta del técnico
+        finalStatus = 'out_of_period';
       } else {
-        // Usar respuesta del técnico (verde/rojo)
         finalStatus = technicianStatus;
       }
-      
-      // Debug para verificar preguntas hidráulicas
-      if (q.question_number >= 18 && q.question_number <= 20) {
-        console.log(`Pregunta ${q.question_number}:`, {
-          text: q.question_text,
-          is_hydraulic_only: q.is_hydraulic_only,
-          elevatorType,
-          finalStatus
-        });
-      }
-      
+
       return {
         id: q.id,
         number: q.question_number,
@@ -695,8 +683,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
         observations: response?.observations || null
       };
     }).sort((a, b) => a.number - b.number);
-    
-    // Preparar datos para el PDF con todas las preguntas
+
     const pdfData: MaintenanceChecklistPDFData = {
       checklistId: checklistData.id,
       folioNumber: checklistData.folio,
@@ -709,58 +696,61 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
       lastCertificationDate: checklistData.last_certification_date,
       nextCertificationDate: checklistData.next_certification_date,
       technicianName: checklistData.profiles?.full_name || 'Técnico no especificado',
-      certificationStatus: checklistData.certification_dates_readable === false 
-        ? 'no_legible' 
+      certificationStatus: checklistData.certification_dates_readable === false
+        ? 'no_legible'
         : (checklistData.certification_status === 'vigente' ? 'vigente' : 'vencida'),
       questions: allQuestions,
       signature: {
-        signerName: signerName,
+        signerName,
         signedAt: new Date().toISOString(),
         signatureDataUrl: signatureDataURL
       }
     };
-    
-    // Generar PDF
+
     const pdfBlob = await generateMaintenanceChecklistPDF(pdfData);
-    
-    // Nombre del archivo
-    const fileName = `mantenimiento_${checklistData.clients?.internal_alias || 'cliente'}_asc${checklistData.elevators?.elevator_number || 'X'}_${checklistData.month}-${checklistData.year}_${Date.now()}.pdf`;
-    const filePath = `${checklistData.clients?.internal_alias || 'general'}/${fileName}`;
-    
-    // Subir a Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
+
+    const { fileName, filePath } = buildSafeMaintenancePdfName(
+      checklistData.clients?.internal_alias,
+      checklistData.elevators?.elevator_number,
+      checklistData.month,
+      checklistData.year
+    );
+
+    console.log('📄 Generando PDF:', fileName);
+    console.log('📁 Ruta segura storage:', filePath);
+
+    const { error: uploadError } = await supabase.storage
       .from('maintenance-pdfs')
       .upload(filePath, pdfBlob, {
         contentType: 'application/pdf',
         upsert: false
       });
-    
+
     if (uploadError) {
+      console.error('❌ Error subiendo PDF:', uploadError);
       throw new Error(`Error subiendo PDF: ${uploadError.message}`);
     }
-    
-    // Obtener URL pública del PDF
+
     const { data: urlData } = supabase.storage
       .from('maintenance-pdfs')
       .getPublicUrl(filePath);
-    
-    if (!urlData) {
+
+    if (!urlData?.publicUrl) {
       throw new Error('No se pudo obtener la URL del PDF');
     }
-    
-    // Guardar URL en la base de datos
+
     const { error: updateError } = await supabase
       .from('mnt_checklists')
       .update({ pdf_url: urlData.publicUrl })
       .eq('id', checklistId);
-    
+
     if (updateError) {
+      console.error('❌ Error guardando URL del PDF:', updateError);
       throw new Error(`Error guardando URL del PDF: ${updateError.message}`);
     }
-    
+
     console.log(`✅ PDF generado y guardado: ${urlData.publicUrl}`);
-    
-    // NUEVO: Crear solicitudes automáticas desde observaciones
+
     await createServiceRequestsFromChecklist(
       checklistId,
       checklistData.elevator_id,
@@ -768,7 +758,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
       allQuestions
     );
   };
-  
+
   // Crear solicitudes de servicio automáticas desde observaciones
   const createServiceRequestsFromChecklist = async (
     checklistId: string,
@@ -956,7 +946,8 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mantenimiento_${data.clients?.internal_alias}_asc${data.elevators?.elevator_number}_${data.month}-${data.year}.pdf`;
+    const { fileName } = buildSafeMaintenancePdfName(data.clients?.internal_alias, data.elevators?.elevator_number, data.month, data.year);
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

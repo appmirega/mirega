@@ -1,307 +1,160 @@
-import { SUPABASE_URL } from '../../config/env';
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Download, FileText, Calendar, Mail, Search, Filter, Check, X } from 'lucide-react';
-import { generateMaintenancePDF, generatePDFFilename } from '../../utils/pdfGenerator';
+import { Download, ExternalLink, FileText, Filter, Search } from 'lucide-react';
 
-interface PDFRecord {
+interface ChecklistRow {
   id: string;
-  folio_number: number;
-  file_name: string;
-  sent_at: string | null;
+  folio: number | null;
+  month: number;
+  year: number;
+  status: string;
+  completion_date: string | null;
   created_at: string;
-  checklist: {
-    month: number;
-    year: number;
-    completion_date: string;
-    last_certification_date: string | null;
-    next_certification_date: string | null;
-    certification_not_legible: boolean;
-    clients: {
-      business_name: string;
-      address: string;
-      contact_name: string;
-      email: string;
-    };
-    elevators: {
-      brand: string;
-      model: string;
-      serial_number: string;
-      is_hydraulic: boolean;
-    };
-    profiles: {
-      full_name: string;
-      email: string;
-    };
-  };
-  signature: {
-    signer_name: string;
-    signature_data: string;
-    signed_at: string;
-  };
+  pdf_url: string | null;
+  clients: {
+    company_name?: string | null;
+    building_name?: string | null;
+    internal_alias?: string | null;
+  } | null;
+  elevators: {
+    elevator_number?: number | null;
+    location_name?: string | null;
+  } | null;
+}
+
+function sanitizeStorageSegment(value?: string | null): string {
+  if (!value) return 'general';
+
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase() || 'general';
+}
+
+function buildSafeMaintenancePdfName(
+  internalAlias: string | null | undefined,
+  elevatorNumber: number | string | null | undefined,
+  month: number,
+  year: number
+) {
+  const safeAlias = sanitizeStorageSegment(internalAlias || 'cliente');
+  const safeElevator = `asc${elevatorNumber ?? 'x'}`;
+
+  return `mantenimiento_${safeAlias}_${safeElevator}_${month}-${year}.pdf`;
 }
 
 export function PDFHistoryView() {
-  const [pdfs, setPdfs] = useState<PDFRecord[]>([]);
-  const [filteredPdfs, setFilteredPdfs] = useState<PDFRecord[]>([]);
+  const [rows, setRows] = useState<ChecklistRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [downloading, setDownloading] = useState<string | null>(null);
-  const [resending, setResending] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterSent, setFilterSent] = useState<'all' | 'sent' | 'not_sent'>('all');
+  const [filterAvailability, setFilterAvailability] = useState<'all' | 'with_pdf' | 'without_pdf'>('all');
 
   useEffect(() => {
-    loadPDFs();
+    void loadRows();
   }, []);
 
-  useEffect(() => {
-    applyFilters();
-  }, [searchTerm, filterSent, pdfs]);
-
-  const loadPDFs = async () => {
+  const loadRows = async () => {
+    setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('mnt_maintenance_pdfs')
+        .from('mnt_checklists')
         .select(`
-          *,
-          checklist:mnt_checklists!inner (
-            month,
-            year,
-            completion_date,
-            last_certification_date,
-            next_certification_date,
-            certification_not_legible,
-            clients (
-              business_name,
-              address,
-              contact_name,
-              email
-            ),
-            elevators (
-              brand,
-              model,
-              serial_number,
-              is_hydraulic
-            ),
-            profiles:profiles!mnt_checklists_technician_id_fkey (
-              full_name,
-              email
-            )
-          ),
-          signature:mnt_checklist_signatures!inner (
-            signer_name,
-            signature_data,
-            signed_at
-          )
+          id,
+          folio,
+          month,
+          year,
+          status,
+          completion_date,
+          created_at,
+          pdf_url,
+          clients(company_name, building_name, internal_alias),
+          elevators(elevator_number, location_name)
         `)
-        .order('folio_number', { ascending: false });
+        .eq('status', 'completed')
+        .order('year', { ascending: false })
+        .order('month', { ascending: false })
+        .order('completion_date', { ascending: false });
 
       if (error) throw error;
-
-      const formattedData = data?.map((item) => ({
-        id: item.id,
-        folio_number: item.folio_number,
-        file_name: item.file_name,
-        sent_at: item.sent_at,
-        created_at: item.created_at,
-        checklist: Array.isArray(item.checklist) ? item.checklist[0] : item.checklist,
-        signature: Array.isArray(item.signature) ? item.signature[0] : item.signature,
-      })) || [];
-
-      setPdfs(formattedData);
+      setRows((data || []) as ChecklistRow[]);
     } catch (error) {
-      console.error('Error loading PDFs:', error);
+      console.error('Error cargando historial de PDFs:', error);
+      alert('Error al cargar el historial de PDFs');
     } finally {
       setLoading(false);
     }
   };
 
-  const applyFilters = () => {
-    let filtered = [...pdfs];
+  const filteredRows = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
 
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (pdf) =>
-          pdf.checklist.clients?.business_name.toLowerCase().includes(term) ||
-          pdf.checklist.elevators?.brand.toLowerCase().includes(term) ||
-          pdf.checklist.elevators?.model.toLowerCase().includes(term) ||
-          pdf.folio_number.toString().includes(term)
+    return rows.filter((row) => {
+      const clientName = row.clients?.internal_alias || row.clients?.building_name || row.clients?.company_name || '';
+      const elevatorText = row.elevators?.elevator_number ? `ascensor ${row.elevators.elevator_number}` : '';
+      const folioText = row.folio ? String(row.folio) : '';
+
+      const matchesSearch =
+        term === '' ||
+        clientName.toLowerCase().includes(term) ||
+        elevatorText.toLowerCase().includes(term) ||
+        folioText.includes(term);
+
+      const matchesAvailability =
+        filterAvailability === 'all' ||
+        (filterAvailability === 'with_pdf' && !!row.pdf_url) ||
+        (filterAvailability === 'without_pdf' && !row.pdf_url);
+
+      return matchesSearch && matchesAvailability;
+    });
+  }, [rows, searchTerm, filterAvailability]);
+
+  const stats = useMemo(() => ({
+    total: rows.length,
+    withPdf: rows.filter((row) => !!row.pdf_url).length,
+    withoutPdf: rows.filter((row) => !row.pdf_url).length,
+  }), [rows]);
+
+  const handleOpenPdf = (row: ChecklistRow) => {
+    if (!row.pdf_url) {
+      alert('PDF no disponible. Puede que aún no se haya generado.');
+      return;
+    }
+
+    window.open(row.pdf_url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleDownloadPdf = async (row: ChecklistRow) => {
+    if (!row.pdf_url) {
+      alert('PDF no disponible. Puede que aún no se haya generado.');
+      return;
+    }
+
+    try {
+      const response = await fetch(row.pdf_url);
+      if (!response.ok) {
+        throw new Error('No se pudo descargar el archivo');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = buildSafeMaintenancePdfName(
+        row.clients?.internal_alias,
+        row.elevators?.elevator_number,
+        row.month,
+        row.year
       );
-    }
-
-    if (filterSent === 'sent') {
-      filtered = filtered.filter((pdf) => pdf.sent_at !== null);
-    } else if (filterSent === 'not_sent') {
-      filtered = filtered.filter((pdf) => pdf.sent_at === null);
-    }
-
-    setFilteredPdfs(filtered);
-  };
-
-  const handleDownloadPDF = async (pdfRecord: PDFRecord) => {
-    setDownloading(pdfRecord.id);
-    try {
-      const { data: answers } = await supabase
-        .from('mnt_checklist_answers')
-        .select('*, mnt_checklist_questions(*)')
-        .eq('checklist_id', pdfRecord.checklist.id);
-
-      const questionsWithAnswers = answers?.map((a) => ({
-        question_number: a.mnt_checklist_questions.question_number,
-        section: a.mnt_checklist_questions.section,
-        question_text: a.mnt_checklist_questions.question_text,
-        answer_status: a.status,
-        observations: a.observations,
-      })).filter(q => q.answer_status !== 'pending') || [];
-
-      const pdfBlob = await generateMaintenancePDF({
-        folio: pdfRecord.folio_number,
-        client: {
-          business_name: pdfRecord.checklist.clients.business_name,
-          address: pdfRecord.checklist.clients.address,
-          contact_name: pdfRecord.checklist.clients.contact_name,
-        },
-        elevator: {
-          brand: pdfRecord.checklist.elevators.brand,
-          model: pdfRecord.checklist.elevators.model,
-          serial_number: pdfRecord.checklist.elevators.serial_number,
-          is_hydraulic: pdfRecord.checklist.elevators.is_hydraulic,
-        },
-        checklist: {
-          month: pdfRecord.checklist.month,
-          year: pdfRecord.checklist.year,
-          last_certification_date: pdfRecord.checklist.last_certification_date,
-          next_certification_date: pdfRecord.checklist.next_certification_date,
-          certification_not_legible: pdfRecord.checklist.certification_not_legible,
-          completion_date: pdfRecord.checklist.completion_date,
-        },
-        technician: {
-          full_name: pdfRecord.checklist.profiles.full_name,
-          email: pdfRecord.checklist.profiles.email,
-        },
-        questions: questionsWithAnswers,
-        signature: {
-          signer_name: pdfRecord.signature.signer_name,
-          signature_data: pdfRecord.signature.signature_data,
-          signed_at: pdfRecord.signature.signed_at,
-        },
-      });
-
-      const url = URL.createObjectURL(pdfBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = pdfRecord.file_name;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Error downloading PDF:', error);
+      console.error('Error descargando PDF:', error);
       alert('Error al descargar el PDF');
-    } finally {
-      setDownloading(null);
-    }
-  };
-
-  const handleResendEmail = async (pdfRecord: PDFRecord) => {
-    const confirm = window.confirm(
-      `¿Reenviar correo a ${pdfRecord.checklist.clients.email}?`
-    );
-
-    if (!confirm) return;
-
-    setResending(pdfRecord.id);
-    try {
-      const { data: answers } = await supabase
-        .from('mnt_checklist_answers')
-        .select('*, mnt_checklist_questions(*)')
-        .eq('checklist_id', pdfRecord.checklist.id);
-
-      const questionsWithAnswers = answers?.map((a) => ({
-        question_number: a.mnt_checklist_questions.question_number,
-        section: a.mnt_checklist_questions.section,
-        question_text: a.mnt_checklist_questions.question_text,
-        answer_status: a.status,
-        observations: a.observations,
-      })).filter(q => q.answer_status !== 'pending') || [];
-
-      const pdfBlob = await generateMaintenancePDF({
-        folio: pdfRecord.folio_number,
-        client: {
-          business_name: pdfRecord.checklist.clients.business_name,
-          address: pdfRecord.checklist.clients.address,
-          contact_name: pdfRecord.checklist.clients.contact_name,
-        },
-        elevator: {
-          brand: pdfRecord.checklist.elevators.brand,
-          model: pdfRecord.checklist.elevators.model,
-          serial_number: pdfRecord.checklist.elevators.serial_number,
-          is_hydraulic: pdfRecord.checklist.elevators.is_hydraulic,
-        },
-        checklist: {
-          month: pdfRecord.checklist.month,
-          year: pdfRecord.checklist.year,
-          last_certification_date: pdfRecord.checklist.last_certification_date,
-          next_certification_date: pdfRecord.checklist.next_certification_date,
-          certification_not_legible: pdfRecord.checklist.certification_not_legible,
-          completion_date: pdfRecord.checklist.completion_date,
-        },
-        technician: {
-          full_name: pdfRecord.checklist.profiles.full_name,
-          email: pdfRecord.checklist.profiles.email,
-        },
-        questions: questionsWithAnswers,
-        signature: {
-          signer_name: pdfRecord.signature.signer_name,
-          signature_data: pdfRecord.signature.signature_data,
-          signed_at: pdfRecord.signature.signed_at,
-        },
-      });
-
-      const reader = new FileReader();
-      reader.readAsDataURL(pdfBlob);
-      reader.onloadend = async () => {
-        const base64data = reader.result as string;
-        const base64 = base64data.split(',')[1];
-
-        const response = await fetch(
-          `${SUPABASE_URL}/functions/v1/send-maintenance-report`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${import.meta.env.VITE_DATABASE_ANON_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              to: pdfRecord.checklist.clients.email,
-              clientName: pdfRecord.checklist.clients.business_name,
-              elevatorInfo: `${pdfRecord.checklist.elevators.brand} ${pdfRecord.checklist.elevators.model}`,
-              period: `${pdfRecord.checklist.month}/${pdfRecord.checklist.year}`,
-              folio: pdfRecord.folio_number,
-              pdfBase64: base64,
-              fileName: pdfRecord.file_name,
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error('Error al enviar el correo');
-        }
-
-        await supabase
-          .from('mnt_maintenance_pdfs')
-          .update({ sent_at: new Date().toISOString() })
-          .eq('id', pdfRecord.id);
-
-        alert('Correo reenviado exitosamente');
-        loadPDFs();
-      };
-    } catch (error) {
-      console.error('Error resending email:', error);
-      alert('Error al reenviar el correo');
-    } finally {
-      setResending(null);
     }
   };
 
@@ -313,56 +166,55 @@ export function PDFHistoryView() {
     );
   }
 
-  const stats = {
-    total: pdfs.length,
-    sent: pdfs.filter((p) => p.sent_at !== null).length,
-    pending: pdfs.filter((p) => p.sent_at === null).length,
-  };
-
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">Histórico de PDFs</h1>
-        <p className="text-slate-600 mt-1">Descarga y gestiona reportes de mantenimiento</p>
+        <h1 className="text-3xl font-bold text-slate-900">Historial de PDFs</h1>
+        <p className="text-slate-600 mt-1">Consulta y descarga los informes ya generados desde mnt_checklists.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white border-2 border-slate-200 rounded-lg p-4">
+        <button
+          onClick={() => setFilterAvailability('all')}
+          className={`bg-white border-2 rounded-lg p-4 text-left transition hover:shadow-lg ${
+            filterAvailability === 'all' ? 'border-slate-800 ring-2 ring-slate-200' : 'border-slate-200'
+          }`}
+        >
           <div className="flex items-center gap-3">
             <FileText className="w-8 h-8 text-slate-600" />
             <div>
               <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
-              <p className="text-sm text-slate-600">Total PDFs</p>
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={() => setFilterSent(filterSent === 'sent' ? 'all' : 'sent')}
-          className={`bg-white border-2 rounded-lg p-4 text-left transition hover:shadow-lg ${
-            filterSent === 'sent' ? 'border-green-500 ring-2 ring-green-200' : 'border-green-200'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <Check className="w-8 h-8 text-green-600" />
-            <div>
-              <p className="text-2xl font-bold text-green-900">{stats.sent}</p>
-              <p className="text-sm text-green-700">Enviados</p>
+              <p className="text-sm text-slate-600">Total completados</p>
             </div>
           </div>
         </button>
 
         <button
-          onClick={() => setFilterSent(filterSent === 'not_sent' ? 'all' : 'not_sent')}
+          onClick={() => setFilterAvailability(filterAvailability === 'with_pdf' ? 'all' : 'with_pdf')}
           className={`bg-white border-2 rounded-lg p-4 text-left transition hover:shadow-lg ${
-            filterSent === 'not_sent' ? 'border-amber-500 ring-2 ring-amber-200' : 'border-amber-200'
+            filterAvailability === 'with_pdf' ? 'border-green-500 ring-2 ring-green-200' : 'border-green-200'
           }`}
         >
           <div className="flex items-center gap-3">
-            <X className="w-8 h-8 text-amber-600" />
+            <FileText className="w-8 h-8 text-green-600" />
             <div>
-              <p className="text-2xl font-bold text-amber-900">{stats.pending}</p>
-              <p className="text-sm text-amber-700">Pendientes</p>
+              <p className="text-2xl font-bold text-green-900">{stats.withPdf}</p>
+              <p className="text-sm text-green-700">Con PDF</p>
+            </div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setFilterAvailability(filterAvailability === 'without_pdf' ? 'all' : 'without_pdf')}
+          className={`bg-white border-2 rounded-lg p-4 text-left transition hover:shadow-lg ${
+            filterAvailability === 'without_pdf' ? 'border-amber-500 ring-2 ring-amber-200' : 'border-amber-200'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <FileText className="w-8 h-8 text-amber-600" />
+            <div>
+              <p className="text-2xl font-bold text-amber-900">{stats.withoutPdf}</p>
+              <p className="text-sm text-amber-700">Sin PDF</p>
             </div>
           </div>
         </button>
@@ -374,16 +226,17 @@ export function PDFHistoryView() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar por cliente, folio, marca o modelo..."
+              placeholder="Buscar por cliente, folio o ascensor..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
+
           <button
-            onClick={() => setFilterSent('all')}
+            onClick={() => setFilterAvailability('all')}
             className={`px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2 ${
-              filterSent === 'all'
+              filterAvailability === 'all'
                 ? 'bg-blue-600 text-white'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
@@ -401,89 +254,82 @@ export function PDFHistoryView() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase">Cliente</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase">Ascensor</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase">Periodo</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase">Generado</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase">Enviado</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase">Completado</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase">PDF</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {filteredPdfs.length === 0 ? (
+              {filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center">
                     <FileText className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-                    <p className="text-slate-600 font-medium">No se encontraron PDFs</p>
+                    <p className="text-slate-600 font-medium">No se encontraron registros</p>
                   </td>
                 </tr>
               ) : (
-                filteredPdfs.map((pdf) => (
-                  <tr key={pdf.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-4">
-                      <span className="font-mono font-bold text-blue-600">
-                        {String(pdf.folio_number).padStart(6, '0')}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <p className="font-semibold text-slate-900">{pdf.checklist.clients.business_name}</p>
-                      <p className="text-xs text-slate-500">{pdf.checklist.clients.email}</p>
-                    </td>
-                    <td className="px-4 py-4">
-                      <p className="font-medium text-slate-900">
-                        {pdf.checklist.elevators.brand} {pdf.checklist.elevators.model}
-                      </p>
-                      <p className="text-xs text-slate-500 font-mono">{pdf.checklist.elevators.serial_number}</p>
-                    </td>
-                    <td className="px-4 py-4 text-sm text-slate-700">
-                      {pdf.checklist.month}/{pdf.checklist.year}
-                    </td>
-                    <td className="px-4 py-4 text-sm text-slate-700">
-                      {new Date(pdf.created_at).toLocaleDateString('es-ES')}
-                    </td>
-                    <td className="px-4 py-4">
-                      {pdf.sent_at ? (
-                        <div>
-                          <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
-                            Enviado
-                          </span>
-                          <p className="text-xs text-slate-500 mt-1">
-                            {new Date(pdf.sent_at).toLocaleDateString('es-ES')}
-                          </p>
-                        </div>
-                      ) : (
-                        <span className="px-2 py-1 bg-amber-100 text-amber-800 text-xs font-semibold rounded-full">
-                          Pendiente
+                filteredRows.map((row) => {
+                  const clientName = row.clients?.internal_alias || row.clients?.building_name || row.clients?.company_name || 'Sin nombre';
+                  const completionLabel = row.completion_date
+                    ? new Date(row.completion_date).toLocaleDateString('es-CL')
+                    : 'Sin fecha';
+
+                  return (
+                    <tr key={row.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-4">
+                        <span className="font-mono font-bold text-blue-600">
+                          {row.folio ? String(row.folio).padStart(6, '0') : '—'}
                         </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleDownloadPDF(pdf)}
-                          disabled={downloading === pdf.id}
-                          className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-                          title="Descargar PDF"
-                        >
-                          {downloading === pdf.id ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                          ) : (
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="font-semibold text-slate-900">{clientName}</p>
+                        <p className="text-xs text-slate-500">{row.clients?.company_name || row.clients?.building_name || ''}</p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="font-medium text-slate-900">
+                          Ascensor {row.elevators?.elevator_number ?? '—'}
+                        </p>
+                        <p className="text-xs text-slate-500">{row.elevators?.location_name || ''}</p>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-700">
+                        {row.month}/{row.year}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-700">
+                        {completionLabel}
+                      </td>
+                      <td className="px-4 py-4">
+                        {row.pdf_url ? (
+                          <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
+                            Disponible
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 bg-amber-100 text-amber-800 text-xs font-semibold rounded-full">
+                            No generado
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleOpenPdf(row)}
+                            className="p-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition"
+                            title="Abrir PDF"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            onClick={() => handleDownloadPdf(row)}
+                            className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                            title="Descargar PDF"
+                          >
                             <Download className="w-4 h-4" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => handleResendEmail(pdf)}
-                          disabled={resending === pdf.id}
-                          className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
-                          title="Reenviar correo"
-                        >
-                          {resending === pdf.id ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                          ) : (
-                            <Mail className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
