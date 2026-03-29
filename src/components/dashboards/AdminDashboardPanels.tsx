@@ -1,388 +1,302 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { AlertTriangle, FileText, Wrench, Zap, TrendingUp } from 'lucide-react';
+import {
+  AlertTriangle,
+  Wrench,
+  FileText,
+} from 'lucide-react';
 
-// Panel Dinámico de Emergencias
-export function EmergenciesPanel() {
-  const [emergencies, setEmergencies] = useState<any[]>([]);
-  const [stats, setStats] = useState({ total: 0, active: 0, today: 0 });
+type EmergencyVisitRow = {
+  id: string;
+  status: string | null;
+  final_status: string | null;
+  reactivation_date?: string | null;
+  created_at?: string | null;
+  completed_at?: string | null;
+};
+
+type MaintenanceChecklistRow = {
+  id: string;
+  elevator_id: string;
+  status: string | null;
+  month: number | null;
+  year: number | null;
+  completion_date?: string | null;
+};
+
+type ServiceRequestRow = {
+  id: string;
+  status: string | null;
+  created_at?: string | null;
+  created_by_client?: boolean | null;
+};
+
+interface PanelCardProps {
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accentClass: string;
+  stats: Array<{
+    label: string;
+    value: number;
+    valueClass: string;
+    boxClass: string;
+  }>;
+  emptyMessage?: string;
+}
+
+function PanelCard({ title, icon: Icon, accentClass, stats, emptyMessage }: PanelCardProps) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 min-h-[320px]">
+      <div className="flex items-center gap-3 mb-6">
+        <Icon className={`w-7 h-7 ${accentClass}`} />
+        <h3 className="text-[18px] md:text-[20px] font-bold text-slate-900">{title}</h3>
+      </div>
+
+      <div className="grid grid-cols-3 gap-5">
+        {stats.map((stat) => (
+          <div key={stat.label} className={`rounded-2xl px-4 py-5 ${stat.boxClass}`}>
+            <p className="text-sm md:text-[15px] font-medium mb-2">{stat.label}</p>
+            <p className={`text-2xl md:text-[26px] leading-none font-bold ${stat.valueClass}`}>
+              {stat.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {emptyMessage ? (
+        <div className="flex items-center justify-center h-[110px] text-center text-slate-600 text-[16px]">
+          {emptyMessage}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function isToday(value?: string | null): boolean {
+  if (!value) return false;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+function isEmergencyStillOpen(row: EmergencyVisitRow): boolean {
+  const status = (row.status || '').toLowerCase();
+  const finalStatus = (row.final_status || '').toLowerCase();
+
+  const workflowOpen = ['reported', 'assigned', 'in_progress', 'pending'].includes(status);
+  const unresolvedFinalState =
+    ['stopped', 'observation'].includes(finalStatus) && !row.reactivation_date;
+
+  return workflowOpen || unresolvedFinalState;
+}
+
+function isPendingServiceRequest(status: string | null | undefined): boolean {
+  const normalized = (status || '').toLowerCase();
+  return [
+    'new',
+    'created',
+    'pending',
+    'submitted',
+    'in_review',
+    'awaiting_approval',
+    'analysis',
+  ].includes(normalized);
+}
+
+export default function AdminDashboardPanels() {
   const [loading, setLoading] = useState(true);
+  const [emergencyRows, setEmergencyRows] = useState<EmergencyVisitRow[]>([]);
+  const [maintenanceRows, setMaintenanceRows] = useState<MaintenanceChecklistRow[]>([]);
+  const [serviceRequestRows, setServiceRequestRows] = useState<ServiceRequestRow[]>([]);
+  const [activeElevatorsCount, setActiveElevatorsCount] = useState(0);
 
-  useEffect(() => {
-    loadEmergencies();
-    const subscription = supabase
-      .channel('emergencies_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'emergency_visits' }, () => {
-        loadEmergencies();
-      })
-      .subscribe();
+  const currentMonth = new Date().getMonth() + 1;
+  const currentYear = new Date().getFullYear();
 
-    return () => {
-      supabase.removeChannel(subscription);
-    };
-  }, []);
-
-  const loadEmergencies = async () => {
+  const loadDashboardData = useCallback(async () => {
+    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('emergency_visits')
-        .select('id, status, client_id, created_at, building_id, clients(company_name)')
-        .order('created_at', { ascending: false })
-        .limit(10);
+      const [
+        emergencyResult,
+        maintenanceResult,
+        serviceRequestResult,
+        elevatorCountResult,
+      ] = await Promise.all([
+        supabase
+          .from('emergency_visits')
+          .select('id, status, final_status, reactivation_date, created_at, completed_at')
+          .order('created_at', { ascending: false })
+          .limit(200),
+        supabase
+          .from('mnt_checklists')
+          .select('id, elevator_id, status, month, year, completion_date')
+          .eq('month', currentMonth)
+          .eq('year', currentYear)
+          .limit(5000),
+        supabase
+          .from('service_requests')
+          .select('id, status, created_at, created_by_client')
+          .limit(5000),
+        supabase
+          .from('elevators')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'active'),
+      ]);
 
-      if (error) throw error;
+      if (emergencyResult.error) throw emergencyResult.error;
+      if (maintenanceResult.error) throw maintenanceResult.error;
+      if (serviceRequestResult.error) throw serviceRequestResult.error;
+      if (elevatorCountResult.error) throw elevatorCountResult.error;
 
-      const today = new Date().toISOString().split('T')[0];
-      const todayCount = (data || []).filter(e => e.created_at.startsWith(today)).length;
-      const activeCount = (data || []).filter(e => ['reported', 'assigned', 'in_progress'].includes(e.status)).length;
-
-      setEmergencies(data || []);
-      setStats({ total: data?.length || 0, active: activeCount, today: todayCount });
+      setEmergencyRows((emergencyResult.data as EmergencyVisitRow[]) || []);
+      setMaintenanceRows((maintenanceResult.data as MaintenanceChecklistRow[]) || []);
+      setServiceRequestRows((serviceRequestResult.data as ServiceRequestRow[]) || []);
+      setActiveElevatorsCount(elevatorCountResult.count || 0);
     } catch (error) {
-      console.error('Error loading emergencies:', error);
+      console.error('Error loading admin dashboard panels:', error);
+      setEmergencyRows([]);
+      setMaintenanceRows([]);
+      setServiceRequestRows([]);
+      setActiveElevatorsCount(0);
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentMonth, currentYear]);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'reported': return 'bg-red-100 text-red-800';
-      case 'assigned': return 'bg-orange-100 text-orange-800';
-      case 'in_progress': return 'bg-yellow-100 text-yellow-800';
-      case 'completed': return 'bg-green-100 text-green-800';
-      default: return 'bg-slate-100 text-slate-800';
-    }
-  };
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <AlertTriangle className="w-6 h-6 text-red-600" />
-        <h3 className="text-xl font-bold text-slate-900">Emergencias Recientes</h3>
-      </div>
+  const emergencyStats = useMemo(() => {
+    const total = emergencyRows.length;
+    const active = emergencyRows.filter(isEmergencyStillOpen).length;
+    const today = emergencyRows.filter((row) => isToday(row.created_at || row.completed_at)).length;
+    return { total, active, today };
+  }, [emergencyRows]);
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-red-50 p-4 rounded-lg">
-          <p className="text-sm text-red-600 font-semibold">Total</p>
-          <p className="text-2xl font-bold text-red-900">{stats.total}</p>
-        </div>
-        <div className="bg-orange-50 p-4 rounded-lg">
-          <p className="text-sm text-orange-600 font-semibold">Activas</p>
-          <p className="text-2xl font-bold text-orange-900">{stats.active}</p>
-        </div>
-        <div className="bg-yellow-50 p-4 rounded-lg">
-          <p className="text-sm text-yellow-600 font-semibold">Hoy</p>
-          <p className="text-2xl font-bold text-yellow-900">{stats.today}</p>
-        </div>
-      </div>
+  const maintenanceStats = useMemo(() => {
+    const completedElevatorIds = new Set(
+      maintenanceRows
+        .filter((row) => (row.status || '').toLowerCase() === 'completed' && !!row.elevator_id)
+        .map((row) => row.elevator_id)
+    );
 
-      {loading ? (
-        <div className="text-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
-        </div>
-      ) : emergencies.length === 0 ? (
-        <p className="text-slate-600 text-center py-4">No hay emergencias registradas</p>
-      ) : (
-        <div className="space-y-2 max-h-48 overflow-y-auto">
-          {emergencies.map((e) => (
-            <div key={e.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:bg-slate-50">
-              <div className="flex-1">
-                <p className="font-medium text-slate-900 text-sm">{e.clients?.company_name}</p>
-                <p className="text-xs text-slate-500">{new Date(e.created_at).toLocaleDateString('es-CL')}</p>
-              </div>
-              <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(e.status)}`}>
-                {e.status}
-              </span>
+    const total = activeElevatorsCount;
+    const completed = completedElevatorIds.size;
+    const pending = Math.max(total - completed, 0);
+
+    return { total, completed, pending };
+  }, [maintenanceRows, activeElevatorsCount]);
+
+  const requestStats = useMemo(() => {
+    const technician = serviceRequestRows.filter((row) => !row.created_by_client).length;
+    const clients = serviceRequestRows.filter((row) => !!row.created_by_client).length;
+    const pending = serviceRequestRows.filter((row) => isPendingServiceRequest(row.status)).length;
+    return { technician, clients, pending };
+  }, [serviceRequestRows]);
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 min-h-[320px] animate-pulse">
+            <div className="h-8 w-56 bg-slate-200 rounded mb-6" />
+            <div className="grid grid-cols-3 gap-5">
+              {[1, 2, 3].map((j) => (
+                <div key={j} className="h-28 rounded-2xl bg-slate-100" />
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Panel Dinámico de Mantenimientos
-export function MaintenancesPanel() {
-  const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0 });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadMaintenances();
-  }, []);
-
-  const loadMaintenances = async () => {
-    try {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      const monthStart = startOfMonth.toISOString().split('T')[0];
-
-      const { count: total } = await supabase
-        .from('maintenance_schedules')
-        .select('id', { count: 'exact', head: true })
-        .gte('scheduled_date', monthStart);
-
-      const { count: completed } = await supabase
-        .from('maintenance_schedules')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'completed')
-        .gte('scheduled_date', monthStart);
-
-      const { count: pending } = await supabase
-        .from('maintenance_schedules')
-        .select('id', { count: 'exact', head: true })
-        .neq('status', 'completed')
-        .gte('scheduled_date', monthStart);
-
-      setStats({ total: total || 0, completed: completed || 0, pending: pending || 0 });
-    } catch (error) {
-      console.error('Error loading maintenances:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <Wrench className="w-6 h-6 text-blue-600" />
-        <h3 className="text-xl font-bold text-slate-900">Mantenimientos del Mes</h3>
-      </div>
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <PanelCard
+        title="Emergencias Recientes"
+        icon={AlertTriangle}
+        accentClass="text-red-500"
+        stats={[
+          {
+            label: 'Total',
+            value: emergencyStats.total,
+            valueClass: 'text-red-700',
+            boxClass: 'bg-red-50 text-red-600',
+          },
+          {
+            label: 'Activas',
+            value: emergencyStats.active,
+            valueClass: 'text-orange-700',
+            boxClass: 'bg-orange-50 text-orange-600',
+          },
+          {
+            label: 'Hoy',
+            value: emergencyStats.today,
+            valueClass: 'text-amber-700',
+            boxClass: 'bg-amber-50 text-amber-700',
+          },
+        ]}
+        emptyMessage={emergencyStats.total === 0 ? 'No hay emergencias registradas' : undefined}
+      />
 
-      {loading ? (
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-4">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <p className="text-sm text-blue-600 font-semibold">Total</p>
-            <p className="text-2xl font-bold text-blue-900">{stats.total}</p>
-          </div>
-          <div className="bg-green-50 p-4 rounded-lg">
-            <p className="text-sm text-green-600 font-semibold">Completados</p>
-            <p className="text-2xl font-bold text-green-900">{stats.completed}</p>
-          </div>
-          <div className="bg-orange-50 p-4 rounded-lg">
-            <p className="text-sm text-orange-600 font-semibold">Pendientes</p>
-            <p className="text-2xl font-bold text-orange-900">{stats.pending}</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+      <PanelCard
+        title="Mantenimientos del Mes"
+        icon={Wrench}
+        accentClass="text-blue-500"
+        stats={[
+          {
+            label: 'Total',
+            value: maintenanceStats.total,
+            valueClass: 'text-blue-700',
+            boxClass: 'bg-blue-50 text-blue-600',
+          },
+          {
+            label: 'Completados',
+            value: maintenanceStats.completed,
+            valueClass: 'text-green-700',
+            boxClass: 'bg-green-50 text-green-600',
+          },
+          {
+            label: 'Pendientes',
+            value: maintenanceStats.pending,
+            valueClass: 'text-orange-700',
+            boxClass: 'bg-orange-50 text-orange-600',
+          },
+        ]}
+      />
 
-// Panel de Solicitudes (Técnicos + Clientes)
-export function ServiceRequestsPanel() {
-  const [stats, setStats] = useState({
-    technicianRequests: 0,
-    clientRequests: 0,
-    pendingApproval: 0,
-  });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadServiceRequests();
-  }, []);
-
-  const loadServiceRequests = async () => {
-    try {
-      const { count: technicianCount } = await supabase
-        .from('service_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('created_by_client', false);
-
-      const { count: clientCount } = await supabase
-        .from('service_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('created_by_client', true);
-
-      const { count: pendingCount } = await supabase
-        .from('service_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'created');
-
-      setStats({
-        technicianRequests: technicianCount || 0,
-        clientRequests: clientCount || 0,
-        pendingApproval: pendingCount || 0,
-      });
-    } catch (error) {
-      console.error('Error loading service requests:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <FileText className="w-6 h-6 text-purple-600" />
-        <h3 className="text-xl font-bold text-slate-900">Solicitudes de Servicio</h3>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-4">
-          <div className="bg-purple-50 p-4 rounded-lg">
-            <p className="text-sm text-purple-600 font-semibold">Técnicos</p>
-            <p className="text-2xl font-bold text-purple-900">{stats.technicianRequests}</p>
-          </div>
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <p className="text-sm text-blue-600 font-semibold">Clientes</p>
-            <p className="text-2xl font-bold text-blue-900">{stats.clientRequests}</p>
-          </div>
-          <div className="bg-orange-50 p-4 rounded-lg">
-            <p className="text-sm text-orange-600 font-semibold">Pendientes</p>
-            <p className="text-2xl font-bold text-orange-900">{stats.pendingApproval}</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Panel de Cotizaciones
-export function QuotationsPanel() {
-  const [stats, setStats] = useState({ total: 0, approvedThisMonth: 0 });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadQuotations();
-  }, []);
-
-  const loadQuotations = async () => {
-    try {
-      const { count: total } = await supabase
-        .from('quotations')
-        .select('id', { count: 'exact', head: true });
-
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      const monthStart = startOfMonth.toISOString().split('T')[0];
-
-      const { count: approved } = await supabase
-        .from('quotations')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'approved')
-        .gte('created_at', monthStart);
-
-      setStats({ total: total || 0, approvedThisMonth: approved || 0 });
-    } catch (error) {
-      console.error('Error loading quotations:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <TrendingUp className="w-6 h-6 text-green-600" />
-        <h3 className="text-xl font-bold text-slate-900">Cotizaciones</h3>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-green-50 p-4 rounded-lg">
-            <p className="text-sm text-green-600 font-semibold">Total Emitidas</p>
-            <p className="text-2xl font-bold text-green-900">{stats.total}</p>
-          </div>
-          <div className="bg-emerald-50 p-4 rounded-lg">
-            <p className="text-sm text-emerald-600 font-semibold">Aprobadas (Mes)</p>
-            <p className="text-2xl font-bold text-emerald-900">{stats.approvedThisMonth}</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Panel de Órdenes de Trabajo
-export function WorkOrdersPanel() {
-  const [stats, setStats] = useState({ total: 0, inProgress: 0, pending: 0, closed: 0 });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadWorkOrders();
-  }, []);
-
-  const loadWorkOrders = async () => {
-    try {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      const monthStart = startOfMonth.toISOString().split('T')[0];
-
-      const { count: total } = await supabase
-        .from('work_orders')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', monthStart);
-
-      const { count: inProgress } = await supabase
-        .from('work_orders')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'in_progress')
-        .gte('created_at', monthStart);
-
-      const { count: pending } = await supabase
-        .from('work_orders')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending_approval')
-        .gte('created_at', monthStart);
-
-      const { count: closed } = await supabase
-        .from('work_orders')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'completed')
-        .gte('created_at', monthStart);
-
-      setStats({ total: total || 0, inProgress: inProgress || 0, pending: pending || 0, closed: closed || 0 });
-    } catch (error) {
-      console.error('Error loading work orders:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <Zap className="w-6 h-6 text-amber-600" />
-        <h3 className="text-xl font-bold text-slate-900">Órdenes de Trabajo (Mes)</h3>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto"></div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="bg-amber-50 p-4 rounded-lg">
-            <p className="text-sm text-amber-600 font-semibold">Total</p>
-            <p className="text-2xl font-bold text-amber-900">{stats.total}</p>
-          </div>
-          <div className="bg-orange-50 p-4 rounded-lg">
-            <p className="text-sm text-orange-600 font-semibold">En Curso</p>
-            <p className="text-2xl font-bold text-orange-900">{stats.inProgress}</p>
-          </div>
-          <div className="bg-red-50 p-4 rounded-lg">
-            <p className="text-sm text-red-600 font-semibold">Pendientes</p>
-            <p className="text-2xl font-bold text-red-900">{stats.pending}</p>
-          </div>
-          <div className="bg-green-50 p-4 rounded-lg">
-            <p className="text-sm text-green-600 font-semibold">Cerradas</p>
-            <p className="text-2xl font-bold text-green-900">{stats.closed}</p>
-          </div>
-        </div>
-      )}
+      <PanelCard
+        title="Solicitudes de Servicio"
+        icon={FileText}
+        accentClass="text-violet-500"
+        stats={[
+          {
+            label: 'Técnicos',
+            value: requestStats.technician,
+            valueClass: 'text-violet-700',
+            boxClass: 'bg-violet-50 text-violet-600',
+          },
+          {
+            label: 'Clientes',
+            value: requestStats.clients,
+            valueClass: 'text-blue-700',
+            boxClass: 'bg-blue-50 text-blue-600',
+          },
+          {
+            label: 'Pendientes',
+            value: requestStats.pending,
+            valueClass: 'text-orange-700',
+            boxClass: 'bg-orange-50 text-orange-600',
+          },
+        ]}
+      />
     </div>
   );
 }
