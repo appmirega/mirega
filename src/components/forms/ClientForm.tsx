@@ -52,7 +52,7 @@ interface ClientFormProps {
   onCancel?: () => void;
 }
 
-type BuildingType = 'residencial' | 'corporativo';
+type BuildingType = 'residencial' | 'corporativo' | 'academico' | 'estatal';
 type ElevatorDriveType = 'electromecanico' | 'hidraulico';
 type ElevatorClassification = 'ascensor' | 'montacarga' | 'montaplatos' | 'otro';
 type StopPattern = 'all' | 'odd' | 'even';
@@ -1247,7 +1247,9 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               }
               options={[
                 { value: 'residencial', label: 'Residencial' },
-                { value: 'corporativo', label: 'Corporativo' },
+                { value: 'corporativo', label: 'Corporativo / Privado' },
+                { value: 'academico', label: 'Institución Académica' },
+                { value: 'estatal', label: 'Institución Estatal' },
               ]}
             />
           </div>
@@ -1643,9 +1645,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   label="Fecha instalación"
                                   type="date"
                                   value={template.installation_date}
-                                  onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'installation_date', v)
-                                  }
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'installation_date', v)}
                                 />
                                 <div className="mt-2">
                                   <Checkbox
@@ -1675,9 +1675,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                               <Field
                                 label="Capacidad personas"
                                 value={template.capacity_persons}
-                                onChange={(v) =>
-                                  updateTemplate(groupIndex, templateIndex, 'capacity_persons', v)
-                                }
+                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_persons', v)}
                                 placeholder="Ej: 8"
                               />
 
@@ -1744,17 +1742,13 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 <Checkbox
                                   label="Tiene sala de máquinas"
                                   checked={template.has_machine_room}
-                                  onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'has_machine_room', v)
-                                  }
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'has_machine_room', v)}
                                 />
 
                                 <Checkbox
                                   label="Sin sala de máquinas"
                                   checked={template.no_machine_room}
-                                  onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'no_machine_room', v)
-                                  }
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'no_machine_room', v)}
                                 />
                               </div>
 
@@ -1832,18 +1826,8 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                       label={`Ascensor ${templateIndex + 1}`}
                                       value={template.stops_even_floors ? 'even' : 'odd'}
                                       onChange={(pattern) => {
-                                        updateTemplate(
-                                          groupIndex,
-                                          templateIndex,
-                                          'stops_odd_floors',
-                                          pattern === 'odd'
-                                        );
-                                        updateTemplate(
-                                          groupIndex,
-                                          templateIndex,
-                                          'stops_even_floors',
-                                          pattern === 'even'
-                                        );
+                                        updateTemplate(groupIndex, templateIndex, 'stops_odd_floors', pattern === 'odd');
+                                        updateTemplate(groupIndex, templateIndex, 'stops_even_floors', pattern === 'even');
                                       }}
                                     />
                                   )}
