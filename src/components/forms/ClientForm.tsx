@@ -415,11 +415,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             nextGroup.stop_assignments = normalizeStopAssignments(
               target,
               nextGroup.stop_assignments,
-              target === 1
-                ? 'all'
-                : firstPattern === 'all'
-                ? 'odd'
-                : firstPattern
+              target === 1 ? 'all' : firstPattern === 'all' ? 'odd' : firstPattern
             );
           } else {
             const currentTemplates = [...nextGroup.templates];
@@ -588,9 +584,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     value: AdditionalContact[K]
   ) => {
     setAdditionalContacts((prev) =>
-      prev.map((item) =>
-        item.id === contactId ? { ...item, [field]: value } : item
-      )
+      prev.map((item) => (item.id === contactId ? { ...item, [field]: value } : item))
     );
   };
 
@@ -628,62 +622,36 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
     if (clientData.self_managed) {
       if (!sanitize(clientData.primary_contact_name)) {
-        throw new Error(
-          'Si el edificio es autogestionado, el nombre del contacto principal es obligatorio.'
-        );
+        throw new Error('Si el edificio es autogestionado, el nombre del contacto principal es obligatorio.');
       }
 
       if (!sanitize(clientData.primary_contact_role)) {
-        throw new Error(
-          'Si el edificio es autogestionado, el cargo o responsabilidad del contacto principal es obligatorio.'
-        );
+        throw new Error('Si el edificio es autogestionado, el cargo o responsabilidad del contacto principal es obligatorio.');
       }
 
-      if (
-        !hasAnyContactMethod(
-          clientData.primary_contact_email,
-          clientData.primary_contact_phone
-        )
-      ) {
-        throw new Error(
-          'Si el edificio es autogestionado, debes ingresar al menos correo o teléfono del contacto principal.'
-        );
+      if (!hasAnyContactMethod(clientData.primary_contact_email, clientData.primary_contact_phone)) {
+        throw new Error('Si el edificio es autogestionado, debes ingresar al menos correo o teléfono del contacto principal.');
       }
     } else {
       if (!sanitize(clientData.admin_name)) {
-        throw new Error(
-          'Si el edificio tiene administrador, el nombre del administrador es obligatorio.'
-        );
+        throw new Error('Si el edificio tiene administrador, el nombre del administrador es obligatorio.');
       }
 
       if (!hasAnyContactMethod(clientData.admin_email, clientData.admin_phone)) {
-        throw new Error(
-          'Si el edificio tiene administrador, debes ingresar al menos correo o teléfono del administrador.'
-        );
+        throw new Error('Si el edificio tiene administrador, debes ingresar al menos correo o teléfono del administrador.');
       }
 
       if (clientData.enable_building_contacts) {
         if (!sanitize(clientData.primary_contact_name)) {
-          throw new Error(
-            'Si activas encargados y contactos del edificio, el nombre del contacto principal es obligatorio.'
-          );
+          throw new Error('Si activas encargados y contactos del edificio, el nombre del contacto principal es obligatorio.');
         }
 
         if (!sanitize(clientData.primary_contact_role)) {
-          throw new Error(
-            'Si activas encargados y contactos del edificio, el cargo o responsabilidad es obligatorio.'
-          );
+          throw new Error('Si activas encargados y contactos del edificio, el cargo o responsabilidad es obligatorio.');
         }
 
-        if (
-          !hasAnyContactMethod(
-            clientData.primary_contact_email,
-            clientData.primary_contact_phone
-          )
-        ) {
-          throw new Error(
-            'Si activas encargados y contactos del edificio, debes ingresar al menos correo o teléfono del contacto principal.'
-          );
+        if (!hasAnyContactMethod(clientData.primary_contact_email, clientData.primary_contact_phone)) {
+          throw new Error('Si activas encargados y contactos del edificio, debes ingresar al menos correo o teléfono del contacto principal.');
         }
       }
     }
@@ -703,15 +671,11 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
         }
 
         if (!sanitize(contact.role)) {
-          throw new Error(
-            `Falta el cargo o responsabilidad en contacto adicional #${index + 1}.`
-          );
+          throw new Error(`Falta el cargo o responsabilidad en contacto adicional #${index + 1}.`);
         }
 
         if (!hasAnyContactMethod(contact.email, contact.phone)) {
-          throw new Error(
-            `Debes ingresar correo o teléfono en contacto adicional #${index + 1}.`
-          );
+          throw new Error(`Debes ingresar correo o teléfono en contacto adicional #${index + 1}.`);
         }
       });
     }
@@ -855,10 +819,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             email: sanitize(contact.email),
             phone: sanitize(contact.phone),
           }))
-          .filter(
-            (contact) =>
-              contact.name || contact.role || contact.email || contact.phone
-          )
+          .filter((contact) => contact.name || contact.role || contact.email || contact.phone)
       : [];
 
     return {
@@ -909,14 +870,6 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       const blockAddress = group.same_address_as_client
         ? sanitize(clientData.address)
         : sanitize(group.address);
-
-      const blockCommune = group.same_address_as_client
-        ? sanitize(clientData.commune)
-        : sanitize(group.commune);
-
-      const blockRegion = group.same_address_as_client
-        ? sanitize(clientData.region)
-        : sanitize(group.region);
 
       const blockBuildingLabel = group.same_address_as_client
         ? sanitize(clientData.building_name)
@@ -976,8 +929,6 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
           location_address: blockAddress || null,
           address_asc: blockAddress || null,
           location_building: blockBuildingLabel || null,
-          location_commune: blockCommune || null,
-          location_city: blockRegion || null,
           manufacturer: null,
           elevator_type: template.elevator_type,
           classification: classification || null,
@@ -1007,11 +958,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       }
     >();
 
-    const addUser = (
-      email?: string | null,
-      full_name?: string | null,
-      phone?: string | null
-    ) => {
+    const addUser = (email?: string | null, full_name?: string | null, phone?: string | null) => {
       const normalizedEmail = sanitize(email || '').toLowerCase();
       if (!normalizedEmail) return;
 
@@ -1388,9 +1335,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               <Field
                 label="Nombre contacto principal"
                 value={clientData.primary_contact_name}
-                onChange={(v) =>
-                  setClientData({ ...clientData, primary_contact_name: v })
-                }
+                onChange={(v) => setClientData({ ...clientData, primary_contact_name: v })}
                 placeholder="Ej: Arturo Contreras"
                 icon={<User className="h-4 w-4" />}
               />
@@ -1398,18 +1343,14 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               <Field
                 label="Cargo o responsabilidad"
                 value={clientData.primary_contact_role}
-                onChange={(v) =>
-                  setClientData({ ...clientData, primary_contact_role: v })
-                }
+                onChange={(v) => setClientData({ ...clientData, primary_contact_role: v })}
                 placeholder="Ej: Comité, conserje, encargado técnico"
               />
 
               <Field
                 label="Correo contacto principal"
                 value={clientData.primary_contact_email}
-                onChange={(v) =>
-                  setClientData({ ...clientData, primary_contact_email: v })
-                }
+                onChange={(v) => setClientData({ ...clientData, primary_contact_email: v })}
                 placeholder="Ej: contacto@empresa.cl"
                 icon={<Mail className="h-4 w-4" />}
               />
@@ -1417,9 +1358,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               <Field
                 label="Teléfono contacto principal"
                 value={clientData.primary_contact_phone}
-                onChange={(v) =>
-                  setClientData({ ...clientData, primary_contact_phone: v })
-                }
+                onChange={(v) => setClientData({ ...clientData, primary_contact_phone: v })}
                 placeholder="Ej: +56 9 1234 5678"
                 icon={<Phone className="h-4 w-4" />}
               />
@@ -1471,36 +1410,28 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       <Field
                         label="Nombre"
                         value={contact.name}
-                        onChange={(v) =>
-                          updateAdditionalContact(contact.id, 'name', v)
-                        }
+                        onChange={(v) => updateAdditionalContact(contact.id, 'name', v)}
                         placeholder="Nombre"
                       />
 
                       <Field
                         label="Cargo o responsabilidad"
                         value={contact.role}
-                        onChange={(v) =>
-                          updateAdditionalContact(contact.id, 'role', v)
-                        }
+                        onChange={(v) => updateAdditionalContact(contact.id, 'role', v)}
                         placeholder="Ej: mayordomo, comité, encargado"
                       />
 
                       <Field
                         label="Correo"
                         value={contact.email}
-                        onChange={(v) =>
-                          updateAdditionalContact(contact.id, 'email', v)
-                        }
+                        onChange={(v) => updateAdditionalContact(contact.id, 'email', v)}
                         placeholder="Correo"
                       />
 
                       <Field
                         label="Teléfono"
                         value={contact.phone}
-                        onChange={(v) =>
-                          updateAdditionalContact(contact.id, 'phone', v)
-                        }
+                        onChange={(v) => updateAdditionalContact(contact.id, 'phone', v)}
                         placeholder="Teléfono"
                       />
                     </div>
@@ -1598,9 +1529,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       <Checkbox
                         label="Usar misma dirección del cliente"
                         checked={group.same_address_as_client}
-                        onChange={(v) =>
-                          updateGroup(groupIndex, 'same_address_as_client', v)
-                        }
+                        onChange={(v) => updateGroup(groupIndex, 'same_address_as_client', v)}
                       />
 
                       <div className="rounded border bg-white px-3 py-2 text-sm text-slate-600">
@@ -1656,9 +1585,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                               <SelectField
                                 label="Marca *"
                                 value={template.brand}
-                                onChange={(v) =>
-                                  updateTemplate(groupIndex, templateIndex, 'brand', v)
-                                }
+                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand', v)}
                                 options={[
                                   { value: '', label: 'Selecciona marca' },
                                   ...BRAND_OPTIONS.map((item) => ({
@@ -1672,9 +1599,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 <Field
                                   label="Otra marca *"
                                   value={template.brand_other}
-                                  onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'brand_other', v)
-                                  }
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand_other', v)}
                                   placeholder="Especifica la marca"
                                 />
                               )}
@@ -1683,18 +1608,14 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 <Field
                                   label="Modelo"
                                   value={template.model}
-                                  onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'model', v)
-                                  }
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model', v)}
                                   placeholder="Ej: Gen2"
                                 />
                                 <div className="mt-2">
                                   <Checkbox
                                     label="Modelo no conocido"
                                     checked={template.model_unknown}
-                                    onChange={(v) =>
-                                      updateTemplate(groupIndex, templateIndex, 'model_unknown', v)
-                                    }
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model_unknown', v)}
                                   />
                                 </div>
                               </div>
@@ -1703,9 +1624,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 <Field
                                   label="N° serie"
                                   value={template.serial_number}
-                                  onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'serial_number', v)
-                                  }
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'serial_number', v)}
                                   placeholder="Ej: SN-12345"
                                 />
                                 <div className="mt-2">
@@ -1713,12 +1632,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                     label="Número de serie no legible"
                                     checked={template.serial_number_not_legible}
                                     onChange={(v) =>
-                                      updateTemplate(
-                                        groupIndex,
-                                        templateIndex,
-                                        'serial_number_not_legible',
-                                        v
-                                      )
+                                      updateTemplate(groupIndex, templateIndex, 'serial_number_not_legible', v)
                                     }
                                   />
                                 </div>
@@ -1738,12 +1652,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                     label="Fecha no disponible"
                                     checked={template.installation_date_unknown}
                                     onChange={(v) =>
-                                      updateTemplate(
-                                        groupIndex,
-                                        templateIndex,
-                                        'installation_date_unknown',
-                                        v
-                                      )
+                                      updateTemplate(groupIndex, templateIndex, 'installation_date_unknown', v)
                                     }
                                   />
                                 </div>
@@ -1752,18 +1661,14 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                               <Field
                                 label="N° de paradas *"
                                 value={template.floors}
-                                onChange={(v) =>
-                                  updateTemplate(groupIndex, templateIndex, 'floors', v)
-                                }
+                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'floors', v)}
                                 placeholder="Ej: 12"
                               />
 
                               <Field
                                 label="Capacidad KG"
                                 value={template.capacity_kg}
-                                onChange={(v) =>
-                                  updateTemplate(groupIndex, templateIndex, 'capacity_kg', v)
-                                }
+                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_kg', v)}
                                 placeholder="Ej: 630"
                               />
 
@@ -1780,12 +1685,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 label="Tipo de ascensor"
                                 value={template.elevator_type}
                                 onChange={(v) =>
-                                  updateTemplate(
-                                    groupIndex,
-                                    templateIndex,
-                                    'elevator_type',
-                                    v as ElevatorDriveType
-                                  )
+                                  updateTemplate(groupIndex, templateIndex, 'elevator_type', v as ElevatorDriveType)
                                 }
                                 options={[
                                   { value: 'electromecanico', label: 'Electromecánico' },
@@ -1817,12 +1717,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   label="Otro tipo de equipo *"
                                   value={template.classification_other}
                                   onChange={(v) =>
-                                    updateTemplate(
-                                      groupIndex,
-                                      templateIndex,
-                                      'classification_other',
-                                      v
-                                    )
+                                    updateTemplate(groupIndex, templateIndex, 'classification_other', v)
                                   }
                                   placeholder="Especifica"
                                 />
@@ -1834,18 +1729,14 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 <Checkbox
                                   label="Usar torre"
                                   checked={template.use_tower}
-                                  onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'use_tower', v)
-                                  }
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'use_tower', v)}
                                 />
 
                                 {template.use_tower && (
                                   <Field
                                     label="Torre *"
                                     value={template.tower_name}
-                                    onChange={(v) =>
-                                      updateTemplate(groupIndex, templateIndex, 'tower_name', v)
-                                    }
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'tower_name', v)}
                                     placeholder="Ej: Torre A"
                                   />
                                 )}
@@ -1877,12 +1768,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                     label="Se detiene en todos los pisos"
                                     checked={template.stops_all_floors}
                                     onChange={(v) =>
-                                      updateTemplate(
-                                        groupIndex,
-                                        templateIndex,
-                                        'stops_all_floors',
-                                        v
-                                      )
+                                      updateTemplate(groupIndex, templateIndex, 'stops_all_floors', v)
                                     }
                                   />
 
@@ -1897,9 +1783,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                           <StopPatternSelector
                                             label="Ascensor 1"
                                             value={group.stop_assignments[0] === 'even' ? 'even' : 'odd'}
-                                            onChange={(pattern) =>
-                                              updateGroupStopAssignment(groupIndex, 0, pattern)
-                                            }
+                                            onChange={(pattern) => updateGroupStopAssignment(groupIndex, 0, pattern)}
                                           />
 
                                           <div className="rounded border bg-white px-4 py-3 text-sm text-slate-700">
@@ -1924,11 +1808,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                                   : 'odd'
                                               }
                                               onChange={(pattern) =>
-                                                updateGroupStopAssignment(
-                                                  groupIndex,
-                                                  elevatorIndex,
-                                                  pattern
-                                                )
+                                                updateGroupStopAssignment(groupIndex, elevatorIndex, pattern)
                                               }
                                             />
                                           ))}
@@ -1943,12 +1823,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                     label="Se detiene en todos los pisos"
                                     checked={template.stops_all_floors}
                                     onChange={(v) =>
-                                      updateTemplate(
-                                        groupIndex,
-                                        templateIndex,
-                                        'stops_all_floors',
-                                        v
-                                      )
+                                      updateTemplate(groupIndex, templateIndex, 'stops_all_floors', v)
                                     }
                                   />
 
