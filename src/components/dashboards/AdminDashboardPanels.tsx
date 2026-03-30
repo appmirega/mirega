@@ -1,25 +1,27 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '../../lib/supabase';
 import {
   AlertTriangle,
   Wrench,
   ClipboardList,
+  FileText,
+  Briefcase,
+  ChevronRight,
 } from 'lucide-react';
 
 interface PanelProps {
-  onNavigate?: (view: string) => void;
+  onNavigate?: (section: string) => void;
 }
 
 interface BasePanelProps {
   title: string;
   total: number;
   subtitle: string;
-  detail1: string;
-  detail2: string;
+  detail1?: string;
+  detail2?: string;
   icon: React.ReactNode;
   actionLabel: string;
   onClick?: () => void;
-  color?: string;
 }
 
 function BasePanel({
@@ -31,75 +33,85 @@ function BasePanel({
   icon,
   actionLabel,
   onClick,
-  color = 'blue',
 }: BasePanelProps) {
-  const colorMap: any = {
-    red: 'bg-red-50 border-red-200 text-red-600',
-    blue: 'bg-blue-50 border-blue-200 text-blue-600',
-    green: 'bg-green-50 border-green-200 text-green-600',
-    gray: 'bg-gray-50 border-gray-200 text-gray-600',
-  };
-
   return (
-    <div className={`p-5 rounded-xl border ${colorMap[color]}`}>
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex items-center gap-2 font-semibold text-lg">
-          {icon}
-          {title}
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="text-slate-700">{icon}</div>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+            <p className="text-sm text-slate-500">{subtitle}</p>
+          </div>
         </div>
-        <div className="text-3xl font-bold">{total}</div>
+
+        <div className="text-3xl font-bold text-slate-900">{total}</div>
       </div>
 
-      <div className="text-sm opacity-70 mb-2">{subtitle}</div>
-
-      <div className="text-sm space-y-1 mb-4">
-        <div>{detail1}</div>
-        <div>{detail2}</div>
+      <div className="space-y-1 text-sm text-slate-600 min-h-[44px]">
+        {detail1 && <p>{detail1}</p>}
+        {detail2 && <p>{detail2}</p>}
       </div>
 
       <button
+        type="button"
         onClick={onClick}
-        className="w-full bg-gray-100 hover:bg-gray-200 text-sm py-2 rounded-lg transition"
+        className="mt-4 w-full rounded-xl bg-slate-100 hover:bg-slate-200 transition px-4 py-3 text-sm font-semibold text-slate-900 flex items-center justify-center gap-2"
       >
         {actionLabel}
+        <ChevronRight className="w-4 h-4" />
       </button>
     </div>
   );
 }
 
-//////////////////////////////////////////////////////////
-// 🚨 EMERGENCIAS
-//////////////////////////////////////////////////////////
-
 export function EmergenciesPanel({ onNavigate }: PanelProps) {
   const [total, setTotal] = useState(0);
   const [active, setActive] = useState(0);
-  const [critical, setCritical] = useState(0);
+  const [stopped, setStopped] = useState(0);
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase.from('emergencies').select('*');
+      try {
+        const { data, error } = await supabase
+          .from('emergency_visits')
+          .select('id, status, final_status, reactivation_date');
 
-      const rows = data || [];
+        if (error) throw error;
 
-      const activeStatuses = ['open', 'pending', 'active'];
-      const criticalStatuses = ['detenido', 'critical', 'stopped'];
+        const rows = data || [];
 
-      setTotal(rows.length);
+        const activeCount = rows.filter((item: any) => {
+          const status = item?.status;
+          const finalStatus = item?.final_status;
+          const reactivationDate = item?.reactivation_date;
 
-      setActive(
-        rows.filter((e: any) =>
-          activeStatuses.includes(String(e.status || '').toLowerCase())
-        ).length
-      );
+          const inFlow =
+            status === 'reported' ||
+            status === 'assigned' ||
+            status === 'in_progress' ||
+            status === 'pending';
 
-      setCritical(
-        rows.filter((e: any) =>
-          criticalStatuses.includes(
-            String(e.result || e.status || '').toLowerCase()
-          )
-        ).length
-      );
+          const unresolvedProblem =
+            (finalStatus === 'stopped' || finalStatus === 'observation') &&
+            !reactivationDate;
+
+          return inFlow || unresolvedProblem;
+        }).length;
+
+        const stoppedCount = rows.filter((item: any) => {
+          return (
+            (item?.final_status === 'stopped' || item?.final_status === 'observation') &&
+            !item?.reactivation_date
+          );
+        }).length;
+
+        setTotal(rows.length);
+        setActive(activeCount);
+        setStopped(stoppedCount);
+      } catch (err) {
+        console.error('Error cargando panel de emergencias:', err);
+      }
     };
 
     load();
@@ -107,46 +119,60 @@ export function EmergenciesPanel({ onNavigate }: PanelProps) {
 
   return (
     <BasePanel
-      title="Emergencias"
+      title="Emergencias Recientes"
       total={total}
       subtitle="Registro total de emergencias"
-      detail1={`Activas: ${active}`}
-      detail2={`Ascensor detenido: ${critical}`}
-      icon={<AlertTriangle className="w-6 h-6" />}
+      detail1={`Activas o sin cierre operativo: ${active}`}
+      detail2={`Ascensores detenidos / observación: ${stopped}`}
+      icon={<AlertTriangle className="w-7 h-7" />}
       actionLabel="Ver emergencias"
       onClick={() => onNavigate?.('emergencies')}
-      color="red"
     />
   );
 }
 
-//////////////////////////////////////////////////////////
-// 🔧 MANTENIMIENTOS
-//////////////////////////////////////////////////////////
-
 export function MaintenancesPanel({ onNavigate }: PanelProps) {
-  const [total, setTotal] = useState(0);
+  const [totalElevators, setTotalElevators] = useState(0);
   const [completed, setCompleted] = useState(0);
   const [pending, setPending] = useState(0);
 
   useEffect(() => {
     const load = async () => {
-      const { data: elevators } = await supabase
-        .from('elevators')
-        .select('id');
+      try {
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        const year = now.getFullYear();
 
-      const { data: maintenances } = await supabase
-        .from('mnt_checklists')
-        .select('*');
+        const [elevatorsRes, checklistsRes] = await Promise.all([
+          supabase.from('elevators').select('id').eq('status', 'active'),
+          supabase
+            .from('mnt_checklists')
+            .select('id, elevator_id, status, month, year')
+            .eq('status', 'completed')
+            .eq('month', month)
+            .eq('year', year),
+        ]);
 
-      const elevatorsCount = elevators?.length || 0;
+        if (elevatorsRes.error) throw elevatorsRes.error;
+        if (checklistsRes.error) throw checklistsRes.error;
 
-      const completedCount =
-        maintenances?.filter((m: any) => m.status === 'completed').length || 0;
+        const activeElevators = elevatorsRes.data || [];
+        const completedRows = checklistsRes.data || [];
 
-      setTotal(elevatorsCount);
-      setCompleted(completedCount);
-      setPending(elevatorsCount - completedCount);
+        const uniqueCompletedElevators = new Set(
+          completedRows.map((item: any) => item.elevator_id).filter(Boolean)
+        );
+
+        const total = activeElevators.length;
+        const done = uniqueCompletedElevators.size;
+        const missing = Math.max(total - done, 0);
+
+        setTotalElevators(total);
+        setCompleted(done);
+        setPending(missing);
+      } catch (err) {
+        console.error('Error cargando panel de mantenimientos:', err);
+      }
     };
 
     load();
@@ -155,21 +181,16 @@ export function MaintenancesPanel({ onNavigate }: PanelProps) {
   return (
     <BasePanel
       title="Mantenimientos del Mes"
-      total={total}
+      total={totalElevators}
       subtitle="Total de ascensores activos"
       detail1={`Mantenimientos listos: ${completed}`}
       detail2={`Mantenimientos faltantes: ${pending}`}
-      icon={<Wrench className="w-6 h-6" />}
+      icon={<Wrench className="w-7 h-7" />}
       actionLabel="Ver mantenimientos"
-      onClick={() => onNavigate?.('maintenance')}
-      color="blue"
+      onClick={() => onNavigate?.('maintenances')}
     />
   );
 }
-
-//////////////////////////////////////////////////////////
-// 📄 SOLICITUDES DE SERVICIO (FIX REAL)
-//////////////////////////////////////////////////////////
 
 export function ServiceRequestsPanel({ onNavigate }: PanelProps) {
   const [total, setTotal] = useState(0);
@@ -183,10 +204,7 @@ export function ServiceRequestsPanel({ onNavigate }: PanelProps) {
           .from('service_requests')
           .select('*');
 
-        if (error) {
-          console.error('Error service_requests:', error);
-          return;
-        }
+        if (error) throw error;
 
         const rows = data || [];
 
@@ -201,12 +219,11 @@ export function ServiceRequestsPanel({ onNavigate }: PanelProps) {
           'in_progress',
           'quote_pending',
           'quotation_pending',
+          'pending_quote',
         ];
 
         const pendingCount = rows.filter((item: any) =>
-          pendingStatuses.includes(
-            String(item?.status || '').toLowerCase()
-          )
+          pendingStatuses.includes(String(item?.status || '').toLowerCase())
         ).length;
 
         const clientCount = rows.filter((item: any) => {
@@ -214,6 +231,7 @@ export function ServiceRequestsPanel({ onNavigate }: PanelProps) {
             item?.created_by_client === true ||
             item?.request_origin === 'client' ||
             item?.source === 'client' ||
+            item?.source_type === 'client' ||
             item?.created_by_type === 'client'
           );
         }).length;
@@ -222,7 +240,7 @@ export function ServiceRequestsPanel({ onNavigate }: PanelProps) {
         setPending(pendingCount);
         setClientCreated(clientCount);
       } catch (err) {
-        console.error('Error panel solicitudes:', err);
+        console.error('Error cargando panel de solicitudes:', err);
       }
     };
 
@@ -236,10 +254,108 @@ export function ServiceRequestsPanel({ onNavigate }: PanelProps) {
       subtitle="Solicitudes registradas"
       detail1={`Pendientes / abiertas: ${pending}`}
       detail2={`Creadas por clientes: ${clientCreated}`}
-      icon={<ClipboardList className="w-6 h-6" />}
+      icon={<ClipboardList className="w-7 h-7" />}
       actionLabel="Ver solicitudes"
       onClick={() => onNavigate?.('service_requests')}
-      color="green"
     />
   );
 }
+
+export function QuotationsPanel({ onNavigate }: PanelProps) {
+  const [pendingQuotes, setPendingQuotes] = useState(0);
+  const [totalRequests, setTotalRequests] = useState(0);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('service_requests')
+          .select('id, status');
+
+        if (error) throw error;
+
+        const rows = data || [];
+
+        const quotePendingCount = rows.filter((item: any) =>
+          ['quote_pending', 'quotation_pending', 'pending_quote'].includes(item?.status)
+        ).length;
+
+        setPendingQuotes(quotePendingCount);
+        setTotalRequests(rows.length);
+      } catch (err) {
+        console.error('Error cargando panel de cotizaciones:', err);
+      }
+    };
+
+    load();
+  }, []);
+
+  return (
+    <BasePanel
+      title="Cotizaciones"
+      total={pendingQuotes}
+      subtitle="Cotizaciones pendientes"
+      detail1={`Solicitudes revisadas: ${totalRequests}`}
+      icon={<FileText className="w-7 h-7" />}
+      actionLabel="Ver cotizaciones"
+      onClick={() => onNavigate?.('quotes')}
+    />
+  );
+}
+
+export function WorkOrdersPanel({ onNavigate }: PanelProps) {
+  const [total, setTotal] = useState(0);
+  const [pending, setPending] = useState(0);
+  const [inProgress, setInProgress] = useState(0);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('work_orders')
+          .select('id, status');
+
+        if (error) throw error;
+
+        const rows = data || [];
+
+        const pendingCount = rows.filter((item: any) =>
+          ['pending', 'pending_approval', 'awaiting_approval', 'submitted'].includes(item?.status)
+        ).length;
+
+        const inProgressCount = rows.filter((item: any) =>
+          ['assigned', 'in_progress'].includes(item?.status)
+        ).length;
+
+        setTotal(rows.length);
+        setPending(pendingCount);
+        setInProgress(inProgressCount);
+      } catch (err) {
+        console.error('Error cargando panel de órdenes de trabajo:', err);
+      }
+    };
+
+    load();
+  }, []);
+
+  return (
+    <BasePanel
+      title="Órdenes de Trabajo"
+      total={total}
+      subtitle="Órdenes registradas"
+      detail1={`Pendientes: ${pending}`}
+      detail2={`En ejecución: ${inProgress}`}
+      icon={<Briefcase className="w-7 h-7" />}
+      actionLabel="Ver órdenes"
+      onClick={() => onNavigate?.('work_orders')}
+    />
+  );
+}
+
+export default {
+  EmergenciesPanel,
+  MaintenancesPanel,
+  ServiceRequestsPanel,
+  QuotationsPanel,
+  WorkOrdersPanel,
+};
