@@ -2,14 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   AlertTriangle,
-  Activity,
   Clock3,
   Users,
   FileText,
   UserCheck,
   Wrench,
-  CheckCircle2,
-  PauseCircle,
   ShieldAlert,
 } from 'lucide-react';
 
@@ -330,7 +327,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Órdenes de trabajo aguardando aprobación administrativa."
           icon={<Clock3 className="w-7 h-7" />}
           buttonLabel="Aprobar órdenes"
-          onClick={() => onNavigate?.('work_orders')}
+          onClick={() => onNavigate?.('work-orders')}
           tone="amber"
         />
 
@@ -340,7 +337,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Órdenes sin completar por más de 3 días."
           icon={<AlertTriangle className="w-7 h-7" />}
           buttonLabel="Gestionar urgentes"
-          onClick={() => onNavigate?.('work_orders')}
+          onClick={() => onNavigate?.('work-orders')}
           tone="slate"
         />
 
@@ -350,7 +347,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Solicitudes registradas directamente por clientes."
           icon={<Users className="w-7 h-7" />}
           buttonLabel="Ver solicitudes"
-          onClick={() => onNavigate?.('service_requests')}
+          onClick={() => onNavigate?.('service-requests')}
           tone="purple"
         />
 
@@ -360,7 +357,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Solicitudes que aún requieren cotización o revisión comercial."
           icon={<FileText className="w-7 h-7" />}
           buttonLabel="Seguimiento"
-          onClick={() => onNavigate?.('quotes')}
+          onClick={() => onNavigate?.('service-requests')}
           tone="blue"
         />
 
@@ -370,7 +367,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Técnicos activos en el sistema y disponibles para asignación."
           icon={<UserCheck className="w-7 h-7" />}
           buttonLabel="Ver equipo"
-          onClick={() => onNavigate?.('technicians')}
+          onClick={() => onNavigate?.('users')}
           tone="green"
         />
 
@@ -380,7 +377,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Mantenimientos completados hoy por el equipo técnico."
           icon={<Wrench className="w-7 h-7" />}
           buttonLabel="Ver cronograma"
-          onClick={() => onNavigate?.('maintenances')}
+          onClick={() => onNavigate?.('maintenance-checklist')}
           tone="slate"
         />
       </div>

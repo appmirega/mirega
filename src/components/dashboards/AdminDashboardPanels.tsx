@@ -187,7 +187,7 @@ export function MaintenancesPanel({ onNavigate }: PanelProps) {
       detail2={`Mantenimientos faltantes: ${pending}`}
       icon={<Wrench className="w-7 h-7" />}
       actionLabel="Ver mantenimientos"
-      onClick={() => onNavigate?.('maintenances')}
+      onClick={() => onNavigate?.('maintenance-checklist')}
     />
   );
 }
@@ -256,7 +256,7 @@ export function ServiceRequestsPanel({ onNavigate }: PanelProps) {
       detail2={`Creadas por clientes: ${clientCreated}`}
       icon={<ClipboardList className="w-7 h-7" />}
       actionLabel="Ver solicitudes"
-      onClick={() => onNavigate?.('service_requests')}
+      onClick={() => onNavigate?.('service-requests')}
     />
   );
 }
@@ -298,7 +298,7 @@ export function QuotationsPanel({ onNavigate }: PanelProps) {
       detail1={`Solicitudes revisadas: ${totalRequests}`}
       icon={<FileText className="w-7 h-7" />}
       actionLabel="Ver cotizaciones"
-      onClick={() => onNavigate?.('quotes')}
+      onClick={() => onNavigate?.('service-requests')}
     />
   );
 }
@@ -347,7 +347,7 @@ export function WorkOrdersPanel({ onNavigate }: PanelProps) {
       detail2={`En ejecución: ${inProgress}`}
       icon={<Briefcase className="w-7 h-7" />}
       actionLabel="Ver órdenes"
-      onClick={() => onNavigate?.('work_orders')}
+      onClick={() => onNavigate?.('work-orders')}
     />
   );
 }
