@@ -5,12 +5,23 @@ import {
   Wrench,
   ClipboardList,
   FileText,
-  Users,
+  Briefcase,
   ChevronRight,
 } from 'lucide-react';
 
 interface PanelProps {
   onNavigate?: (section: string) => void;
+}
+
+interface BasePanelProps {
+  title: string;
+  total: number;
+  subtitle: string;
+  detail1?: string;
+  detail2?: string;
+  icon: React.ReactNode;
+  actionLabel: string;
+  onClick?: () => void;
 }
 
 function BasePanel({
@@ -22,16 +33,7 @@ function BasePanel({
   icon,
   actionLabel,
   onClick,
-}: {
-  title: string;
-  total: number;
-  subtitle: string;
-  detail1?: string;
-  detail2?: string;
-  icon: React.ReactNode;
-  actionLabel: string;
-  onClick?: () => void;
-}) {
+}: BasePanelProps) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
       <div className="flex items-start justify-between mb-4">
@@ -42,6 +44,7 @@ function BasePanel({
             <p className="text-sm text-slate-500">{subtitle}</p>
           </div>
         </div>
+
         <div className="text-3xl font-bold text-slate-900">{total}</div>
       </div>
 
@@ -89,18 +92,19 @@ export function EmergenciesPanel({ onNavigate }: PanelProps) {
             status === 'in_progress' ||
             status === 'pending';
 
-          const unresolvedStopped =
+          const unresolvedProblem =
             (finalStatus === 'stopped' || finalStatus === 'observation') &&
             !reactivationDate;
 
-          return inFlow || unresolvedStopped;
+          return inFlow || unresolvedProblem;
         }).length;
 
-        const stoppedCount = rows.filter(
-          (item: any) =>
+        const stoppedCount = rows.filter((item: any) => {
+          return (
             (item?.final_status === 'stopped' || item?.final_status === 'observation') &&
             !item?.reactivation_date
-        ).length;
+          );
+        }).length;
 
         setTotal(rows.length);
         setActive(activeCount);
@@ -140,11 +144,7 @@ export function MaintenancesPanel({ onNavigate }: PanelProps) {
         const year = now.getFullYear();
 
         const [elevatorsRes, checklistsRes] = await Promise.all([
-          supabase
-            .from('elevators')
-            .select('id')
-            .eq('status', 'active'),
-
+          supabase.from('elevators').select('id').eq('status', 'active'),
           supabase
             .from('mnt_checklists')
             .select('id, elevator_id, status, month, year')
@@ -160,9 +160,7 @@ export function MaintenancesPanel({ onNavigate }: PanelProps) {
         const completedRows = checklistsRes.data || [];
 
         const uniqueCompletedElevators = new Set(
-          completedRows
-            .map((item: any) => item.elevator_id)
-            .filter(Boolean)
+          completedRows.map((item: any) => item.elevator_id).filter(Boolean)
         );
 
         const total = activeElevators.length;
@@ -250,9 +248,9 @@ export function ServiceRequestsPanel({ onNavigate }: PanelProps) {
   );
 }
 
-export function QuotesPanel({ onNavigate }: PanelProps) {
-  const [total, setTotal] = useState(0);
-  const [pending, setPending] = useState(0);
+export function QuotationsPanel({ onNavigate }: PanelProps) {
+  const [pendingQuotes, setPendingQuotes] = useState(0);
+  const [totalRequests, setTotalRequests] = useState(0);
 
   useEffect(() => {
     const load = async () => {
@@ -269,8 +267,8 @@ export function QuotesPanel({ onNavigate }: PanelProps) {
           ['quote_pending', 'quotation_pending', 'pending_quote'].includes(item?.status)
         ).length;
 
-        setTotal(rows.length);
-        setPending(quotePendingCount);
+        setPendingQuotes(quotePendingCount);
+        setTotalRequests(rows.length);
       } catch (err) {
         console.error('Error cargando panel de cotizaciones:', err);
       }
@@ -282,9 +280,9 @@ export function QuotesPanel({ onNavigate }: PanelProps) {
   return (
     <BasePanel
       title="Cotizaciones"
-      total={pending}
+      total={pendingQuotes}
       subtitle="Cotizaciones pendientes"
-      detail1={`Total registros revisados: ${total}`}
+      detail1={`Solicitudes revisadas: ${totalRequests}`}
       icon={<FileText className="w-7 h-7" />}
       actionLabel="Ver cotizaciones"
       onClick={() => onNavigate?.('quotes')}
@@ -292,27 +290,35 @@ export function QuotesPanel({ onNavigate }: PanelProps) {
   );
 }
 
-export function TechniciansPanel({ onNavigate }: PanelProps) {
-  const [activeTechs, setActiveTechs] = useState(0);
-  const [availableTechs, setAvailableTechs] = useState(0);
+export function WorkOrdersPanel({ onNavigate }: PanelProps) {
+  const [total, setTotal] = useState(0);
+  const [pending, setPending] = useState(0);
+  const [inProgress, setInProgress] = useState(0);
 
   useEffect(() => {
     const load = async () => {
       try {
         const { data, error } = await supabase
-          .from('profiles')
-          .select('id, role, is_active')
-          .eq('role', 'technician');
+          .from('work_orders')
+          .select('id, status');
 
         if (error) throw error;
 
         const rows = data || [];
-        const active = rows.filter((item: any) => item?.is_active === true).length;
 
-        setActiveTechs(rows.length);
-        setAvailableTechs(active);
+        const pendingCount = rows.filter((item: any) =>
+          ['pending', 'pending_approval', 'awaiting_approval', 'submitted'].includes(item?.status)
+        ).length;
+
+        const inProgressCount = rows.filter((item: any) =>
+          ['assigned', 'in_progress'].includes(item?.status)
+        ).length;
+
+        setTotal(rows.length);
+        setPending(pendingCount);
+        setInProgress(inProgressCount);
       } catch (err) {
-        console.error('Error cargando panel de técnicos:', err);
+        console.error('Error cargando panel de órdenes de trabajo:', err);
       }
     };
 
@@ -321,13 +327,14 @@ export function TechniciansPanel({ onNavigate }: PanelProps) {
 
   return (
     <BasePanel
-      title="Técnicos"
-      total={activeTechs}
-      subtitle="Técnicos registrados"
-      detail1={`Técnicos activos: ${availableTechs}`}
-      icon={<Users className="w-7 h-7" />}
-      actionLabel="Ver técnicos"
-      onClick={() => onNavigate?.('technicians')}
+      title="Órdenes de Trabajo"
+      total={total}
+      subtitle="Órdenes registradas"
+      detail1={`Pendientes: ${pending}`}
+      detail2={`En ejecución: ${inProgress}`}
+      icon={<Briefcase className="w-7 h-7" />}
+      actionLabel="Ver órdenes"
+      onClick={() => onNavigate?.('work_orders')}
     />
   );
 }
@@ -336,6 +343,6 @@ export default {
   EmergenciesPanel,
   MaintenancesPanel,
   ServiceRequestsPanel,
-  QuotesPanel,
-  TechniciansPanel,
+  QuotationsPanel,
+  WorkOrdersPanel,
 };
