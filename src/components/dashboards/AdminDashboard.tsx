@@ -13,13 +13,6 @@ import TechnicianForm from '../forms/TechnicianForm';
 import AdminForm from '../forms/AdminForm';
 import { CoordinationRequestsPanel } from '../calendar/CoordinationRequestsPanel';
 import { AlertDashboard } from './AlertDashboard';
-import {
-  EmergenciesPanel,
-  MaintenancesPanel,
-  ServiceRequestsPanel,
-  QuotationsPanel,
-  WorkOrdersPanel,
-} from './AdminDashboardPanels';
 
 type ViewMode =
   | 'dashboard'
@@ -232,7 +225,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
                   Monitoreo Operacional
                 </h3>
                 <p className="text-sm text-slate-600">
-                  Paneles resumidos de emergencias, OT, mantenciones y solicitudes
+                  Resúmenes ejecutivos de emergencias, mantenimientos y órdenes de trabajo
                 </p>
               </div>
             </div>
@@ -312,25 +305,6 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
             </h2>
           </div>
           <AlertDashboard onNavigate={onNavigate} />
-        </div>
-      )}
-
-      {viewSettings.showPerformance && (
-        <div className="space-y-4">
-          <h2 className="text-2xl font-bold text-slate-900">
-            Monitoreo Operacional
-          </h2>
-
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            <EmergenciesPanel onNavigate={onNavigate} />
-            <MaintenancesPanel onNavigate={onNavigate} />
-            <ServiceRequestsPanel onNavigate={onNavigate} />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <QuotationsPanel onNavigate={onNavigate} />
-            <WorkOrdersPanel onNavigate={onNavigate} />
-          </div>
         </div>
       )}
 

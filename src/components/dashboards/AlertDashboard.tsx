@@ -4,10 +4,13 @@ import {
   AlertTriangle,
   Clock3,
   Users,
-  FileText,
   UserCheck,
   Wrench,
   ShieldAlert,
+  CheckCircle2,
+  PauseCircle,
+  Briefcase,
+  ClipboardList,
 } from 'lucide-react';
 
 interface AlertDashboardProps {
@@ -22,12 +25,27 @@ interface EmergencyBreakdown {
   operational: number;
 }
 
+interface MaintenanceBreakdown {
+  totalElevators: number;
+  completed: number;
+  pending: number;
+  percent: number;
+}
+
+interface WorkOrderBreakdown {
+  total: number;
+  approved: number;
+  pending: number;
+  inProgress: number;
+}
+
 interface AlertStats {
   emergencies: EmergencyBreakdown;
+  maintenances: MaintenanceBreakdown;
+  workOrders: WorkOrderBreakdown;
   pendingApprovals: number;
   overdueTasks: number;
   clientRequests: number;
-  pendingQuotes: number;
   availableTechnicians: number;
   maintenancesToday: number;
 }
@@ -38,13 +56,59 @@ function MetricPill({
   className,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   className: string;
 }) {
   return (
     <div className={`rounded-2xl px-4 py-3 ${className}`}>
       <div className="text-sm font-medium">{label}</div>
       <div className="mt-1 text-3xl font-bold">{value}</div>
+    </div>
+  );
+}
+
+function SummaryCard({
+  title,
+  subtitle,
+  icon,
+  buttonLabel,
+  onClick,
+  wrapperClassName,
+  buttonClassName,
+  metrics,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  buttonLabel: string;
+  onClick?: () => void;
+  wrapperClassName: string;
+  buttonClassName: string;
+  metrics: React.ReactNode;
+}) {
+  return (
+    <div className={`rounded-3xl border shadow-sm p-6 ${wrapperClassName}`}>
+      <div className="flex items-center gap-3 mb-5">
+        <div className="p-3 rounded-2xl bg-white/70">
+          {icon}
+        </div>
+        <div>
+          <h3 className="text-2xl font-bold text-slate-900">{title}</h3>
+          <p className="text-sm text-slate-600">{subtitle}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+        {metrics}
+      </div>
+
+      <button
+        type="button"
+        onClick={onClick}
+        className={`mt-5 w-full md:w-auto rounded-xl px-5 py-3 text-sm font-semibold transition ${buttonClassName}`}
+      >
+        {buttonLabel}
+      </button>
     </div>
   );
 }
@@ -133,10 +197,21 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
       observation: 0,
       operational: 0,
     },
+    maintenances: {
+      totalElevators: 0,
+      completed: 0,
+      pending: 0,
+      percent: 0,
+    },
+    workOrders: {
+      total: 0,
+      approved: 0,
+      pending: 0,
+      inProgress: 0,
+    },
     pendingApprovals: 0,
     overdueTasks: 0,
     clientRequests: 0,
-    pendingQuotes: 0,
     availableTechnicians: 0,
     maintenancesToday: 0,
   });
@@ -161,8 +236,14 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
 
   const loadStats = async () => {
     try {
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const year = now.getFullYear();
+
       const [
         emergenciesRes,
+        elevatorsRes,
+        monthlyMaintenancesRes,
         serviceRequestsRes,
         workOrdersRes,
         techniciansRes,
@@ -171,6 +252,18 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         supabase
           .from('emergency_visits')
           .select('id, status, final_status, reactivation_date', { count: 'exact' }),
+
+        supabase
+          .from('elevators')
+          .select('id', { count: 'exact' })
+          .eq('status', 'active'),
+
+        supabase
+          .from('mnt_checklists')
+          .select('id, elevator_id, status, month, year', { count: 'exact' })
+          .eq('status', 'completed')
+          .eq('month', month)
+          .eq('year', year),
 
         supabase
           .from('service_requests')
@@ -195,6 +288,8 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
       ]);
 
       const emergencies = emergenciesRes.data || [];
+      const activeElevators = elevatorsRes.data || [];
+      const monthlyMaintenances = monthlyMaintenancesRes.data || [];
       const serviceRequests = serviceRequestsRes.data || [];
       const workOrders = workOrdersRes.data || [];
 
@@ -228,6 +323,29 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         (item: any) => item?.final_status === 'operational'
       ).length;
 
+      const completedElevatorIds = new Set(
+        monthlyMaintenances.map((item: any) => item.elevator_id).filter(Boolean)
+      );
+      const totalElevators = activeElevators.length;
+      const completedMaintenances = completedElevatorIds.size;
+      const pendingMaintenances = Math.max(totalElevators - completedMaintenances, 0);
+      const maintenancePercent =
+        totalElevators > 0
+          ? Math.round((completedMaintenances / totalElevators) * 100)
+          : 0;
+
+      const approvedWorkOrders = workOrders.filter((item: any) =>
+        ['approved', 'accepted'].includes(item?.status)
+      ).length;
+
+      const pendingWorkOrders = workOrders.filter((item: any) =>
+        ['pending', 'pending_approval', 'awaiting_approval', 'submitted'].includes(item?.status)
+      ).length;
+
+      const inProgressWorkOrders = workOrders.filter((item: any) =>
+        ['assigned', 'in_progress'].includes(item?.status)
+      ).length;
+
       const pendingApprovals = workOrders.filter((item: any) =>
         ['pending_approval', 'awaiting_approval', 'submitted'].includes(item?.status)
       ).length;
@@ -241,10 +359,6 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
 
       const clientRequests = serviceRequests.filter((item: any) => item?.created_by_client === true).length;
 
-      const pendingQuotes = serviceRequests.filter((item: any) =>
-        ['quote_pending', 'quotation_pending', 'pending_quote'].includes(item?.status)
-      ).length;
-
       const availableTechnicians = techniciansRes.count || 0;
       const maintenancesToday = maintenancesTodayRes.count || 0;
 
@@ -256,10 +370,21 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           observation: observationCount,
           operational: operationalCount,
         },
+        maintenances: {
+          totalElevators,
+          completed: completedMaintenances,
+          pending: pendingMaintenances,
+          percent: maintenancePercent,
+        },
+        workOrders: {
+          total: workOrders.length,
+          approved: approvedWorkOrders,
+          pending: pendingWorkOrders,
+          inProgress: inProgressWorkOrders,
+        },
         pendingApprovals,
         overdueTasks,
         clientRequests,
-        pendingQuotes,
         availableTechnicians,
         maintenancesToday,
       });
@@ -270,57 +395,124 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
 
   return (
     <section className="space-y-6">
-      <div className="rounded-3xl border border-red-200 bg-gradient-to-br from-red-50 via-white to-red-50 shadow-sm p-6">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="p-3 rounded-2xl bg-red-100">
-            <ShieldAlert className="w-7 h-7 text-red-600" />
-          </div>
-          <div>
-            <h3 className="text-2xl font-bold text-slate-900">Resumen de Emergencias</h3>
-            <p className="text-sm text-slate-600">
-              Estado general de emergencias y cierres operativos
-            </p>
-          </div>
-        </div>
+      <SummaryCard
+        title="Resumen de Emergencias"
+        subtitle="Estado general de emergencias y cierres operativos"
+        icon={<ShieldAlert className="w-7 h-7 text-red-600" />}
+        buttonLabel="Ver emergencias"
+        onClick={() => onNavigate?.('emergencies')}
+        wrapperClassName="border-red-200 bg-gradient-to-br from-red-50 via-white to-red-50"
+        buttonClassName="bg-red-600 hover:bg-red-700 text-white"
+        metrics={
+          <>
+            <MetricPill
+              label="Total"
+              value={stats.emergencies.total}
+              className="bg-slate-100 text-slate-800"
+            />
+            <MetricPill
+              label="Activas"
+              value={stats.emergencies.active}
+              className="bg-red-100 text-red-700"
+            />
+            <MetricPill
+              label="Detenidas"
+              value={stats.emergencies.stopped}
+              className="bg-rose-100 text-rose-700"
+            />
+            <MetricPill
+              label="En observación"
+              value={stats.emergencies.observation}
+              className="bg-amber-100 text-amber-700"
+            />
+            <MetricPill
+              label="Operativas"
+              value={stats.emergencies.operational}
+              className="bg-green-100 text-green-700"
+            />
+          </>
+        }
+      />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-          <MetricPill
-            label="Total"
-            value={stats.emergencies.total}
-            className="bg-slate-100 text-slate-800"
-          />
-          <MetricPill
-            label="Activas"
-            value={stats.emergencies.active}
-            className="bg-red-100 text-red-700"
-          />
-          <MetricPill
-            label="Detenidas"
-            value={stats.emergencies.stopped}
-            className="bg-rose-100 text-rose-700"
-          />
-          <MetricPill
-            label="En observación"
-            value={stats.emergencies.observation}
-            className="bg-amber-100 text-amber-700"
-          />
-          <MetricPill
-            label="Operativas"
-            value={stats.emergencies.operational}
-            className="bg-green-100 text-green-700"
-          />
-        </div>
+      <SummaryCard
+        title="Resumen de Mantenimientos"
+        subtitle="Avance del mantenimiento mensual sobre ascensores activos"
+        icon={<Wrench className="w-7 h-7 text-blue-600" />}
+        buttonLabel="Ver mantenimientos"
+        onClick={() => onNavigate?.('maintenance-checklist')}
+        wrapperClassName="border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-50"
+        buttonClassName="bg-blue-600 hover:bg-blue-700 text-white"
+        metrics={
+          <>
+            <MetricPill
+              label="Total ascensores"
+              value={stats.maintenances.totalElevators}
+              className="bg-slate-100 text-slate-800"
+            />
+            <MetricPill
+              label="Realizados"
+              value={stats.maintenances.completed}
+              className="bg-green-100 text-green-700"
+            />
+            <MetricPill
+              label="Pendientes"
+              value={stats.maintenances.pending}
+              className="bg-amber-100 text-amber-700"
+            />
+            <MetricPill
+              label="Avance"
+              value={`${stats.maintenances.percent}%`}
+              className="bg-blue-100 text-blue-700"
+            />
+            <MetricPill
+              label="Hechos hoy"
+              value={stats.maintenancesToday}
+              className="bg-cyan-100 text-cyan-700"
+            />
+          </>
+        }
+      />
 
-        <button
-          type="button"
-          onClick={() => onNavigate?.('emergencies')}
-          className="mt-5 w-full md:w-auto rounded-xl bg-red-600 hover:bg-red-700 text-white px-5 py-3 text-sm font-semibold transition"
-        >
-          Ver emergencias
-        </button>
-      </div>
+      <SummaryCard
+        title="Resumen de Órdenes de Trabajo"
+        subtitle="Estado actual de gestión de órdenes"
+        icon={<Briefcase className="w-7 h-7 text-purple-600" />}
+        buttonLabel="Ver órdenes de trabajo"
+        onClick={() => onNavigate?.('work-orders')}
+        wrapperClassName="border-purple-200 bg-gradient-to-br from-purple-50 via-white to-purple-50"
+        buttonClassName="bg-purple-600 hover:bg-purple-700 text-white"
+        metrics={
+          <>
+            <MetricPill
+              label="Total"
+              value={stats.workOrders.total}
+              className="bg-slate-100 text-slate-800"
+            />
+            <MetricPill
+              label="Aprobadas"
+              value={stats.workOrders.approved}
+              className="bg-green-100 text-green-700"
+            />
+            <MetricPill
+              label="Pendientes"
+              value={stats.workOrders.pending}
+              className="bg-amber-100 text-amber-700"
+            />
+            <MetricPill
+              label="En desarrollo"
+              value={stats.workOrders.inProgress}
+              className="bg-blue-100 text-blue-700"
+            />
+            <MetricPill
+              label="Vencidas"
+              value={stats.overdueTasks}
+              className="bg-red-100 text-red-700"
+            />
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
         <ActionCard
           title="Pendientes de Aprobación"
           value={stats.pendingApprovals}
@@ -332,33 +524,13 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         />
 
         <ActionCard
-          title="Tareas Vencidas"
-          value={stats.overdueTasks}
-          description="Órdenes sin completar por más de 3 días."
-          icon={<AlertTriangle className="w-7 h-7" />}
-          buttonLabel="Gestionar urgentes"
-          onClick={() => onNavigate?.('work-orders')}
-          tone="slate"
-        />
-
-        <ActionCard
           title="Solicitudes de Clientes"
           value={stats.clientRequests}
           description="Solicitudes registradas directamente por clientes."
-          icon={<Users className="w-7 h-7" />}
+          icon={<ClipboardList className="w-7 h-7" />}
           buttonLabel="Ver solicitudes"
           onClick={() => onNavigate?.('service-requests')}
           tone="purple"
-        />
-
-        <ActionCard
-          title="Cotizaciones Pendientes"
-          value={stats.pendingQuotes}
-          description="Solicitudes que aún requieren cotización o revisión comercial."
-          icon={<FileText className="w-7 h-7" />}
-          buttonLabel="Seguimiento"
-          onClick={() => onNavigate?.('service-requests')}
-          tone="blue"
         />
 
         <ActionCard
@@ -372,12 +544,12 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         />
 
         <ActionCard
-          title="Mantenimientos Hoy"
-          value={stats.maintenancesToday}
-          description="Mantenimientos completados hoy por el equipo técnico."
-          icon={<Wrench className="w-7 h-7" />}
-          buttonLabel="Ver cronograma"
-          onClick={() => onNavigate?.('maintenance-checklist')}
+          title="Tareas Vencidas"
+          value={stats.overdueTasks}
+          description="Órdenes sin completar por más de 3 días."
+          icon={<AlertTriangle className="w-7 h-7" />}
+          buttonLabel="Gestionar urgentes"
+          onClick={() => onNavigate?.('work-orders')}
           tone="slate"
         />
       </div>
