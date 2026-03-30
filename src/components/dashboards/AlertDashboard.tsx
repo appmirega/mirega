@@ -2,13 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   AlertTriangle,
-  Clock3,
   Users,
   UserCheck,
   Wrench,
   ShieldAlert,
-  CheckCircle2,
-  PauseCircle,
   Briefcase,
   ClipboardList,
 } from 'lucide-react';
@@ -43,7 +40,6 @@ interface AlertStats {
   emergencies: EmergencyBreakdown;
   maintenances: MaintenanceBreakdown;
   workOrders: WorkOrderBreakdown;
-  pendingApprovals: number;
   overdueTasks: number;
   clientRequests: number;
   availableTechnicians: number;
@@ -128,7 +124,7 @@ function ActionCard({
   icon: React.ReactNode;
   buttonLabel: string;
   onClick?: () => void;
-  tone?: 'slate' | 'amber' | 'purple' | 'green' | 'blue';
+  tone?: 'slate' | 'purple' | 'green';
 }) {
   const toneClasses = {
     slate: {
@@ -136,12 +132,6 @@ function ActionCard({
       icon: 'text-slate-600',
       value: 'text-slate-900',
       button: 'bg-slate-100 hover:bg-slate-200 text-slate-900',
-    },
-    amber: {
-      card: 'bg-white border-amber-200',
-      icon: 'text-amber-600',
-      value: 'text-amber-700',
-      button: 'bg-amber-50 hover:bg-amber-100 text-amber-800',
     },
     purple: {
       card: 'bg-white border-purple-200',
@@ -154,12 +144,6 @@ function ActionCard({
       icon: 'text-green-600',
       value: 'text-green-700',
       button: 'bg-green-50 hover:bg-green-100 text-green-800',
-    },
-    blue: {
-      card: 'bg-white border-blue-200',
-      icon: 'text-blue-600',
-      value: 'text-blue-700',
-      button: 'bg-blue-50 hover:bg-blue-100 text-blue-800',
     },
   } as const;
 
@@ -209,7 +193,6 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
       pending: 0,
       inProgress: 0,
     },
-    pendingApprovals: 0,
     overdueTasks: 0,
     clientRequests: 0,
     availableTechnicians: 0,
@@ -233,6 +216,18 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
   useEffect(() => {
     loadStats();
   }, []);
+
+  const safeNavigate = (...targets: string[]) => {
+    if (!onNavigate) return;
+    for (const target of targets) {
+      try {
+        onNavigate(target);
+        return;
+      } catch (error) {
+        console.error('Error navegando a:', target, error);
+      }
+    }
+  };
 
   const loadStats = async () => {
     try {
@@ -346,10 +341,6 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         ['assigned', 'in_progress'].includes(item?.status)
       ).length;
 
-      const pendingApprovals = workOrders.filter((item: any) =>
-        ['pending_approval', 'awaiting_approval', 'submitted'].includes(item?.status)
-      ).length;
-
       const overdueTasks = workOrders.filter((item: any) => {
         if (['completed', 'cancelled', 'rejected'].includes(item?.status)) return false;
         const createdAt = item?.created_at ? new Date(item.created_at).getTime() : 0;
@@ -382,7 +373,6 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           pending: pendingWorkOrders,
           inProgress: inProgressWorkOrders,
         },
-        pendingApprovals,
         overdueTasks,
         clientRequests,
         availableTechnicians,
@@ -400,7 +390,9 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         subtitle="Estado general de emergencias y cierres operativos"
         icon={<ShieldAlert className="w-7 h-7 text-red-600" />}
         buttonLabel="Ver emergencias"
-        onClick={() => onNavigate?.('emergencies')}
+        onClick={() =>
+          safeNavigate('emergency-visits', 'emergencies', 'emergency', 'gestion-emergencias')
+        }
         wrapperClassName="border-red-200 bg-gradient-to-br from-red-50 via-white to-red-50"
         buttonClassName="bg-red-600 hover:bg-red-700 text-white"
         metrics={
@@ -439,7 +431,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         subtitle="Avance del mantenimiento mensual sobre ascensores activos"
         icon={<Wrench className="w-7 h-7 text-blue-600" />}
         buttonLabel="Ver mantenimientos"
-        onClick={() => onNavigate?.('maintenance-checklist')}
+        onClick={() => safeNavigate('maintenance-checklist', 'maintenances')}
         wrapperClassName="border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-50"
         buttonClassName="bg-blue-600 hover:bg-blue-700 text-white"
         metrics={
@@ -478,7 +470,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         subtitle="Estado actual de gestión de órdenes"
         icon={<Briefcase className="w-7 h-7 text-purple-600" />}
         buttonLabel="Ver órdenes de trabajo"
-        onClick={() => onNavigate?.('work-orders')}
+        onClick={() => safeNavigate('work-orders', 'work_orders')}
         wrapperClassName="border-purple-200 bg-gradient-to-br from-purple-50 via-white to-purple-50"
         buttonClassName="bg-purple-600 hover:bg-purple-700 text-white"
         metrics={
@@ -512,24 +504,14 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
-        <ActionCard
-          title="Pendientes de Aprobación"
-          value={stats.pendingApprovals}
-          description="Órdenes de trabajo aguardando aprobación administrativa."
-          icon={<Clock3 className="w-7 h-7" />}
-          buttonLabel="Aprobar órdenes"
-          onClick={() => onNavigate?.('work-orders')}
-          tone="amber"
-        />
-
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         <ActionCard
           title="Solicitudes de Clientes"
           value={stats.clientRequests}
           description="Solicitudes registradas directamente por clientes."
           icon={<ClipboardList className="w-7 h-7" />}
           buttonLabel="Ver solicitudes"
-          onClick={() => onNavigate?.('service-requests')}
+          onClick={() => safeNavigate('service-requests', 'service_requests')}
           tone="purple"
         />
 
@@ -539,7 +521,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Técnicos activos en el sistema y disponibles para asignación."
           icon={<UserCheck className="w-7 h-7" />}
           buttonLabel="Ver equipo"
-          onClick={() => onNavigate?.('users')}
+          onClick={() => safeNavigate('users', 'technicians')}
           tone="green"
         />
 
@@ -549,7 +531,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Órdenes sin completar por más de 3 días."
           icon={<AlertTriangle className="w-7 h-7" />}
           buttonLabel="Gestionar urgentes"
-          onClick={() => onNavigate?.('work-orders')}
+          onClick={() => safeNavigate('work-orders', 'work_orders')}
           tone="slate"
         />
       </div>

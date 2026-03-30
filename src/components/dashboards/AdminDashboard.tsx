@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
 import {
   Plus,
   Settings,
   Eye,
   EyeOff,
   Bell,
-  DollarSign,
 } from 'lucide-react';
 import { ClientForm } from '../forms/ClientForm';
 import TechnicianForm from '../forms/TechnicianForm';
@@ -32,7 +30,6 @@ interface AdminDashboardProps {
 }
 
 export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
-  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [viewSettings, setViewSettings] = useState<ViewSettings>({
@@ -42,59 +39,11 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
   });
 
   useEffect(() => {
-    loadDashboardData();
+    setLoading(false);
   }, []);
-
-  const loadDashboardData = async () => {
-    try {
-      const threeAgo = new Date();
-      threeAgo.setDate(threeAgo.getDate() - 3);
-      const threeDaysAgo = threeAgo.toISOString();
-
-      const { data: pendingWO } = await supabase
-        .from('work_orders')
-        .select(`
-          id,
-          folio_number,
-          description,
-          quotation_amount,
-          status,
-          created_at,
-          buildings:building_id (
-            name,
-            clients:client_id (
-              company_name
-            )
-          )
-        `)
-        .eq('status', 'pending_approval')
-        .lt('created_at', threeDaysAgo)
-        .order('created_at', { ascending: true });
-
-      if (pendingWO) {
-        const transformedWO = (pendingWO || []).map((item) => ({
-          ...item,
-          buildings:
-            Array.isArray(item.buildings) && item.buildings.length > 0
-              ? item.buildings[0]
-              : item.buildings,
-          daysWaiting: Math.floor(
-            (new Date().getTime() - new Date(item.created_at).getTime()) /
-              (1000 * 60 * 60 * 24)
-          ),
-        }));
-        setPendingApprovals(transformedWO as any);
-      }
-    } catch (error) {
-      console.error('Error loading dashboard:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleFormSuccess = () => {
     setCurrentView('dashboard');
-    loadDashboardData();
   };
 
   const toggleView = (key: keyof ViewSettings) => {
@@ -308,72 +257,11 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {pendingApprovals.length > 0 && (
-          <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl shadow-lg border-2 border-red-200 p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="bg-red-100 p-3 rounded-lg">
-                <Bell className="w-6 h-6 text-red-600" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-red-900">
-                  ⚠️ Órdenes Pendientes de Respuesta
-                </h2>
-                <p className="text-sm text-red-700">
-                  Han esperado más de 3 días sin aprobación
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {pendingApprovals.map((wo) => (
-                <div
-                  key={wo.id}
-                  className="bg-white rounded-lg p-4 border-l-4 border-red-500 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div className="flex-1">
-                      <h3 className="font-bold text-slate-900">
-                        {wo.folio_number}
-                      </h3>
-                      <p className="text-xs text-slate-500 mb-1">
-                        {wo.buildings?.name}
-                      </p>
-                      <p className="text-sm text-slate-600">
-                        {wo.description}
-                      </p>
-                    </div>
-
-                    <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded">
-                      {wo.daysWaiting} días
-                    </span>
-                  </div>
-
-                  {wo.quotation_amount && (
-                    <div className="flex items-center gap-1 text-sm font-semibold text-green-600 mt-2">
-                      <DollarSign className="w-4 h-4" />
-                      ${wo.quotation_amount.toLocaleString('es-CL')}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <button
-              onClick={() => onNavigate?.('work-orders')}
-              className="mt-4 w-full bg-red-600 text-white py-2 rounded-lg font-medium hover:bg-red-700 transition"
-            >
-              Revisar Órdenes Pendientes
-            </button>
-          </div>
-        )}
-
-        {viewSettings.showActivity && (
-          <div>
-            <CoordinationRequestsPanel />
-          </div>
-        )}
-      </div>
+      {viewSettings.showActivity && (
+        <div>
+          <CoordinationRequestsPanel />
+        </div>
+      )}
     </div>
   );
 }
