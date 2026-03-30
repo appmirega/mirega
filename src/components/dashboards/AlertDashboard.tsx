@@ -217,18 +217,6 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
     loadStats();
   }, []);
 
-  const safeNavigate = (...targets: string[]) => {
-    if (!onNavigate) return;
-    for (const target of targets) {
-      try {
-        onNavigate(target);
-        return;
-      } catch (error) {
-        console.error('Error navegando a:', target, error);
-      }
-    }
-  };
-
   const loadStats = async () => {
     try {
       const now = new Date();
@@ -390,9 +378,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         subtitle="Estado general de emergencias y cierres operativos"
         icon={<ShieldAlert className="w-7 h-7 text-red-600" />}
         buttonLabel="Ver emergencias"
-        onClick={() =>
-          safeNavigate('emergency-visits', 'emergencies', 'emergency', 'gestion-emergencias')
-        }
+        onClick={() => onNavigate?.('emergencies')}
         wrapperClassName="border-red-200 bg-gradient-to-br from-red-50 via-white to-red-50"
         buttonClassName="bg-red-600 hover:bg-red-700 text-white"
         metrics={
@@ -431,7 +417,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         subtitle="Avance del mantenimiento mensual sobre ascensores activos"
         icon={<Wrench className="w-7 h-7 text-blue-600" />}
         buttonLabel="Ver mantenimientos"
-        onClick={() => safeNavigate('maintenance-checklist', 'maintenances')}
+        onClick={() => onNavigate?.('maintenance-checklist')}
         wrapperClassName="border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-50"
         buttonClassName="bg-blue-600 hover:bg-blue-700 text-white"
         metrics={
@@ -470,7 +456,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
         subtitle="Estado actual de gestión de órdenes"
         icon={<Briefcase className="w-7 h-7 text-purple-600" />}
         buttonLabel="Ver órdenes de trabajo"
-        onClick={() => safeNavigate('work-orders', 'work_orders')}
+        onClick={() => onNavigate?.('work-orders')}
         wrapperClassName="border-purple-200 bg-gradient-to-br from-purple-50 via-white to-purple-50"
         buttonClassName="bg-purple-600 hover:bg-purple-700 text-white"
         metrics={
@@ -511,7 +497,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Solicitudes registradas directamente por clientes."
           icon={<ClipboardList className="w-7 h-7" />}
           buttonLabel="Ver solicitudes"
-          onClick={() => safeNavigate('service-requests', 'service_requests')}
+          onClick={() => onNavigate?.('service-requests')}
           tone="purple"
         />
 
@@ -521,7 +507,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Técnicos activos en el sistema y disponibles para asignación."
           icon={<UserCheck className="w-7 h-7" />}
           buttonLabel="Ver equipo"
-          onClick={() => safeNavigate('users', 'technicians')}
+          onClick={() => onNavigate?.('users')}
           tone="green"
         />
 
@@ -531,7 +517,7 @@ export function AlertDashboard({ onNavigate }: AlertDashboardProps) {
           description="Órdenes sin completar por más de 3 días."
           icon={<AlertTriangle className="w-7 h-7" />}
           buttonLabel="Gestionar urgentes"
-          onClick={() => safeNavigate('work-orders', 'work_orders')}
+          onClick={() => onNavigate?.('work-orders')}
           tone="slate"
         />
       </div>
