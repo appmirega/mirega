@@ -259,8 +259,8 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Atajos Rápidos</h1>
           <p className="text-slate-600 mt-1">
@@ -268,7 +268,7 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
           </p>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <button
             onClick={() => setCurrentView('settings')}
             className="flex items-center gap-2 px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition"
@@ -304,30 +304,32 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps = {}) {
       </div>
 
       {viewSettings.showStats && (
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
             <Bell className="w-6 h-6 text-red-600" />
-            Centro de Alertas y Notificaciones
-          </h2>
+            <h2 className="text-2xl font-bold text-slate-900">
+              Centro de Alertas y Notificaciones
+            </h2>
+          </div>
           <AlertDashboard onNavigate={onNavigate} />
         </div>
       )}
 
       {viewSettings.showPerformance && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <h2 className="text-2xl font-bold text-slate-900">
             Monitoreo Operacional
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <EmergenciesPanel />
-            <MaintenancesPanel />
-            <ServiceRequestsPanel />
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <EmergenciesPanel onNavigate={onNavigate} />
+            <MaintenancesPanel onNavigate={onNavigate} />
+            <ServiceRequestsPanel onNavigate={onNavigate} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <QuotationsPanel />
-            <WorkOrdersPanel />
+            <QuotationsPanel onNavigate={onNavigate} />
+            <WorkOrdersPanel onNavigate={onNavigate} />
           </div>
         </div>
       )}
