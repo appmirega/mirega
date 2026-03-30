@@ -13,6 +13,7 @@ interface Filters {
 
 interface EmergencyItem {
   id: string;
+  visitId: string;
   elevatorLabel: string;
   buildingName: string;
   clientName: string;
@@ -23,6 +24,7 @@ interface EmergencyItem {
 
 interface EmergencyVisitRow {
   id: string;
+  client_id: string | null;
   status: string | null;
   final_status: string | null;
   visit_date: string | null;
@@ -33,16 +35,22 @@ interface EmergencyVisitRow {
 
 interface EmergencyVisitElevatorRow {
   emergency_visit_id: string;
+  elevator_id: string;
   final_status: string | null;
-  elevators: {
-    elevator_number?: number | null;
-    tower_name?: string | null;
-    clients?: {
-      company_name?: string | null;
-      internal_alias?: string | null;
-      business_name?: string | null;
-    } | null;
-  } | null;
+}
+
+interface ElevatorRow {
+  id: string;
+  client_id: string | null;
+  elevator_number: number | null;
+  tower_name: string | null;
+}
+
+interface ClientRow {
+  id: string;
+  company_name: string | null;
+  internal_alias?: string | null;
+  building_name?: string | null;
 }
 
 export function AdminEmergenciesDashboard() {
@@ -79,14 +87,17 @@ export function AdminEmergenciesDashboard() {
   ) => {
     const finalStatus = elevatorFinalStatus || visitFinalStatus;
 
-    if (visitStatus === 'closed' && finalStatus === 'stopped') return 'cerrada - detenido';
-    if (visitStatus === 'closed' && finalStatus === 'observation') return 'cerrada - observación';
-    if (visitStatus === 'closed' && finalStatus === 'operational') return 'cerrada - operativa';
+    if ((visitStatus === 'closed' || visitStatus === 'completed') && finalStatus === 'stopped') {
+      return 'cerrada - detenido';
+    }
+    if ((visitStatus === 'closed' || visitStatus === 'completed') && finalStatus === 'observation') {
+      return 'cerrada - observación';
+    }
+    if ((visitStatus === 'closed' || visitStatus === 'completed') && finalStatus === 'operational') {
+      return 'cerrada - operativa';
+    }
 
-    if (visitStatus === 'completed' && finalStatus === 'stopped') return 'completada - detenido';
-    if (visitStatus === 'completed' && finalStatus === 'observation') return 'completada - observación';
-    if (visitStatus === 'completed' && finalStatus === 'operational') return 'completada - operativa';
-
+    if (visitStatus === 'draft') return 'borrador';
     if (visitStatus === 'reported') return 'reportada';
     if (visitStatus === 'assigned') return 'asignada';
     if (visitStatus === 'in_progress') return 'en progreso';
@@ -97,7 +108,7 @@ export function AdminEmergenciesDashboard() {
     return visitStatus || 'sin estado';
   };
 
-  const buildElevatorLabel = (elevator?: EmergencyVisitElevatorRow['elevators'] | null) => {
+  const buildElevatorLabel = (elevator?: ElevatorRow | null) => {
     if (!elevator) return '-';
 
     const tower = elevator.tower_name?.trim();
@@ -108,10 +119,16 @@ export function AdminEmergenciesDashboard() {
     return tower ? `${tower} - ${number}` : number;
   };
 
-  const formatDate = (visitDate?: string | null, visitTime?: string | null, fallback?: string | null) => {
+  const formatDate = (
+    visitDate?: string | null,
+    visitTime?: string | null,
+    fallback?: string | null
+  ) => {
     try {
       if (visitDate) {
-        const composed = visitTime ? `${visitDate}T${visitTime}` : `${visitDate}T00:00:00`;
+        const composed = visitTime
+          ? `${visitDate}T${visitTime}`
+          : `${visitDate}T00:00:00`;
         const date = new Date(composed);
         if (!Number.isNaN(date.getTime())) {
           return date.toLocaleDateString('es-CL');
@@ -152,22 +169,14 @@ export function AdminEmergenciesDashboard() {
     try {
       const { data: visitsData, error: visitsError } = await supabase
         .from('emergency_visits')
-        .select(`
-          id,
-          status,
-          final_status,
-          visit_date,
-          visit_time,
-          created_at,
-          completed_at
-        `)
+        .select('id, client_id, status, final_status, visit_date, visit_time, created_at, completed_at')
         .order('created_at', { ascending: false });
 
       if (visitsError) throw visitsError;
 
-      const visitIds = (visitsData || []).map((visit) => visit.id);
+      const visits = (visitsData || []) as EmergencyVisitRow[];
 
-      if (visitIds.length === 0) {
+      if (visits.length === 0) {
         setEmergencies([]);
         setFiltered([]);
         setBuildingOptions([]);
@@ -178,49 +187,80 @@ export function AdminEmergenciesDashboard() {
         return;
       }
 
+      const visitIds = visits.map((v) => v.id);
+
       const { data: visitElevatorsData, error: visitElevatorsError } = await supabase
         .from('emergency_visit_elevators')
-        .select(`
-          emergency_visit_id,
-          final_status,
-          elevators (
-            elevator_number,
-            tower_name,
-            clients (
-              company_name,
-              internal_alias,
-              business_name
-            )
-          )
-        `)
+        .select('emergency_visit_id, elevator_id, final_status')
         .in('emergency_visit_id', visitIds);
 
       if (visitElevatorsError) throw visitElevatorsError;
 
+      const visitElevators = (visitElevatorsData || []) as EmergencyVisitElevatorRow[];
+      const elevatorIds = Array.from(new Set(visitElevators.map((row) => row.elevator_id).filter(Boolean)));
+
+      let elevatorsMap = new Map<string, ElevatorRow>();
+      let clientsMap = new Map<string, ClientRow>();
+
+      if (elevatorIds.length > 0) {
+        const { data: elevatorsData, error: elevatorsError } = await supabase
+          .from('elevators')
+          .select('id, client_id, elevator_number, tower_name')
+          .in('id', elevatorIds);
+
+        if (elevatorsError) throw elevatorsError;
+
+        const elevators = (elevatorsData || []) as ElevatorRow[];
+        elevatorsMap = new Map(elevators.map((e) => [e.id, e]));
+
+        const clientIds = Array.from(
+          new Set(
+            elevators
+              .map((e) => e.client_id)
+              .filter((id): id is string => !!id)
+          )
+        );
+
+        if (clientIds.length > 0) {
+          const { data: clientsData, error: clientsError } = await supabase
+            .from('clients')
+            .select('id, company_name, internal_alias, building_name')
+            .in('id', clientIds);
+
+          if (clientsError) throw clientsError;
+
+          const clients = (clientsData || []) as ClientRow[];
+          clientsMap = new Map(clients.map((c) => [c.id, c]));
+        }
+      }
+
       const visitElevatorsMap = new Map<string, EmergencyVisitElevatorRow[]>();
-
-      (visitElevatorsData || []).forEach((row: any) => {
-        const normalizedRow: EmergencyVisitElevatorRow = {
-          emergency_visit_id: row.emergency_visit_id,
-          final_status: row.final_status,
-          elevators: Array.isArray(row.elevators) ? row.elevators[0] : row.elevators,
-        };
-
-        const current = visitElevatorsMap.get(normalizedRow.emergency_visit_id) || [];
-        current.push(normalizedRow);
-        visitElevatorsMap.set(normalizedRow.emergency_visit_id, current);
+      visitElevators.forEach((row) => {
+        const current = visitElevatorsMap.get(row.emergency_visit_id) || [];
+        current.push(row);
+        visitElevatorsMap.set(row.emergency_visit_id, current);
       });
 
-      const rows: EmergencyItem[] = (visitsData || []).flatMap((visit: EmergencyVisitRow) => {
+      const rows: EmergencyItem[] = visits.flatMap((visit) => {
         const linkedElevators = visitElevatorsMap.get(visit.id) || [];
 
         if (linkedElevators.length === 0) {
+          const fallbackClient = visit.client_id ? clientsMap.get(visit.client_id) : null;
+
           return [
             {
               id: visit.id,
+              visitId: visit.id,
               elevatorLabel: '-',
-              buildingName: 'Sin edificio',
-              clientName: 'Sin cliente',
+              buildingName:
+                fallbackClient?.internal_alias?.trim() ||
+                fallbackClient?.building_name?.trim() ||
+                fallbackClient?.company_name?.trim() ||
+                'Sin edificio',
+              clientName:
+                fallbackClient?.company_name?.trim() ||
+                fallbackClient?.building_name?.trim() ||
+                'Sin cliente',
               date: formatDate(visit.visit_date, visit.visit_time, visit.created_at),
               status: normalizeStatus(visit.status, visit.final_status, null),
               year: getYear(visit.visit_date, visit.created_at),
@@ -229,29 +269,23 @@ export function AdminEmergenciesDashboard() {
         }
 
         return linkedElevators.map((linked, index) => {
-          const elevator = linked.elevators;
-          const client = elevator?.clients
-            ? Array.isArray(elevator.clients)
-              ? elevator.clients[0]
-              : elevator.clients
-            : null;
-
-          const buildingName =
-            client?.internal_alias?.trim() ||
-            client?.business_name?.trim() ||
-            client?.company_name?.trim() ||
-            'Sin edificio';
-
-          const clientName =
-            client?.company_name?.trim() ||
-            client?.business_name?.trim() ||
-            'Sin cliente';
+          const elevator = elevatorsMap.get(linked.elevator_id) || null;
+          const clientId = elevator?.client_id || visit.client_id;
+          const client = clientId ? clientsMap.get(clientId) || null : null;
 
           return {
             id: `${visit.id}-${index}`,
+            visitId: visit.id,
             elevatorLabel: buildElevatorLabel(elevator),
-            buildingName,
-            clientName,
+            buildingName:
+              client?.internal_alias?.trim() ||
+              client?.building_name?.trim() ||
+              client?.company_name?.trim() ||
+              'Sin edificio',
+            clientName:
+              client?.company_name?.trim() ||
+              client?.building_name?.trim() ||
+              'Sin cliente',
             date: formatDate(visit.visit_date, visit.visit_time, visit.created_at),
             status: normalizeStatus(visit.status, visit.final_status, linked.final_status),
             year: getYear(visit.visit_date, visit.created_at),
@@ -260,7 +294,6 @@ export function AdminEmergenciesDashboard() {
       });
 
       setEmergencies(rows);
-
       setBuildingOptions(
         Array.from(new Set(rows.map((e) => e.buildingName).filter(Boolean))).sort()
       );
