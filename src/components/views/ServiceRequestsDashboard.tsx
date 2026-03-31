@@ -51,6 +51,7 @@ export function ServiceRequestsDashboard() {
     in_progress: 0,
     completed: 0,
     critical_count: 0,
+    high_priority_count: 0,
   });
   
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequestWithDetails | null>(null);
@@ -124,6 +125,7 @@ export function ServiceRequestsDashboard() {
           status,
           priority,
           request_type,
+          intervention_type,
           source_type,
           photo_1_url,
           photo_2_url,
@@ -375,10 +377,38 @@ export function ServiceRequestsDashboard() {
         return <Wrench className="w-5 h-5" />;
       case 'parts':
         return <Package className="w-5 h-5" />;
-      case 'support':
+      case 'diagnostic':
         return <Users className="w-5 h-5" />;
       default:
         return <FileText className="w-5 h-5" />;
+    }
+  };
+
+  const getRequestTypeLabel = (type: string) => {
+    switch (type) {
+      case 'repair':
+        return 'Trabajos / Reparación';
+      case 'parts':
+        return 'Repuestos';
+      case 'diagnostic':
+        return 'Diagnóstico Técnico';
+      default:
+        return type;
+    }
+  };
+
+  const getInterventionTypeLabel = (type: string | null | undefined) => {
+    if (!type) return '-';
+
+    switch (type) {
+      case 'preventive':
+        return 'Preventivo';
+      case 'corrective':
+        return 'Correctivo';
+      case 'improvement':
+        return 'Mejora / Modernización';
+      default:
+        return type;
     }
   };
 
