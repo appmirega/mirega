@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { X, Building2, Wrench, Package, HelpCircle, AlertCircle, Camera } from 'lucide-react';
+import { X, Building2, Wrench, Package, Stethoscope, AlertCircle, Camera, Settings } from 'lucide-react';
 import { createServiceRequest } from '../../lib/serviceRequestsService';
-import type { Priority, RequestType } from '../../types/serviceRequests';
+import type { Priority, RequestType, InterventionType } from '../../types/serviceRequests';
 
 interface ManualServiceRequestFormProps {
   onClose: () => void;
@@ -44,10 +44,12 @@ export function ManualServiceRequestForm({
     clientId: prefilledClientId || '',
     elevatorId: prefilledElevatorId || '',
     requestType: 'repair' as RequestType,
+    interventionType: 'corrective' as InterventionType,
     priority: (forcedPriority || 'medium') as Priority,
     title: '',
     description: '',
   });
+
   const [photo1, setPhoto1] = useState<string | null>(null);
   const [photo2, setPhoto2] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState<1 | 2 | null>(null);
@@ -71,6 +73,7 @@ export function ManualServiceRequestForm({
       .from('clients')
       .select('id, company_name, building_name, internal_alias')
       .order('internal_alias');
+
     if (data) setClients(data);
   };
 
@@ -79,28 +82,30 @@ export function ManualServiceRequestForm({
       .from('elevators')
       .select('id, elevator_number, location_name, client_id')
       .order('elevator_number');
+
     if (data) setElevators(data);
   };
 
   const handlePhotoUpload = async (file: File, photoNumber: 1 | 2) => {
     if (!file) return;
 
-    // Validar tipo y tamaño
     if (!file.type.startsWith('image/')) {
       alert('Solo se permiten imágenes');
       return;
     }
+
     if (file.size > 5 * 1024 * 1024) {
       alert('La imagen no debe superar 5MB');
       return;
     }
 
     setUploadingPhoto(photoNumber);
+
     try {
       const fileName = `manual-request-${Date.now()}-${photoNumber}.${file.name.split('.').pop()}`;
       const filePath = `service-requests/${fileName}`;
 
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('maintenance-photos')
         .upload(filePath, file);
 
@@ -127,8 +132,13 @@ export function ManualServiceRequestForm({
     e.preventDefault();
     if (!profile?.id) return;
 
-    if (!formData.title.trim()) {
-      alert('El título es obligatorio');
+    if (!formData.clientId || !formData.elevatorId) {
+      alert('Debes seleccionar cliente y ascensor');
+      return;
+    }
+
+    if (!formData.description.trim()) {
+      alert('La descripción es obligatoria');
       return;
     }
 
@@ -138,14 +148,16 @@ export function ManualServiceRequestForm({
     }
 
     setLoading(true);
+
     try {
       const result = await createServiceRequest({
         request_type: formData.requestType,
+        intervention_type: formData.interventionType,
         source_type: 'manual',
         source_id: null,
         elevator_id: formData.elevatorId,
         client_id: formData.clientId,
-        title: formData.title,
+        title: formData.title.trim() || undefined,
         description: formData.description,
         priority: formData.priority,
         created_by_technician_id: profile.id,
@@ -171,10 +183,15 @@ export function ManualServiceRequestForm({
   };
 
   const requestTypes = [
-    { value: 'repair', label: 'Reparación', icon: Wrench, color: 'text-red-600' },
+    { value: 'repair', label: 'Trabajos / Reparación', icon: Wrench, color: 'text-red-600' },
     { value: 'parts', label: 'Repuestos', icon: Package, color: 'text-blue-600' },
-    { value: 'support', label: 'Soporte Técnico', icon: HelpCircle, color: 'text-purple-600' },
-    { value: 'inspection', label: 'Inspección', icon: AlertCircle, color: 'text-orange-600' },
+    { value: 'diagnostic', label: 'Diagnóstico Técnico', icon: Stethoscope, color: 'text-purple-600' },
+  ];
+
+  const interventionTypes = [
+    { value: 'preventive', label: 'Preventivo' },
+    { value: 'corrective', label: 'Correctivo' },
+    { value: 'improvement', label: 'Mejora / Modernización' },
   ];
 
   const priorities = [
@@ -242,7 +259,7 @@ export function ManualServiceRequestForm({
             <label className="block text-sm font-medium text-gray-700 mb-3">
               Tipo de Solicitud *
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {requestTypes.map(type => (
                 <button
                   key={type.value}
@@ -255,7 +272,31 @@ export function ManualServiceRequestForm({
                   }`}
                 >
                   <type.icon className={`w-5 h-5 ${type.color}`} />
-                  <span className="font-medium">{type.label}</span>
+                  <span className="font-medium text-left">{type.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tipo de Intervención */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              <Settings className="w-4 h-4 inline mr-1" />
+              Tipo de Intervención *
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {interventionTypes.map(type => (
+                <button
+                  key={type.value}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, interventionType: type.value as InterventionType })}
+                  className={`px-4 py-3 border-2 rounded-lg font-medium transition ${
+                    formData.interventionType === type.value
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                  }`}
+                >
+                  {type.label}
                 </button>
               ))}
             </div>
@@ -286,7 +327,7 @@ export function ManualServiceRequestForm({
                   disabled={!!forcedPriority}
                   className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
                     formData.priority === priority.value
-                      ? priority.color + ' ring-2 ring-offset-2'
+                      ? `${priority.color} ring-2 ring-offset-2`
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   } ${
                     forcedPriority ? 'opacity-50 cursor-not-allowed' : ''
@@ -324,7 +365,7 @@ export function ManualServiceRequestForm({
               required
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Describe el problema, repuesto necesario, o tipo de apoyo requerido..."
+              placeholder="Describe el problema, repuesto necesario o el diagnóstico/apoyo técnico requerido..."
               rows={4}
               className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
             />

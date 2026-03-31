@@ -9,43 +9,64 @@ import type {
 } from '../types/serviceRequests';
 
 // =============================================
+// UTILIDADES DE NORMALIZACIÓN
+// =============================================
+
+function normalizeRequestType(type: string): RequestType {
+  if (type === 'support' || type === 'inspection' || type === 'diagnostic') {
+    return 'diagnostic';
+  }
+  if (type === 'parts') return 'parts';
+  return 'repair';
+}
+
+function getRequestTypeLabel(type: RequestType) {
+  const labels: Record<RequestType, string> = {
+    repair: 'Trabajos / Reparación',
+    parts: 'Repuestos',
+    diagnostic: 'Diagnóstico Técnico',
+  };
+
+  return labels[type] || 'Solicitud';
+}
+
+// =============================================
 // FUNCIÓN PRINCIPAL: Crear Solicitud de Servicio
 // =============================================
 
 export async function createServiceRequest(data: CreateServiceRequestData) {
   try {
+    const normalizedRequestType = normalizeRequestType(data.request_type);
+
     console.log('📝 Creando service_request con datos:', {
-      request_type: data.request_type,
+      request_type: normalizedRequestType,
+      intervention_type: data.intervention_type || null,
       elevator_id: data.elevator_id,
       client_id: data.client_id,
       created_by_technician_id: data.created_by_technician_id
     });
 
     // Generar título si no se provee
-    let title = data.title;
+    let title = data.title?.trim();
     if (!title) {
-      const typeLabel = {
-        repair: 'Reparación',
-        parts: 'Repuestos',
-        support: 'Soporte',
-        inspection: 'Inspección'
-      }[data.request_type] || 'Solicitud';
-      
+      const typeLabel = getRequestTypeLabel(normalizedRequestType);
+
       const sourceLabel = {
         maintenance_checklist: 'Mantenimiento',
         emergency_visit: 'Emergencia',
         manual: 'Manual'
       }[data.source_type] || '';
-      
+
       title = `${typeLabel} - ${sourceLabel}`;
     }
 
     const { data: serviceRequest, error } = await supabase
       .from('service_requests')
       .insert({
-        request_type: data.request_type,
+        request_type: normalizedRequestType,
+        intervention_type: data.intervention_type || null,
         source_type: data.source_type,
-        source_id: data.source_id,
+        source_id: data.source_id || null,
         elevator_id: data.elevator_id,
         client_id: data.client_id,
         title,
@@ -66,9 +87,6 @@ export async function createServiceRequest(data: CreateServiceRequestData) {
 
     console.log('✅ Service request creado:', serviceRequest.id);
 
-    // TODO: Crear notificación para admins (requiere política RLS)
-    // await createNotificationForAdmins({...});
-
     return { success: true, data: serviceRequest };
   } catch (error) {
     console.error('Error creating service request:', error);
@@ -87,7 +105,6 @@ async function createNotificationForAdmins(requestData: {
   requestType: RequestType;
 }) {
   try {
-    // Obtener todos los admins
     const { data: admins, error: adminsError } = await supabase
       .from('profiles')
       .select('id')
@@ -96,7 +113,6 @@ async function createNotificationForAdmins(requestData: {
     if (adminsError) throw adminsError;
     if (!admins || admins.length === 0) return;
 
-    // Crear notificación para cada admin
     const notifications = admins.map(admin => ({
       user_id: admin.id,
       type: 'service_request',
@@ -142,13 +158,14 @@ export async function createRequestsFromMaintenance(
 
   for (const question of rejectedQuestions) {
     if (!question.observations || question.observations.trim() === '') {
-      continue; // Saltar preguntas sin observaciones
+      continue;
     }
 
     const priority: Priority = question.is_critical ? 'high' : 'medium';
 
     const result = await createServiceRequest({
       request_type: 'repair',
+      intervention_type: 'corrective',
       source_type: 'maintenance_checklist',
       source_id: checklistId,
       elevator_id: elevatorId,
@@ -161,8 +178,6 @@ export async function createRequestsFromMaintenance(
     });
 
     if (result.success && result.data) {
-      // Por ahora solo creamos service_request, sin repair_request
-      // Los detalles se agregarán manualmente desde el dashboard
       results.push(result.data);
     } else {
       console.error('❌ Error creando service_request:', result.error);
@@ -204,14 +219,18 @@ export async function createRequestsFromEmergency(
 ) {
   const results = [];
 
-  // Determinar prioridad según estado final
   const priority: Priority =
-    reportData.final_state === 'detenido' ? 'critical' : reportData.final_state === 'observacion' ? 'high' : 'medium';
+    reportData.final_state === 'detenido'
+      ? 'critical'
+      : reportData.final_state === 'observacion'
+      ? 'high'
+      : 'medium';
 
-  // 1. Crear solicitud de reparación si es necesario
+  // 1. Crear solicitud de trabajos / reparación
   if (reportData.requires_repair || reportData.final_state === 'detenido') {
     const repairRequest = await createServiceRequest({
       request_type: 'repair',
+      intervention_type: 'corrective',
       source_type: 'emergency_visit',
       source_id: emergencyId,
       elevator_id: elevatorId,
@@ -238,6 +257,7 @@ export async function createRequestsFromEmergency(
     for (const part of reportData.parts) {
       const partsRequest = await createServiceRequest({
         request_type: 'parts',
+        intervention_type: 'corrective',
         source_type: 'emergency_visit',
         source_id: emergencyId,
         elevator_id: elevatorId,
@@ -262,10 +282,11 @@ export async function createRequestsFromEmergency(
     }
   }
 
-  // 3. Crear solicitud de apoyo técnico
+  // 3. Crear solicitud de diagnóstico técnico
   if (reportData.requires_support && reportData.support_details) {
-    const supportRequest = await createServiceRequest({
-      request_type: 'support',
+    const diagnosticRequest = await createServiceRequest({
+      request_type: 'diagnostic',
+      intervention_type: 'corrective',
       source_type: 'emergency_visit',
       source_id: emergencyId,
       elevator_id: elevatorId,
@@ -275,15 +296,15 @@ export async function createRequestsFromEmergency(
       created_by_technician_id: technicianId,
     });
 
-    if (supportRequest.success && supportRequest.data) {
+    if (diagnosticRequest.success && diagnosticRequest.data) {
       await createSupportRequest({
-        service_request_id: supportRequest.data.id,
+        service_request_id: diagnosticRequest.data.id,
         support_type: reportData.support_details.support_type,
         reason: reportData.support_details.reason,
         skills_needed: reportData.support_details.skills_needed,
       });
 
-      results.push(supportRequest.data);
+      results.push(diagnosticRequest.data);
     }
   }
 

@@ -2,7 +2,9 @@
 // TIPOS PARA SISTEMA DE SOLICITUDES DE SERVICIO
 // =============================================
 
-export type RequestType = 'repair' | 'parts' | 'support' | 'inspection';
+export type RequestType = 'repair' | 'parts' | 'diagnostic';
+export type InterventionType = 'preventive' | 'corrective' | 'improvement';
+
 export type SourceType = 'maintenance_checklist' | 'emergency_visit' | 'manual';
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
 
@@ -60,6 +62,7 @@ export type SupportStatus =
 export interface ServiceRequest {
   id: string;
   request_type: RequestType;
+  intervention_type: InterventionType | null;
   source_type: SourceType;
   source_id: string | null;
   elevator_id: string;
@@ -76,6 +79,7 @@ export interface ServiceRequest {
   resolution_notes: string | null;
   completed_at: string | null;
   updated_at: string;
+  work_order_id?: string | null;
   
   // Relaciones (cuando se hace JOIN)
   elevators?: {
@@ -263,8 +267,9 @@ export interface EmergencyPartsRequestV3 {
 
 export interface CreateServiceRequestData {
   request_type: RequestType;
+  intervention_type?: InterventionType | null;
   source_type: SourceType;
-  source_id?: string;
+  source_id?: string | null;
   elevator_id: string;
   client_id: string;
   title?: string; // Se auto-genera si no se provee
