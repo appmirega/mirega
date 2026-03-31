@@ -1,167 +1,149 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from './supabase';
+import type {
+  CreateServiceRequestData,
+  CreateRepairRequestData,
+  CreatePartsRequestData,
+  CreateSupportRequestData,
+  Priority,
+  RequestType,
+} from '../types/serviceRequests';
 
-type ServiceRequestType = 'repair' | 'parts' | 'diagnostic';
-type InterventionType = 'preventive' | 'corrective' | 'improvement';
-type Priority = 'low' | 'medium' | 'high' | 'critical';
+// =============================================
+// FUNCIÓN PRINCIPAL: Crear Solicitud de Servicio
+// =============================================
 
-interface CreateServiceRequestInput {
-  client_id: string;
-  elevator_id: string;
-  request_type: ServiceRequestType;
-  intervention_type?: InterventionType | null;
-  priority: Priority | string;
-  description: string;
-  title?: string;
-  source_type?: 'manual' | 'maintenance_checklist' | 'emergency_visit' | string;
-  source_id?: string | null;
-  created_by_technician_id?: string | null;
-  photo_1_url?: string | null;
-  photo_2_url?: string | null;
-}
-
-interface MaintenanceRejectedQuestion {
-  question_number: number;
-  text: string;
-  observations: string;
-  is_critical?: boolean;
-  observation_photo_1?: string | null;
-  observation_photo_2?: string | null;
-}
-
-interface EmergencyPart {
-  part_name: string;
-  quantity: number;
-  zone: string;
-  is_critical: boolean;
-}
-
-interface EmergencySupportDetails {
-  support_type: 'second_technician' | 'specialist' | 'supervisor' | 'external_contractor';
-  reason: string;
-  skills_needed?: string;
-}
-
-interface EmergencyRequestData {
-  requires_parts: boolean;
-  requires_repair: boolean;
-  requires_support: boolean;
-  final_state: 'operativo' | 'detenido' | 'observacion';
-  final_status_text: string;
-  observations?: string;
-  parts?: EmergencyPart[];
-  support_details?: EmergencySupportDetails;
-}
-
-function normalizeRequestType(type: string): ServiceRequestType {
-  if (type === 'support' || type === 'inspection' || type === 'diagnostic') {
-    return 'diagnostic';
-  }
-  if (type === 'parts') return 'parts';
-  return 'repair';
-}
-
-function normalizePriority(priority: string): Priority {
-  if (priority === 'critical') return 'high';
-  if (priority === 'high') return 'high';
-  if (priority === 'low') return 'low';
-  return 'medium';
-}
-
-function buildDefaultTitle(
-  requestType: ServiceRequestType,
-  sourceType?: string
-) {
-  const typeLabel: Record<ServiceRequestType, string> = {
-    repair: 'Trabajos / Reparación',
-    parts: 'Repuestos',
-    diagnostic: 'Diagnóstico Técnico',
-  };
-
-  const sourceLabelMap: Record<string, string> = {
-    maintenance_checklist: 'Mantenimiento',
-    emergency_visit: 'Emergencia',
-    manual: 'Manual',
-  };
-
-  const sourceLabel = sourceType ? sourceLabelMap[sourceType] || sourceType : '';
-  return sourceLabel
-    ? `${typeLabel[requestType]} - ${sourceLabel}`
-    : typeLabel[requestType];
-}
-
-export async function createServiceRequest(data: CreateServiceRequestInput) {
+export async function createServiceRequest(data: CreateServiceRequestData) {
   try {
-    const requestType = normalizeRequestType(data.request_type);
-    const priority = normalizePriority(String(data.priority || 'medium'));
-
-    const payload = {
-      client_id: data.client_id,
+    console.log('📝 Creando service_request con datos:', {
+      request_type: data.request_type,
       elevator_id: data.elevator_id,
-      request_type: requestType,
-      intervention_type: data.intervention_type ?? null,
-      priority,
-      description: data.description,
-      title: data.title || buildDefaultTitle(requestType, data.source_type),
-      source_type: data.source_type || 'manual',
-      source_id: data.source_id || null,
-      created_by_technician_id: data.created_by_technician_id || null,
-      photo_1_url: data.photo_1_url || null,
-      photo_2_url: data.photo_2_url || null,
-      status: 'pending',
-    };
+      client_id: data.client_id,
+      created_by_technician_id: data.created_by_technician_id
+    });
 
-    const { data: inserted, error } = await supabase
+    // Generar título si no se provee
+    let title = data.title;
+    if (!title) {
+      const typeLabel = {
+        repair: 'Reparación',
+        parts: 'Repuestos',
+        support: 'Soporte',
+        inspection: 'Inspección'
+      }[data.request_type] || 'Solicitud';
+      
+      const sourceLabel = {
+        maintenance_checklist: 'Mantenimiento',
+        emergency_visit: 'Emergencia',
+        manual: 'Manual'
+      }[data.source_type] || '';
+      
+      title = `${typeLabel} - ${sourceLabel}`;
+    }
+
+    const { data: serviceRequest, error } = await supabase
       .from('service_requests')
-      .insert([payload])
+      .insert({
+        request_type: data.request_type,
+        source_type: data.source_type,
+        source_id: data.source_id,
+        elevator_id: data.elevator_id,
+        client_id: data.client_id,
+        title,
+        description: data.description,
+        priority: data.priority,
+        created_by_technician_id: data.created_by_technician_id,
+        photo_1_url: data.photo_1_url || null,
+        photo_2_url: data.photo_2_url || null,
+        status: 'pending',
+      })
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Error en INSERT service_requests:', error);
+      throw error;
+    }
 
-    return { success: true, data: inserted };
+    console.log('✅ Service request creado:', serviceRequest.id);
+
+    // TODO: Crear notificación para admins (requiere política RLS)
+    // await createNotificationForAdmins({...});
+
+    return { success: true, data: serviceRequest };
   } catch (error) {
     console.error('Error creating service request:', error);
     return { success: false, error };
   }
 }
 
-export async function createWorkOrderFromRequest(request: any) {
-  const { data: workOrder, error } = await supabase
-    .from('work_orders')
-    .insert([
-      {
-        client_id: request.client_id,
-        elevator_id: request.elevator_id,
-        description: request.description,
-        service_request_id: request.id,
-      },
-    ])
-    .select()
-    .single();
+// =============================================
+// CREAR NOTIFICACIÓN PARA ADMINS
+// =============================================
 
-  if (error) throw error;
+async function createNotificationForAdmins(requestData: {
+  title: string;
+  description: string;
+  priority: Priority;
+  requestType: RequestType;
+}) {
+  try {
+    // Obtener todos los admins
+    const { data: admins, error: adminsError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'admin');
 
-  const { error: updateError } = await supabase
-    .from('service_requests')
-    .update({ work_order_id: workOrder.id })
-    .eq('id', request.id);
+    if (adminsError) throw adminsError;
+    if (!admins || admins.length === 0) return;
 
-  if (updateError) throw updateError;
+    // Crear notificación para cada admin
+    const notifications = admins.map(admin => ({
+      user_id: admin.id,
+      type: 'service_request',
+      title: `Nueva Solicitud: ${requestData.title}`,
+      message: `Prioridad: ${requestData.priority.toUpperCase()} - ${requestData.description.substring(0, 100)}...`,
+      is_read: false,
+      metadata: {
+        request_type: requestData.requestType,
+        priority: requestData.priority,
+      }
+    }));
 
-  return workOrder;
+    const { error: notifError } = await supabase
+      .from('notifications')
+      .insert(notifications);
+
+    if (notifError) throw notifError;
+    console.log(`✅ ${notifications.length} notificación(es) creada(s) para admins`);
+  } catch (error) {
+    console.error('Error creating notifications:', error);
+  }
 }
+
+// =============================================
+// DESDE MANTENIMIENTO: Crear solicitudes desde observaciones
+// =============================================
 
 export async function createRequestsFromMaintenance(
   checklistId: string,
   elevatorId: string,
   clientId: string,
   technicianId: string,
-  rejectedQuestions: MaintenanceRejectedQuestion[]
+  rejectedQuestions: Array<{
+    question_number: number;
+    text: string;
+    observations: string;
+    is_critical?: boolean;
+    observation_photo_1?: string | null;
+    observation_photo_2?: string | null;
+  }>
 ) {
-  const results: any[] = [];
+  const results = [];
 
   for (const question of rejectedQuestions) {
-    if (!question.observations || question.observations.trim() === '') continue;
+    if (!question.observations || question.observations.trim() === '') {
+      continue; // Saltar preguntas sin observaciones
+    }
 
     const priority: Priority = question.is_critical ? 'high' : 'medium';
 
@@ -173,21 +155,26 @@ export async function createRequestsFromMaintenance(
       client_id: clientId,
       description: `Pregunta ${question.question_number}: ${question.text}\n\nObservaciones: ${question.observations}`,
       priority,
-      intervention_type: 'corrective',
       created_by_technician_id: technicianId,
       photo_1_url: question.observation_photo_1 || null,
       photo_2_url: question.observation_photo_2 || null,
     });
 
     if (result.success && result.data) {
+      // Por ahora solo creamos service_request, sin repair_request
+      // Los detalles se agregarán manualmente desde el dashboard
       results.push(result.data);
     } else {
-      console.error('Error creando solicitud desde mantenimiento:', result.error);
+      console.error('❌ Error creando service_request:', result.error);
     }
   }
 
   return results;
 }
+
+// =============================================
+// DESDE EMERGENCIA: Crear solicitudes automáticas
+// =============================================
 
 export async function createRequestsFromEmergency(
   emergencyId: string,
@@ -195,17 +182,33 @@ export async function createRequestsFromEmergency(
   elevatorId: string,
   clientId: string,
   technicianId: string,
-  reportData: EmergencyRequestData
+  reportData: {
+    requires_parts: boolean;
+    requires_repair: boolean;
+    requires_support: boolean;
+    final_state: 'operativo' | 'detenido' | 'observacion';
+    final_status_text: string;
+    observations?: string;
+    parts?: Array<{
+      part_name: string;
+      quantity: number;
+      zone: string;
+      is_critical: boolean;
+    }>;
+    support_details?: {
+      support_type: 'second_technician' | 'specialist' | 'supervisor' | 'external_contractor';
+      reason: string;
+      skills_needed?: string;
+    };
+  }
 ) {
-  const results: any[] = [];
+  const results = [];
 
+  // Determinar prioridad según estado final
   const priority: Priority =
-    reportData.final_state === 'detenido'
-      ? 'high'
-      : reportData.final_state === 'observacion'
-      ? 'high'
-      : 'medium';
+    reportData.final_state === 'detenido' ? 'critical' : reportData.final_state === 'observacion' ? 'high' : 'medium';
 
+  // 1. Crear solicitud de reparación si es necesario
   if (reportData.requires_repair || reportData.final_state === 'detenido') {
     const repairRequest = await createServiceRequest({
       request_type: 'repair',
@@ -215,16 +218,23 @@ export async function createRequestsFromEmergency(
       client_id: clientId,
       description: `Estado Final: ${reportData.final_status_text}\n\n${reportData.observations || ''}`,
       priority,
-      intervention_type: 'corrective',
       created_by_technician_id: technicianId,
     });
 
     if (repairRequest.success && repairRequest.data) {
+      await createRepairRequest({
+        service_request_id: repairRequest.data.id,
+        elevator_operational: reportData.final_state === 'operativo',
+        can_wait: reportData.final_state !== 'detenido',
+        max_wait_days: reportData.final_state === 'detenido' ? 1 : 7,
+      });
+
       results.push(repairRequest.data);
     }
   }
 
-  if (reportData.requires_parts && reportData.parts?.length) {
+  // 2. Crear solicitudes de repuestos
+  if (reportData.requires_parts && reportData.parts && reportData.parts.length > 0) {
     for (const part of reportData.parts) {
       const partsRequest = await createServiceRequest({
         request_type: 'parts',
@@ -233,37 +243,147 @@ export async function createRequestsFromEmergency(
         elevator_id: elevatorId,
         client_id: clientId,
         description: `Repuesto necesario: ${part.part_name} (${part.quantity} unidades) en zona: ${part.zone}`,
-        priority: part.is_critical ? 'high' : 'medium',
-        intervention_type: 'corrective',
+        priority: part.is_critical ? 'critical' : 'high',
         created_by_technician_id: technicianId,
       });
 
       if (partsRequest.success && partsRequest.data) {
+        await createPartsRequest({
+          service_request_id: partsRequest.data.id,
+          part_name: part.part_name,
+          quantity: part.quantity,
+          zone: part.zone,
+          urgency: part.is_critical ? 'immediate' : 'this_week',
+          reason_for_urgency: reportData.final_state === 'detenido' ? 'Ascensor detenido' : undefined,
+        });
+
         results.push(partsRequest.data);
       }
     }
   }
 
+  // 3. Crear solicitud de apoyo técnico
   if (reportData.requires_support && reportData.support_details) {
-    const diagnosticRequest = await createServiceRequest({
-      request_type: 'diagnostic',
+    const supportRequest = await createServiceRequest({
+      request_type: 'support',
       source_type: 'emergency_visit',
       source_id: emergencyId,
       elevator_id: elevatorId,
       client_id: clientId,
       description: reportData.support_details.reason,
       priority: 'high',
-      intervention_type: 'corrective',
       created_by_technician_id: technicianId,
     });
 
-    if (diagnosticRequest.success && diagnosticRequest.data) {
-      results.push(diagnosticRequest.data);
+    if (supportRequest.success && supportRequest.data) {
+      await createSupportRequest({
+        service_request_id: supportRequest.data.id,
+        support_type: reportData.support_details.support_type,
+        reason: reportData.support_details.reason,
+        skills_needed: reportData.support_details.skills_needed,
+      });
+
+      results.push(supportRequest.data);
     }
   }
 
   return results;
 }
+
+// =============================================
+// FUNCIONES AUXILIARES PARA CREAR DETALLES
+// =============================================
+
+export async function createRepairRequest(data: CreateRepairRequestData) {
+  try {
+    const { error } = await supabase.from('repair_requests').insert({
+      service_request_id: data.service_request_id,
+      repair_category: data.repair_category,
+      estimated_hours: data.estimated_hours,
+      requires_multiple_technicians: data.requires_multiple_technicians || false,
+      number_of_technicians: data.number_of_technicians || 1,
+      requires_specialized_technician: data.requires_specialized_technician || false,
+      specialization_needed: data.specialization_needed,
+      requires_special_tools: data.requires_special_tools || false,
+      tools_needed: data.tools_needed,
+      elevator_operational: data.elevator_operational ?? false,
+      can_wait: data.can_wait ?? true,
+      max_wait_days: data.max_wait_days,
+      photos: data.photos || [],
+    });
+
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error('Error creating repair request:', error);
+    return { success: false, error };
+  }
+}
+
+export async function createPartsRequest(data: CreatePartsRequestData) {
+  try {
+    const { error } = await supabase.from('parts_requests').insert({
+      service_request_id: data.service_request_id,
+      part_name: data.part_name,
+      part_code: data.part_code,
+      brand: data.brand,
+      model: data.model,
+      quantity: data.quantity,
+      zone: data.zone,
+      urgency: data.urgency,
+      reason_for_urgency: data.reason_for_urgency,
+      status: 'pending',
+      photos: data.photos || [],
+    });
+
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error('Error creating parts request:', error);
+    return { success: false, error };
+  }
+}
+
+export async function createSupportRequest(data: CreateSupportRequestData) {
+  try {
+    const { error } = await supabase.from('support_requests').insert({
+      service_request_id: data.service_request_id,
+      support_type: data.support_type,
+      reason: data.reason,
+      skills_needed: data.skills_needed,
+      specific_requirements: data.specific_requirements,
+      status: 'pending',
+    });
+
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error('Error creating support request:', error);
+    return { success: false, error };
+  }
+}
+
+// =============================================
+// UTILIDADES
+// =============================================
+
+function categorizeRepairFromQuestion(questionText: string): 'motor' | 'doors' | 'electrical' | 'hydraulic' | 'control_panel' | 'cabin' | 'cables' | 'other' {
+  const text = questionText.toLowerCase();
+
+  if (text.includes('motor') || text.includes('tracción')) return 'motor';
+  if (text.includes('puerta') || text.includes('door')) return 'doors';
+  if (text.includes('eléctric') || text.includes('electric') || text.includes('contacto')) return 'electrical';
+  if (text.includes('hidráulic') || text.includes('hydraulic') || text.includes('pistón')) return 'hydraulic';
+  if (text.includes('botonera') || text.includes('control') || text.includes('panel')) return 'control_panel';
+  if (text.includes('cabina') || text.includes('cabin')) return 'cabin';
+  if (text.includes('cable') || text.includes('polea')) return 'cables';
+
+  return 'other';
+}
+
+// =============================================
+// FUNCIÓN PARA OBTENER SOLICITUDES PENDIENTES
+// =============================================
 
 export async function getPendingServiceRequests(adminId?: string) {
   try {
@@ -305,6 +425,10 @@ export async function getPendingServiceRequests(adminId?: string) {
   }
 }
 
+// =============================================
+// FUNCIÓN PARA ACTUALIZAR ESTADO DE SOLICITUD
+// =============================================
+
 export async function updateServiceRequestStatus(
   requestId: string,
   status: string,
@@ -318,8 +442,13 @@ export async function updateServiceRequestStatus(
       assigned_to_admin_id: adminId,
     };
 
-    if (notes) updateData.resolution_notes = notes;
-    if (status === 'completed') updateData.completed_at = new Date().toISOString();
+    if (notes) {
+      updateData.resolution_notes = notes;
+    }
+
+    if (status === 'completed') {
+      updateData.completed_at = new Date().toISOString();
+    }
 
     const { error } = await supabase
       .from('service_requests')
