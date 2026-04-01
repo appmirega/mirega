@@ -66,6 +66,29 @@ type CreateFormState = {
   priority: string;
 };
 
+type ServiceRequestForOT = {
+  id: string;
+  title: string;
+  description: string;
+  client_id: string | null;
+  elevator_id: string | null;
+  priority: string | null;
+  created_at: string;
+  request_type: string | null;
+  intervention_type: string | null;
+  clients?: {
+    company_name: string | null;
+    building_name: string | null;
+  } | null;
+  elevators?: {
+    elevator_number: number | null;
+    tower_name?: string | null;
+    location_name?: string | null;
+    location_building?: string | null;
+    model?: string | null;
+  } | null;
+};
+
 const emptyForm = (): CreateFormState => ({
   title: "",
   description: "",
@@ -153,6 +176,60 @@ function getElevatorLabel(elevator: ElevatorRow) {
   return elevatorNumber;
 }
 
+function getRequestTypeLabel(type?: string | null) {
+  switch (type) {
+    case "repair":
+      return "Trabajos / Reparación";
+    case "parts":
+      return "Repuestos";
+    case "diagnostic":
+      return "Diagnóstico Técnico";
+    default:
+      return type || "Solicitud";
+  }
+}
+
+function getInterventionLabel(type?: string | null) {
+  switch (type) {
+    case "preventive":
+      return "Preventivo";
+    case "corrective":
+      return "Correctivo";
+    case "improvement":
+      return "Mejora / Modernización";
+    default:
+      return type || "—";
+  }
+}
+
+function mapRequestTypeToWorkType(requestType?: string | null): string {
+  switch (requestType) {
+    case "parts":
+      return "repair";
+    case "diagnostic":
+      return "inspection";
+    case "repair":
+    default:
+      return "repair";
+  }
+}
+
+function getRequestElevatorLabel(request: ServiceRequestForOT) {
+  const elevatorNumber =
+    request.elevators?.elevator_number !== null &&
+    request.elevators?.elevator_number !== undefined
+      ? `Ascensor #${request.elevators.elevator_number}`
+      : "Ascensor";
+
+  const towerOrLocation =
+    request.elevators?.tower_name ||
+    request.elevators?.location_name ||
+    request.elevators?.location_building ||
+    request.elevators?.model;
+
+  return towerOrLocation ? `${elevatorNumber} — ${towerOrLocation}` : elevatorNumber;
+}
+
 export function WorkOrdersView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -167,6 +244,9 @@ export function WorkOrdersView() {
   const [elevators, setElevators] = useState<ElevatorRow[]>([]);
   const [technicians, setTechnicians] = useState<TechnicianRow[]>([]);
   const [partsCatalog, setPartsCatalog] = useState<PartCatalogItem[]>([]);
+
+  const [requestsForOT, setRequestsForOT] = useState<ServiceRequestForOT[]>([]);
+  const [selectedServiceRequestId, setSelectedServiceRequestId] = useState<string | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [form, setForm] = useState<CreateFormState>(emptyForm());
@@ -184,10 +264,7 @@ export function WorkOrdersView() {
   const filteredElevators = useMemo(() => {
     if (!form.client_id) return [];
 
-    const filtered = elevators.filter(
-      (elevator) => elevator.client_id === form.client_id
-    );
-
+    const filtered = elevators.filter((elevator) => elevator.client_id === form.client_id);
     const unique = new Map<string, ElevatorRow>();
 
     for (const elevator of filtered) {
@@ -201,9 +278,7 @@ export function WorkOrdersView() {
   }, [elevators, form.client_id]);
 
   const selectedElevators = useMemo(() => {
-    return filteredElevators.filter((elevator) =>
-      selectedElevatorIds.includes(elevator.id)
-    );
+    return filteredElevators.filter((elevator) => selectedElevatorIds.includes(elevator.id));
   }, [filteredElevators, selectedElevatorIds]);
 
   useEffect(() => {
@@ -217,6 +292,39 @@ export function WorkOrdersView() {
     }
     void loadItems(selectedWorkOrderId);
   }, [selectedWorkOrderId]);
+
+  async function loadRequestsForOT() {
+    const { data, error } = await supabase
+      .from("service_requests")
+      .select(`
+        id,
+        title,
+        description,
+        client_id,
+        elevator_id,
+        priority,
+        created_at,
+        request_type,
+        intervention_type,
+        clients:client_id (
+          company_name,
+          building_name
+        ),
+        elevators:elevator_id (
+          elevator_number,
+          tower_name,
+          location_name,
+          location_building,
+          model
+        )
+      `)
+      .eq("status", "processing")
+      .eq("workflow_path", "quotation_ot")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    setRequestsForOT((data as ServiceRequestForOT[]) || []);
+  }
 
   async function loadAll() {
     setLoading(true);
@@ -259,6 +367,8 @@ export function WorkOrdersView() {
       setElevators((elevatorsRes.data ?? []) as ElevatorRow[]);
       setTechnicians((techniciansRes.data ?? []) as TechnicianRow[]);
       setPartsCatalog(partsData);
+
+      await loadRequestsForOT();
 
       if (workOrdersData.length > 0 && !selectedWorkOrderId) {
         setSelectedWorkOrderId(workOrdersData[0].id);
@@ -351,6 +461,38 @@ export function WorkOrdersView() {
     );
   }
 
+  function resetCreateForm() {
+    setShowCreateForm(false);
+    setForm(emptyForm());
+    setItems([]);
+    setSelectedQuotationFile(null);
+    setSelectedElevatorIds([]);
+    setSelectedServiceRequestId(null);
+  }
+
+  function prefillFromServiceRequest(req: ServiceRequestForOT) {
+    setSelectedServiceRequestId(req.id);
+    setShowCreateForm(true);
+    setForm({
+      ...emptyForm(),
+      title: req.title || "",
+      description: req.description || "",
+      client_id: req.client_id || "",
+      building_id: "",
+      work_type: mapRequestTypeToWorkType(req.request_type),
+      quotation_number: "",
+      quotation_pdf_url: "",
+      estimated_days: "",
+      required_technicians: "1",
+      is_internal: true,
+      valid_until: "",
+      priority: req.priority || "medium",
+    });
+    setSelectedElevatorIds(req.elevator_id ? [req.elevator_id] : []);
+    setItems([]);
+    setSelectedQuotationFile(null);
+  }
+
   async function uploadQuotationPdf(file: File, quotationNumber: string): Promise<string> {
     const safeQuotation = quotationNumber.replace(/[^a-zA-Z0-9_-]/g, "_");
     const fileExt = file.name.split(".").pop() || "pdf";
@@ -394,9 +536,7 @@ export function WorkOrdersView() {
       }
 
       const invalidSingleScope = items.some(
-        (item) =>
-          item.scope_type === "single_elevator" &&
-          !item.target_elevator_id
+        (item) => item.scope_type === "single_elevator" && !item.target_elevator_id
       );
 
       if (invalidSingleScope) {
@@ -458,13 +598,24 @@ export function WorkOrdersView() {
 
       await saveWorkOrderItems(created.id, itemsPayload as any);
 
-      setShowCreateForm(false);
-      setForm(emptyForm());
-      setItems([]);
-      setSelectedQuotationFile(null);
-      setSelectedElevatorIds([]);
+      if (selectedServiceRequestId) {
+        const { error: linkError } = await supabase
+          .from("service_requests")
+          .update({
+            linked_work_order_id: created.id,
+            work_order_id: created.id,
+            quotation_number: form.quotation_number.trim(),
+            status: "approved",
+            reviewed_at: new Date().toISOString(),
+          })
+          .eq("id", selectedServiceRequestId);
+
+        if (linkError) throw linkError;
+      }
+
       await loadAll();
       setSelectedWorkOrderId(created.id);
+      resetCreateForm();
     } catch (err: any) {
       console.error("Error creating work order:", err);
       setError(err?.message || "No fue posible crear la orden de trabajo.");
@@ -526,7 +677,13 @@ export function WorkOrdersView() {
 
         <button
           type="button"
-          onClick={() => setShowCreateForm((prev) => !prev)}
+          onClick={() => {
+            if (showCreateForm) {
+              resetCreateForm();
+            } else {
+              setShowCreateForm(true);
+            }
+          }}
           className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
         >
           {showCreateForm ? "Cerrar formulario" : "Nueva OT"}
@@ -539,11 +696,87 @@ export function WorkOrdersView() {
         </div>
       )}
 
+      {requestsForOT.length > 0 && (
+        <div className="rounded-xl border bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Solicitudes en Cotización</h2>
+              <p className="text-sm text-slate-600">
+                Solicitudes derivadas desde el flujo de servicios para crear cotización y OT.
+              </p>
+            </div>
+            <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-semibold text-purple-800">
+              {requestsForOT.length} pendiente(s)
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            {requestsForOT.map((req) => (
+              <div
+                key={req.id}
+                className={`rounded-lg border p-4 ${
+                  selectedServiceRequestId === req.id ? "border-slate-900 bg-slate-50" : "border-slate-200"
+                }`}
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-2">
+                    <div className="font-semibold text-slate-900">{req.title}</div>
+                    <div className="text-sm text-slate-600">
+                      {(req.clients?.company_name || req.clients?.building_name || "Cliente")}
+                      {" — "}
+                      {getRequestElevatorLabel(req)}
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full border bg-slate-100 px-3 py-1 font-semibold text-slate-700">
+                        {getRequestTypeLabel(req.request_type)}
+                      </span>
+                      <span className="rounded-full border bg-slate-100 px-3 py-1 font-semibold text-slate-700">
+                        {getInterventionLabel(req.intervention_type)}
+                      </span>
+                      <span className="rounded-full border bg-orange-100 px-3 py-1 font-semibold text-orange-800">
+                        Prioridad: {(req.priority || "medium").toUpperCase()}
+                      </span>
+                      <span className="rounded-full border bg-purple-100 px-3 py-1 font-semibold text-purple-800">
+                        En cotización
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-700 whitespace-pre-line">{req.description}</p>
+                    <div className="text-xs text-slate-500">
+                      Ingresada el {formatDate(req.created_at)}
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => prefillFromServiceRequest(req)}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                    >
+                      Crear OT
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {showCreateForm && (
         <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-xl font-bold text-slate-900">
-            Crear nueva orden de trabajo
-          </h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-bold text-slate-900">
+              {selectedServiceRequestId
+                ? "Crear OT desde solicitud en cotización"
+                : "Crear nueva orden de trabajo"}
+            </h2>
+
+            {selectedServiceRequestId && (
+              <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-800">
+                Solicitud vinculada
+              </span>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div>
@@ -570,7 +803,7 @@ export function WorkOrdersView() {
                 <option value="">Seleccionar cliente</option>
                 {clients.map((client) => (
                   <option key={client.id} value={client.id}>
-                    {client.company_name || client.id}
+                    {client.company_name || client.building_name || client.id}
                   </option>
                 ))}
               </select>
@@ -887,14 +1120,16 @@ export function WorkOrdersView() {
                       </div>
 
                       {item.item_type === "part" ? (
-                        <div>
+                        <div className="md:col-span-2">
                           <label className="mb-1 block text-xs font-medium text-slate-600">
-                            Catálogo
+                            Repuesto catálogo
                           </label>
                           <select
                             value={item.part_catalog_id || ""}
                             onChange={(e) =>
-                              updateItem(item.localId, { part_catalog_id: e.target.value })
+                              updateItem(item.localId, {
+                                part_catalog_id: e.target.value || undefined,
+                              })
                             }
                             className="w-full rounded-lg border px-3 py-2"
                           >
@@ -907,7 +1142,7 @@ export function WorkOrdersView() {
                           </select>
                         </div>
                       ) : (
-                        <div>
+                        <div className="md:col-span-2">
                           <label className="mb-1 block text-xs font-medium text-slate-600">
                             Descripción
                           </label>
@@ -917,7 +1152,6 @@ export function WorkOrdersView() {
                               updateItem(item.localId, { description: e.target.value })
                             }
                             className="w-full rounded-lg border px-3 py-2"
-                            placeholder="Descripción"
                           />
                         </div>
                       )}
@@ -928,11 +1162,12 @@ export function WorkOrdersView() {
                         </label>
                         <input
                           type="number"
-                          min="0"
-                          step="0.01"
+                          min="1"
                           value={item.quantity}
                           onChange={(e) =>
-                            updateItem(item.localId, { quantity: Number(e.target.value) })
+                            updateItem(item.localId, {
+                              quantity: Number(e.target.value) || 1,
+                            })
                           }
                           className="w-full rounded-lg border px-3 py-2"
                         />
@@ -948,26 +1183,6 @@ export function WorkOrdersView() {
                             updateItem(item.localId, { unit: e.target.value })
                           }
                           className="w-full rounded-lg border px-3 py-2"
-                          placeholder="unidad / mt / servicio"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600">
-                          Garantía meses
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={item.warranty_months ?? ""}
-                          onChange={(e) =>
-                            updateItem(item.localId, {
-                              warranty_months: e.target.value
-                                ? Number(e.target.value)
-                                : undefined,
-                            })
-                          }
-                          className="w-full rounded-lg border px-3 py-2"
                         />
                       </div>
                     </div>
@@ -976,13 +1191,12 @@ export function WorkOrdersView() {
                       <label className="mb-1 block text-xs font-medium text-slate-600">
                         Notas
                       </label>
-                      <input
+                      <textarea
                         value={item.notes}
                         onChange={(e) =>
                           updateItem(item.localId, { notes: e.target.value })
                         }
-                        className="w-full rounded-lg border px-3 py-2"
-                        placeholder="Observaciones del ítem"
+                        className="min-h-[80px] w-full rounded-lg border px-3 py-2"
                       />
                     </div>
                   </div>
@@ -994,13 +1208,7 @@ export function WorkOrdersView() {
           <div className="mt-6 flex justify-end gap-3">
             <button
               type="button"
-              onClick={() => {
-                setShowCreateForm(false);
-                setForm(emptyForm());
-                setItems([]);
-                setSelectedQuotationFile(null);
-                setSelectedElevatorIds([]);
-              }}
+              onClick={() => resetCreateForm()}
               className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50"
             >
               Cancelar
@@ -1041,84 +1249,76 @@ export function WorkOrdersView() {
                 </tr>
               </thead>
               <tbody>
-                {workOrders.map((wo) => (
-                  <tr
-                    key={wo.id}
-                    className={`border-t ${
-                      selectedWorkOrderId === wo.id ? "bg-slate-50" : "bg-white"
-                    }`}
-                  >
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedWorkOrderId(wo.id)}
-                        className="text-left"
-                      >
-                        <div className="font-semibold text-slate-900">
-                          OT-{wo.ot_number}
-                        </div>
-                        <div className="text-xs text-slate-500">{wo.title}</div>
-                      </button>
-                    </td>
-
-                    <td className="px-4 py-3">{wo.client_name || "—"}</td>
-                    <td className="px-4 py-3">{getStatusLabel(wo.status)}</td>
-                    <td className="px-4 py-3">{getApprovalLabel(wo.client_approval_status)}</td>
-                    <td className="px-4 py-3">{wo.technician_name || "Sin asignar"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col gap-2">
-                        {wo.status === "waiting_client_approval" && (
-                          <button
-                            type="button"
-                            onClick={() => void handleAdminApprove(wo.id)}
-                            className="rounded-lg border px-3 py-1.5 text-xs hover:bg-slate-50"
-                          >
-                            Aprobar manualmente
-                          </button>
-                        )}
-
-                        {(wo.status === "approved" ||
-                          wo.status === "waiting_client_approval") && (
-                          <div className="flex gap-2">
-                            <select
-                              value={assignTechnicianMap[wo.id] || ""}
-                              onChange={(e) =>
-                                setAssignTechnicianMap((prev) => ({
-                                  ...prev,
-                                  [wo.id]: e.target.value,
-                                }))
-                              }
-                              className="rounded-lg border px-2 py-1.5 text-xs"
-                            >
-                              <option value="">Asignar técnico</option>
-                              {technicians.map((tech) => (
-                                <option key={tech.id} value={tech.id}>
-                                  {tech.full_name || tech.id}
-                                </option>
-                              ))}
-                            </select>
-
-                            <button
-                              type="button"
-                              disabled={!assignTechnicianMap[wo.id] || assigningId === wo.id}
-                              onClick={() => void handleAssignTechnician(wo.id)}
-                              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                            >
-                              {assigningId === wo.id ? "..." : "Asignar"}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-
-                {workOrders.length === 0 && (
+                {workOrders.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                       No hay órdenes de trabajo registradas.
                     </td>
                   </tr>
+                ) : (
+                  workOrders.map((wo) => (
+                    <tr
+                      key={wo.id}
+                      className={`border-t ${
+                        selectedWorkOrderId === wo.id ? "bg-slate-50" : "bg-white"
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedWorkOrderId(wo.id)}
+                          className="text-left"
+                        >
+                          <div className="font-semibold text-slate-900">OT-{wo.ot_number}</div>
+                          <div className="text-xs text-slate-500">{wo.title}</div>
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">{wo.client_name || "—"}</td>
+                      <td className="px-4 py-3">{getStatusLabel(wo.status)}</td>
+                      <td className="px-4 py-3">{getApprovalLabel(wo.client_approval_status)}</td>
+                      <td className="px-4 py-3">{wo.technician_name || "—"}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          {wo.client_approval_status === "pending" && (
+                            <button
+                              type="button"
+                              onClick={() => void handleAdminApprove(wo.id)}
+                              className="rounded-lg border px-3 py-1.5 text-xs hover:bg-slate-50"
+                            >
+                              Aprobar admin
+                            </button>
+                          )}
+
+                          <select
+                            value={assignTechnicianMap[wo.id] || ""}
+                            onChange={(e) =>
+                              setAssignTechnicianMap((prev) => ({
+                                ...prev,
+                                [wo.id]: e.target.value,
+                              }))
+                            }
+                            className="rounded-lg border px-2 py-1.5 text-xs"
+                          >
+                            <option value="">Asignar técnico</option>
+                            {technicians.map((tech) => (
+                              <option key={tech.id} value={tech.id}>
+                                {tech.full_name || tech.id}
+                              </option>
+                            ))}
+                          </select>
+
+                          <button
+                            type="button"
+                            onClick={() => void handleAssignTechnician(wo.id)}
+                            disabled={!assignTechnicianMap[wo.id] || assigningId === wo.id}
+                            className="rounded-lg border px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            {assigningId === wo.id ? "Asignando..." : "Asignar"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
@@ -1131,102 +1331,96 @@ export function WorkOrdersView() {
           </div>
 
           {!selectedWorkOrder ? (
-            <div className="p-6 text-sm text-slate-500">
-              Selecciona una orden para ver su detalle.
+            <div className="p-4 text-sm text-slate-500">
+              Selecciona una orden de trabajo para ver su detalle.
             </div>
           ) : (
-            <div className="space-y-5 p-5">
+            <div className="space-y-4 p-4 text-sm">
               <div>
-                <div className="text-xs uppercase text-slate-500">Orden</div>
-                <div className="text-xl font-bold text-slate-900">
-                  OT-{selectedWorkOrder.ot_number}
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Título
                 </div>
-                <div className="text-sm text-slate-600">{selectedWorkOrder.title}</div>
+                <div className="mt-1 font-semibold text-slate-900">{selectedWorkOrder.title}</div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div>
-                  <div className="text-slate-500">Cliente</div>
-                  <div className="font-medium">{selectedWorkOrder.client_name || "—"}</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Cliente
+                  </div>
+                  <div className="mt-1 text-slate-900">{selectedWorkOrder.client_name || "—"}</div>
                 </div>
+
                 <div>
-                  <div className="text-slate-500">Edificio</div>
-                  <div className="font-medium">{selectedWorkOrder.building_name || "—"}</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Ascensor
+                  </div>
+                  <div className="mt-1 text-slate-900">{selectedWorkOrder.elevator_name || "—"}</div>
                 </div>
+
                 <div>
-                  <div className="text-slate-500">Ascensor referencia</div>
-                  <div className="font-medium">{selectedWorkOrder.elevator_name || "—"}</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Estado
+                  </div>
+                  <div className="mt-1 text-slate-900">{getStatusLabel(selectedWorkOrder.status)}</div>
                 </div>
+
                 <div>
-                  <div className="text-slate-500">Técnico</div>
-                  <div className="font-medium">{selectedWorkOrder.technician_name || "—"}</div>
-                </div>
-                <div>
-                  <div className="text-slate-500">Estado</div>
-                  <div className="font-medium">{getStatusLabel(selectedWorkOrder.status)}</div>
-                </div>
-                <div>
-                  <div className="text-slate-500">Aprobación</div>
-                  <div className="font-medium">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Aprobación cliente
+                  </div>
+                  <div className="mt-1 text-slate-900">
                     {getApprovalLabel(selectedWorkOrder.client_approval_status)}
                   </div>
                 </div>
+
                 <div>
-                  <div className="text-slate-500">Cotización</div>
-                  <div className="font-medium">{selectedWorkOrder.quotation_number || "—"}</div>
-                </div>
-                <div>
-                  <div className="text-slate-500">Válida hasta</div>
-                  <div className="font-medium">
-                    {formatDate((selectedWorkOrder as any).valid_until)}
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    N° cotización
+                  </div>
+                  <div className="mt-1 text-slate-900">
+                    {selectedWorkOrder.quotation_number || "—"}
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <div className="mb-1 text-slate-500">Descripción</div>
-                <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
-                  {selectedWorkOrder.description || "Sin descripción"}
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Fecha creación
+                  </div>
+                  <div className="mt-1 text-slate-900">{formatDate(selectedWorkOrder.created_at)}</div>
                 </div>
               </div>
 
               <div>
-                <div className="mb-2 text-slate-500">Ítems de la OT</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Descripción
+                </div>
+                <div className="mt-1 whitespace-pre-line text-slate-900">
+                  {selectedWorkOrder.description || "—"}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Ítems
+                </div>
                 {selectedItems.length === 0 ? (
-                  <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">
-                    Esta OT no tiene ítems registrados.
-                  </div>
+                  <div className="mt-1 text-slate-500">No hay ítems cargados.</div>
                 ) : (
-                  <div className="space-y-2">
-                    {selectedItems.map((item) => (
-                      <div key={item.id} className="rounded-lg border p-3 text-sm">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="font-medium text-slate-900">{item.description}</div>
-                          <div className="text-xs uppercase text-slate-500">
-                            {item.item_type === "part"
-                              ? "Repuesto"
-                              : item.item_type === "material"
-                              ? "Material"
-                              : "Trabajo"}
-                          </div>
+                  <div className="mt-2 space-y-2">
+                    {selectedItems.map((item: any, idx: number) => (
+                      <div key={item.id || idx} className="rounded-lg border p-3">
+                        <div className="font-medium text-slate-900">
+                          {item.description || "Ítem sin descripción"}
                         </div>
-                        <div className="mt-1 text-slate-600">
-                          Cantidad: {item.quantity} {item.unit || ""}
+                        <div className="mt-1 text-xs text-slate-600">
+                          {item.item_type} · Cantidad: {item.quantity} {item.unit || ""}
                         </div>
-                        {item.scope_type && (
-                          <div className="text-slate-500">
-                            Aplica a:{" "}
-                            {item.scope_type === "all_selected_elevators"
-                              ? "Todos los ascensores seleccionados"
-                              : "Un ascensor específico"}
+                        {item.notes && (
+                          <div className="mt-1 text-xs text-slate-600 whitespace-pre-line">
+                            {item.notes}
                           </div>
                         )}
-                        {typeof item.warranty_months === "number" && (
-                          <div className="text-slate-600">
-                            Garantía: {item.warranty_months} meses
-                          </div>
-                        )}
-                        {item.notes && <div className="text-slate-500">{item.notes}</div>}
                       </div>
                     ))}
                   </div>
@@ -1239,9 +1433,9 @@ export function WorkOrdersView() {
                     href={selectedWorkOrder.quotation_pdf_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50"
+                    className="text-sm font-medium text-blue-600 hover:text-blue-700"
                   >
-                    Ver PDF cotización
+                    Ver PDF de cotización
                   </a>
                 </div>
               )}
