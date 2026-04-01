@@ -46,7 +46,6 @@ export async function createServiceRequest(data: CreateServiceRequestData) {
       created_by_technician_id: data.created_by_technician_id
     });
 
-    // Generar título si no se provee
     let title = data.title?.trim();
     if (!title) {
       const typeLabel = getRequestTypeLabel(normalizedRequestType);
@@ -75,6 +74,13 @@ export async function createServiceRequest(data: CreateServiceRequestData) {
         created_by_technician_id: data.created_by_technician_id,
         photo_1_url: data.photo_1_url || null,
         photo_2_url: data.photo_2_url || null,
+
+        // 🔥 CLAVE: NO DEFINIR COTIZACIÓN AQUÍ
+        requires_quotation: null,
+        workflow_path: null,
+        processed_at: null,
+        closed_at: null,
+
         status: 'pending',
       })
       .select()
@@ -226,7 +232,6 @@ export async function createRequestsFromEmergency(
       ? 'high'
       : 'medium';
 
-  // 1. Crear solicitud de trabajos / reparación
   if (reportData.requires_repair || reportData.final_state === 'detenido') {
     const repairRequest = await createServiceRequest({
       request_type: 'repair',
@@ -252,7 +257,6 @@ export async function createRequestsFromEmergency(
     }
   }
 
-  // 2. Crear solicitudes de repuestos
   if (reportData.requires_parts && reportData.parts && reportData.parts.length > 0) {
     for (const part of reportData.parts) {
       const partsRequest = await createServiceRequest({
@@ -282,7 +286,6 @@ export async function createRequestsFromEmergency(
     }
   }
 
-  // 3. Crear solicitud de diagnóstico técnico
   if (reportData.requires_support && reportData.support_details) {
     const diagnosticRequest = await createServiceRequest({
       request_type: 'diagnostic',
@@ -385,24 +388,6 @@ export async function createSupportRequest(data: CreateSupportRequestData) {
 }
 
 // =============================================
-// UTILIDADES
-// =============================================
-
-function categorizeRepairFromQuestion(questionText: string): 'motor' | 'doors' | 'electrical' | 'hydraulic' | 'control_panel' | 'cabin' | 'cables' | 'other' {
-  const text = questionText.toLowerCase();
-
-  if (text.includes('motor') || text.includes('tracción')) return 'motor';
-  if (text.includes('puerta') || text.includes('door')) return 'doors';
-  if (text.includes('eléctric') || text.includes('electric') || text.includes('contacto')) return 'electrical';
-  if (text.includes('hidráulic') || text.includes('hydraulic') || text.includes('pistón')) return 'hydraulic';
-  if (text.includes('botonera') || text.includes('control') || text.includes('panel')) return 'control_panel';
-  if (text.includes('cabina') || text.includes('cabin')) return 'cabin';
-  if (text.includes('cable') || text.includes('polea')) return 'cables';
-
-  return 'other';
-}
-
-// =============================================
 // FUNCIÓN PARA OBTENER SOLICITUDES PENDIENTES
 // =============================================
 
@@ -445,10 +430,6 @@ export async function getPendingServiceRequests(adminId?: string) {
     return { success: false, error };
   }
 }
-
-// =============================================
-// FUNCIÓN PARA ACTUALIZAR ESTADO DE SOLICITUD
-// =============================================
 
 export async function updateServiceRequestStatus(
   requestId: string,
