@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase';
 import { normalizeRUT, validateRUT } from '../../utils/validateRUT';
 import { CHILE_REGIONS } from '../../data/chileRegions';
 
-export default function ClientForm() {
+export function ClientForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,22 +49,17 @@ export default function ClientForm() {
     if (!clientData.company_name) throw new Error('Falta razón social');
     if (!clientData.building_name) throw new Error('Falta edificio');
     if (!clientData.internal_alias) throw new Error('Falta alias');
-
     if (!rut) throw new Error('Falta RUT');
     if (!validateRUT(rut)) throw new Error('RUT inválido');
-
     if (!clientData.address) throw new Error('Falta dirección');
     if (!clientData.commune) throw new Error('Falta comuna');
     if (!clientData.region) throw new Error('Falta región');
   }
 
-  // 🔥 ESTA ES LA FUNCIÓN QUE TE ROMPÍA TODO (YA CORREGIDA)
   const buildElevatorPayloads = (clientId: string) => {
     const payloads: any[] = [];
-
     let runningNumber = 1;
 
-    // Ejemplo base (mantén tu lógica real si la tienes)
     const towers = ['A', 'B'];
     const elevatorsPerTower = 2;
 
@@ -82,7 +77,7 @@ export default function ClientForm() {
     return payloads;
   };
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
@@ -111,7 +106,11 @@ export default function ClientForm() {
       const elevators = buildElevatorPayloads(data.id);
 
       if (elevators.length) {
-        await supabase.from('elevators').insert(elevators);
+        const { error: elevatorsError } = await supabase
+          .from('elevators')
+          .insert(elevators);
+
+        if (elevatorsError) throw elevatorsError;
       }
 
       alert('Cliente creado correctamente');
@@ -124,7 +123,6 @@ export default function ClientForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-
       <input
         placeholder="RAZÓN SOCIAL"
         value={clientData.company_name}
@@ -195,3 +193,5 @@ export default function ClientForm() {
     </form>
   );
 }
+
+export default ClientForm;
