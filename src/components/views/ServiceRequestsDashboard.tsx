@@ -406,6 +406,24 @@ export function ServiceRequestsDashboard() {
     }
   };
 
+  const getQuotationBadgeClass = (value: boolean | null | undefined) => {
+    if (value === true) {
+      return 'bg-purple-100 text-purple-800 border-purple-300';
+    }
+
+    if (value === false) {
+      return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+    }
+
+    return 'bg-gray-100 text-gray-700 border-gray-300';
+  };
+
+  const getQuotationLabel = (value: boolean | null | undefined) => {
+    if (value === true) return 'Requiere cotización';
+    if (value === false) return 'No requiere cotización';
+    return 'Por definir';
+  };
+
   const getTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -711,7 +729,7 @@ export function ServiceRequestsDashboard() {
     if (activeTab === 'processing') {
       return (
         <button
-          onClick={() => window.location.href = '/work-orders'}
+          onClick={() => alert('Gestiona esta solicitud desde el módulo OT en el menú lateral.')}
           className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium flex items-center gap-2"
         >
           <ClipboardList className="w-4 h-4" />
@@ -949,12 +967,8 @@ export function ServiceRequestsDashboard() {
                         {getStatusLabel(request.status)}
                       </span>
 
-                      <span className={`px-3 py-1 rounded-full border text-xs font-semibold ${
-                        request.requires_quotation
-                          ? 'bg-purple-100 text-purple-800 border-purple-300'
-                          : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      }`}>
-                        {request.requires_quotation ? 'Requiere cotización' : 'No requiere cotización'}
+                      <span className={`px-3 py-1 rounded-full border text-xs font-semibold ${getQuotationBadgeClass(request.requires_quotation)}`}>
+                        {getQuotationLabel(request.requires_quotation)}
                       </span>
                     </div>
 
