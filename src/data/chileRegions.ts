@@ -1,0 +1,18 @@
+export const CHILE_REGIONS = [
+  { value: 'ARICA Y PARINACOTA', label: 'ARICA Y PARINACOTA' },
+  { value: 'TARAPACÁ', label: 'TARAPACÁ' },
+  { value: 'ANTOFAGASTA', label: 'ANTOFAGASTA' },
+  { value: 'ATACAMA', label: 'ATACAMA' },
+  { value: 'COQUIMBO', label: 'COQUIMBO' },
+  { value: 'VALPARAÍSO', label: 'VALPARAÍSO' },
+  { value: 'METROPOLITANA DE SANTIAGO', label: 'METROPOLITANA DE SANTIAGO' },
+  { value: 'LIBERTADOR GENERAL BERNARDO O’HIGGINS', label: 'LIBERTADOR GENERAL BERNARDO O’HIGGINS' },
+  { value: 'MAULE', label: 'MAULE' },
+  { value: 'ÑUBLE', label: 'ÑUBLE' },
+  { value: 'BIOBÍO', label: 'BIOBÍO' },
+  { value: 'LA ARAUCANÍA', label: 'LA ARAUCANÍA' },
+  { value: 'LOS RÍOS', label: 'LOS RÍOS' },
+  { value: 'LOS LAGOS', label: 'LOS LAGOS' },
+  { value: 'AYSÉN DEL GENERAL CARLOS IBÁÑEZ DEL CAMPO', label: 'AYSÉN DEL GENERAL CARLOS IBÁÑEZ DEL CAMPO' },
+  { value: 'MAGALLANES Y DE LA ANTÁRTICA CHILENA', label: 'MAGALLANES Y DE LA ANTÁRTICA CHILENA' },
+];

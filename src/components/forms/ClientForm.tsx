@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { CHILE_REGIONS } from '../../data/chileRegions';
+import { normalizeRUT, validateRUT } from '../../utils/validateRUT';
 import {
   Building2,
   Mail,
@@ -214,7 +216,19 @@ function createAdditionalContact(): AdditionalContact {
 }
 
 function sanitize(value: string) {
-  return value.trim();
+  return (value || '').trim();
+}
+
+function upperText(value: string) {
+  return sanitize(value).toUpperCase();
+}
+
+function normalizeRutInput(value: string) {
+  return normalizeRUT(value);
+}
+
+function onlyDigits(value: string) {
+  return (value || '').replace(/\D/g, '');
 }
 
 function parseOptionalNumber(value: string) {
@@ -595,91 +609,122 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     setGlobalNumbering(true);
   };
 
+const checkRutAlreadyExists = async () => {
+  const normalizedRut = normalizeRutInput(clientData.rut);
+
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, rut');
+
+  if (error) throw error;
+
+  const duplicated = (data || []).some((row) => {
+    const rowRut = normalizeRutInput(row.rut || '');
+    const sameRut = rowRut === normalizedRut;
+    const sameRecord = isEditMode && client?.id ? row.id === client.id : false;
+    return sameRut && !sameRecord;
+  });
+
+  if (duplicated) {
+    throw new Error('Cliente ya creado: ya existe un cliente con ese RUT.');
+  }
+};
+
   const validateClient = () => {
-    if (!sanitize(clientData.company_name)) {
-      throw new Error('Debes ingresar el nombre completo o razón social.');
+  const normalizedRut = normalizeRutInput(clientData.rut);
+
+  if (!sanitize(clientData.company_name)) {
+    throw new Error('Debes ingresar el nombre completo o razón social.');
+  }
+
+  if (!sanitize(clientData.building_name)) {
+    throw new Error('Debes ingresar el nombre del edificio.');
+  }
+
+  if (!sanitize(clientData.internal_alias)) {
+    throw new Error('Debes ingresar el nombre interno o corto del edificio.');
+  }
+
+  if (!normalizedRut) {
+    throw new Error('Debes ingresar el RUT del cliente.');
+  }
+
+  if (!validateRUT(normalizedRut)) {
+    throw new Error('El RUT no es válido. Debe ir sin puntos y con guion. Ejemplo: 15426257-1');
+  }
+
+  if (!sanitize(clientData.address)) {
+    throw new Error('Debes ingresar la dirección principal del cliente.');
+  }
+
+  if (!sanitize(clientData.commune)) {
+    throw new Error('Debes ingresar la comuna.');
+  }
+
+  if (!sanitize(clientData.region)) {
+    throw new Error('Debes ingresar la región.');
+  }
+
+  if (clientData.self_managed) {
+    if (!sanitize(clientData.primary_contact_name)) {
+      throw new Error('Si el edificio es autogestionado, el nombre del contacto principal es obligatorio.');
     }
 
-    if (!sanitize(clientData.building_name)) {
-      throw new Error('Debes ingresar el nombre del edificio.');
+    if (!sanitize(clientData.primary_contact_role)) {
+      throw new Error('Si el edificio es autogestionado, el cargo o responsabilidad del contacto principal es obligatorio.');
     }
 
-    if (!sanitize(clientData.internal_alias)) {
-      throw new Error('Debes ingresar el nombre interno o corto del edificio.');
+    if (!hasAnyContactMethod(clientData.primary_contact_email, clientData.primary_contact_phone)) {
+      throw new Error('Si el edificio es autogestionado, debes ingresar al menos correo o teléfono del contacto principal.');
+    }
+  } else {
+    if (!sanitize(clientData.admin_name)) {
+      throw new Error('Si el edificio tiene administrador, el nombre del administrador es obligatorio.');
     }
 
-    if (!sanitize(clientData.address)) {
-      throw new Error('Debes ingresar la dirección principal del cliente.');
+    if (!hasAnyContactMethod(clientData.admin_email, clientData.admin_phone)) {
+      throw new Error('Si el edificio tiene administrador, debes ingresar al menos correo o teléfono del administrador.');
     }
 
-    if (!sanitize(clientData.commune)) {
-      throw new Error('Debes ingresar la comuna.');
-    }
-
-    if (!sanitize(clientData.region)) {
-      throw new Error('Debes ingresar la región.');
-    }
-
-    if (clientData.self_managed) {
+    if (clientData.enable_building_contacts) {
       if (!sanitize(clientData.primary_contact_name)) {
-        throw new Error('Si el edificio es autogestionado, el nombre del contacto principal es obligatorio.');
+        throw new Error('Si activas encargados y contactos del edificio, el nombre del contacto principal es obligatorio.');
       }
 
       if (!sanitize(clientData.primary_contact_role)) {
-        throw new Error('Si el edificio es autogestionado, el cargo o responsabilidad del contacto principal es obligatorio.');
+        throw new Error('Si activas encargados y contactos del edificio, el cargo o responsabilidad del contacto principal es obligatorio.');
       }
 
       if (!hasAnyContactMethod(clientData.primary_contact_email, clientData.primary_contact_phone)) {
-        throw new Error('Si el edificio es autogestionado, debes ingresar al menos correo o teléfono del contacto principal.');
-      }
-    } else {
-      if (!sanitize(clientData.admin_name)) {
-        throw new Error('Si el edificio tiene administrador, el nombre del administrador es obligatorio.');
-      }
-
-      if (!hasAnyContactMethod(clientData.admin_email, clientData.admin_phone)) {
-        throw new Error('Si el edificio tiene administrador, debes ingresar al menos correo o teléfono del administrador.');
-      }
-
-      if (clientData.enable_building_contacts) {
-        if (!sanitize(clientData.primary_contact_name)) {
-          throw new Error('Si activas encargados y contactos del edificio, el nombre del contacto principal es obligatorio.');
-        }
-
-        if (!sanitize(clientData.primary_contact_role)) {
-          throw new Error('Si activas encargados y contactos del edificio, el cargo o responsabilidad es obligatorio.');
-        }
-
-        if (!hasAnyContactMethod(clientData.primary_contact_email, clientData.primary_contact_phone)) {
-          throw new Error('Si activas encargados y contactos del edificio, debes ingresar al menos correo o teléfono del contacto principal.');
-        }
+        throw new Error('Si activas encargados y contactos del edificio, debes ingresar al menos correo o teléfono del contacto principal.');
       }
     }
+  }
 
-    if (showBuildingContacts) {
-      additionalContacts.forEach((contact, index) => {
-        const hasAnyData =
-          sanitize(contact.name) ||
-          sanitize(contact.role) ||
-          sanitize(contact.email) ||
-          sanitize(contact.phone);
+  if (showBuildingContacts) {
+    additionalContacts.forEach((contact, index) => {
+      const hasAnyData =
+        sanitize(contact.name) ||
+        sanitize(contact.role) ||
+        sanitize(contact.email) ||
+        sanitize(contact.phone);
 
-        if (!hasAnyData) return;
+      if (!hasAnyData) return;
 
-        if (!sanitize(contact.name)) {
-          throw new Error(`Falta el nombre en contacto adicional #${index + 1}.`);
-        }
+      if (!sanitize(contact.name)) {
+        throw new Error(`Falta el nombre en contacto adicional #${index + 1}.`);
+      }
 
-        if (!sanitize(contact.role)) {
-          throw new Error(`Falta el cargo o responsabilidad en contacto adicional #${index + 1}.`);
-        }
+      if (!sanitize(contact.role)) {
+        throw new Error(`Falta el cargo o responsabilidad en contacto adicional #${index + 1}.`);
+      }
 
-        if (!hasAnyContactMethod(contact.email, contact.phone)) {
-          throw new Error(`Debes ingresar correo o teléfono en contacto adicional #${index + 1}.`);
-        }
-      });
-    }
-  };
+      if (!hasAnyContactMethod(contact.email, contact.phone)) {
+        throw new Error(`Debes ingresar correo o teléfono en contacto adicional #${index + 1}.`);
+      }
+    });
+  }
+};
 
   const validateTemplate = (
     template: ElevatorTemplate,
@@ -811,43 +856,44 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   };
 
   const buildAlternateContactsPayload = () => {
-    const filteredAdditionalContacts = showBuildingContacts
-      ? additionalContacts
-          .map((contact) => ({
-            name: sanitize(contact.name),
-            role: sanitize(contact.role),
-            email: sanitize(contact.email),
-            phone: sanitize(contact.phone),
-          }))
-          .filter((contact) => contact.name || contact.role || contact.email || contact.phone)
-      : [];
+  const filteredAdditionalContacts = showBuildingContacts
+    ? additionalContacts
+        .map((contact) => ({
+          name: upperText(contact.name),
+          role: upperText(contact.role),
+          email: sanitize(contact.email).toLowerCase(),
+          phone: sanitize(contact.phone),
+        }))
+        .filter((contact) => contact.name || contact.role || contact.email || contact.phone)
+    : [];
 
-    return {
-      self_managed: clientData.self_managed,
-      admin_company: sanitize(clientData.admin_company) || null,
-      enable_building_contacts: showBuildingContacts,
-      additional_contacts: filteredAdditionalContacts,
-    };
+  return {
+    self_managed: clientData.self_managed,
+    admin_company: upperText(clientData.admin_company) || null,
+    enable_building_contacts: showBuildingContacts,
+    additional_contacts: filteredAdditionalContacts,
+  };
+};
   };
 
   const buildBaseClientPayload = () => ({
-    company_name: sanitize(clientData.company_name),
-    building_name: sanitize(clientData.building_name),
-    internal_alias: sanitize(clientData.internal_alias),
-    rut: sanitize(clientData.rut) || null,
-    address: sanitize(clientData.address) || null,
-    commune: sanitize(clientData.commune) || null,
-    city: sanitize(clientData.region) || null,
-    building_type: clientData.building_type,
-    contact_name: showBuildingContacts ? sanitize(clientData.primary_contact_name) || null : null,
-    contact_person: showBuildingContacts ? sanitize(clientData.primary_contact_role) || null : null,
-    contact_email: showBuildingContacts ? sanitize(clientData.primary_contact_email) || null : null,
-    contact_phone: showBuildingContacts ? sanitize(clientData.primary_contact_phone) || null : null,
-    admin_name: clientData.self_managed ? null : sanitize(clientData.admin_name) || null,
-    admin_email: clientData.self_managed ? null : sanitize(clientData.admin_email) || null,
-    admin_phone: clientData.self_managed ? null : sanitize(clientData.admin_phone) || null,
-    alternate_contacts: buildAlternateContactsPayload(),
-  });
+  company_name: upperText(clientData.company_name),
+  building_name: upperText(clientData.building_name),
+  internal_alias: upperText(clientData.internal_alias),
+  rut: normalizeRutInput(clientData.rut) || null,
+  address: upperText(clientData.address) || null,
+  commune: upperText(clientData.commune) || null,
+  city: upperText(clientData.region) || null,
+  building_type: clientData.building_type,
+  contact_name: showBuildingContacts ? upperText(clientData.primary_contact_name) || null : null,
+  contact_person: showBuildingContacts ? upperText(clientData.primary_contact_role) || null : null,
+  contact_email: showBuildingContacts ? sanitize(clientData.primary_contact_email).toLowerCase() || null : null,
+  contact_phone: showBuildingContacts ? sanitize(clientData.primary_contact_phone) || null : null,
+  admin_name: clientData.self_managed ? null : upperText(clientData.admin_name) || null,
+  admin_email: clientData.self_managed ? null : sanitize(clientData.admin_email).toLowerCase() || null,
+  admin_phone: clientData.self_managed ? null : sanitize(clientData.admin_phone) || null,
+  alternate_contacts: buildAlternateContactsPayload(),
+});
 
   const buildClientInsertPayload = () => ({
     ...buildBaseClientPayload(),
@@ -861,42 +907,83 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   });
 
   const buildElevatorPayloads = (clientId: string) => {
-    const payloads: Record<string, any>[] = [];
-    let globalElevatorNumber = 1;
+  const payloads: Record<string, any>[] = [];
+  let runningElevatorNumber = 1;
 
-    groups.forEach((group) => {
-      let localElevatorNumber = 1;
-      const quantity = Math.max(1, Number(group.quantity || 1));
-      const blockAddress = group.same_address_as_client
-        ? sanitize(clientData.address)
-        : sanitize(group.address);
+  groups.forEach((group) => {
+    let localElevatorNumber = 1;
+    const quantity = Math.max(1, Number(group.quantity || 1));
 
-      const blockBuildingLabel = group.same_address_as_client
-        ? sanitize(clientData.building_name)
-        : `${sanitize(clientData.building_name)} - ${blockAddress}`;
+    const blockAddress = group.same_address_as_client
+      ? upperText(clientData.address)
+      : upperText(group.address);
 
-      const templatesToUse = group.all_equal
-        ? (() => {
-            const baseTemplate = group.templates[0] || createEmptyTemplate();
-            const assignments =
-              baseTemplate.stops_all_floors || quantity === 1
-                ? Array.from({ length: quantity }, () => 'all' as StopPattern)
-                : normalizeStopAssignments(quantity, group.stop_assignments, 'odd');
+    const blockBuildingLabel = group.same_address_as_client
+      ? upperText(clientData.building_name)
+      : `${upperText(clientData.building_name)} - ${blockAddress}`;
 
-            return Array.from({ length: quantity }, (_, templateIndex) =>
-              applyStopPattern(baseTemplate, assignments[templateIndex] || 'all')
-            );
-          })()
-        : group.templates.slice(0, quantity).map((template) =>
-            quantity === 1 ? applyStopPattern(template, 'all') : template
+    const templatesToUse = group.all_equal
+      ? (() => {
+          const baseTemplate = group.templates[0] || createEmptyTemplate();
+          const assignments =
+            baseTemplate.stops_all_floors || quantity === 1
+              ? Array.from({ length: quantity }, () => 'all' as StopPattern)
+              : normalizeStopAssignments(quantity, group.stop_assignments, 'odd');
+
+          return Array.from({ length: quantity }, (_, templateIndex) =>
+            applyStopPattern(baseTemplate, assignments[templateIndex] || 'all')
           );
+        })()
+      : group.templates.slice(0, quantity).map((template) =>
+          quantity === 1 ? applyStopPattern(template, 'all') : template
+        );
 
-      const getNextNumber = () => {
-        if (globalNumbering) {
-          return globalElevatorNumber++;
-        }
-        return localElevatorNumber++;
-      };
+    templatesToUse.forEach((template) => {
+      const elevatorNumber = globalNumbering
+        ? runningElevatorNumber++
+        : localElevatorNumber++;
+
+      const brand =
+        template.brand === 'Otros'
+          ? upperText(template.brand_other)
+          : upperText(template.brand);
+
+      const classification =
+        template.classification === 'otro'
+          ? upperText(template.classification_other)
+          : template.classification;
+
+      payloads.push({
+        client_id: clientId,
+        internal_code: null,
+        elevator_number: elevatorNumber,
+        tower_name: template.use_tower ? upperText(template.tower_name) || null : null,
+        brand: brand || null,
+        model: template.model_unknown ? null : upperText(template.model) || null,
+        serial_number: template.serial_number_not_legible ? null : upperText(template.serial_number) || null,
+        installation_date: template.installation_date_unknown ? null : sanitize(template.installation_date) || null,
+        floors: parseOptionalNumber(template.floors),
+        capacity_kg: parseOptionalNumber(template.capacity_kg),
+        capacity_persons: parseOptionalNumber(template.capacity_persons),
+        elevator_type: template.elevator_type,
+        classification: classification || null,
+        has_machine_room: template.no_machine_room ? false : Boolean(template.has_machine_room),
+        stop_pattern: getStopPattern(template),
+        address: blockAddress || null,
+        building_name: blockBuildingLabel || null,
+        commune: group.same_address_as_client
+          ? upperText(clientData.commune) || null
+          : upperText(group.commune) || null,
+        city: group.same_address_as_client
+          ? upperText(clientData.region) || null
+          : upperText(group.region) || null,
+        is_active: true,
+      });
+    });
+  });
+
+  return payloads;
+};
 
       templatesToUse.forEach((template) => {
         const brand =
@@ -1099,6 +1186,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
     try {
       validateClient();
+      await checkRutAlreadyExists();
 
       if (isEditMode && client?.id) {
         const { error: updateError } = await supabase
@@ -1192,51 +1280,54 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             <Field
               label="Nombre completo / razón social *"
               value={clientData.company_name}
-              onChange={(v) => setClientData({ ...clientData, company_name: v })}
-              placeholder="Ej: Comunidad Edificio Alcántara"
+              onChange={(v) => setClientData({ ...clientData, company_name: upperText(v) })}
+              placeholder="EJ: COMUNIDAD EDIFICIO ALCÁNTARA"
             />
 
             <Field
               label="Nombre del edificio *"
               value={clientData.building_name}
-              onChange={(v) => setClientData({ ...clientData, building_name: v })}
-              placeholder="Ej: Edificio Alcántara"
+              onChange={(v) => setClientData({ ...clientData, building_name: upperText(v) })}
+              placeholder="EJ: EDIFICIO ALCÁNTARA"
             />
 
             <Field
               label="Nombre interno / corto *"
               value={clientData.internal_alias}
-              onChange={(v) => setClientData({ ...clientData, internal_alias: v })}
-              placeholder="Ej: Alcántara"
+              onChange={(v) => setClientData({ ...clientData, internal_alias: upperText(v) })}
+              placeholder="EJ: ALCÁNTARA"
             />
 
             <Field
-              label="RUT"
+              label="RUT *"
               value={clientData.rut}
-              onChange={(v) => setClientData({ ...clientData, rut: v })}
-              placeholder="Ej: 56.049.780-6"
+              onChange={(v) => setClientData({ ...clientData, rut: normalizeRutInput(v) })}
+              placeholder="15426257-1"
             />
 
             <Field
               label="Dirección principal *"
               value={clientData.address}
-              onChange={(v) => setClientData({ ...clientData, address: v })}
-              placeholder="Ej: Alcántara 44"
+              onChange={(v) => setClientData({ ...clientData, address: upperText(v) })}
+              placeholder="EJ: ALCÁNTARA 44"
               icon={<MapPin className="h-4 w-4" />}
             />
 
             <Field
               label="Comuna *"
               value={clientData.commune}
-              onChange={(v) => setClientData({ ...clientData, commune: v })}
-              placeholder="Ej: Las Condes"
+              onChange={(v) => setClientData({ ...clientData, commune: upperText(v) })}
+              placeholder="EJ: LAS CONDES"
             />
 
-            <Field
+            <SelectField
               label="Región *"
               value={clientData.region}
               onChange={(v) => setClientData({ ...clientData, region: v })}
-              placeholder="Ej: Región Metropolitana"
+              options={[
+                { value: '', label: 'SELECCIONA UNA REGIÓN' },
+                ...CHILE_REGIONS,
+              ]}
             />
 
             <SelectField
@@ -1900,7 +1991,7 @@ function Field({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+        className="w-full rounded border border-slate-300 px-3 py-2 uppercase outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
         placeholder={placeholder}
       />
     </div>
