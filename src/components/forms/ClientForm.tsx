@@ -1750,36 +1750,40 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       </button>
                     </div>
 
-                    <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <Field
-                        label="¿Cuántos ascensores hay en esta dirección o grupo? *"
-                        type="number"
-                        value={String(group.quantity)}
-                        onChange={(v) =>
-                          updateGroup(groupIndex, 'quantity', Math.max(1, Number(v || 1)))
-                        }
-                        placeholder="Ej: 3"
-                      />
+                    <div className="mb-5 space-y-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <Field
+                          label="¿Cuántos ascensores hay en esta dirección o grupo? *"
+                          type="number"
+                          value={String(group.quantity)}
+                          onChange={(v) =>
+                            updateGroup(groupIndex, 'quantity', Math.max(1, Number(v || 1)))
+                          }
+                          placeholder="Ej: 3"
+                        />
 
-                      <Checkbox
-                        label="¿Todos los ascensores de esta dirección o grupo son iguales?"
-                        checked={group.all_equal}
-                        onChange={(v) => updateGroup(groupIndex, 'all_equal', v)}
-                      />
+                        <div className="rounded border bg-white px-3 py-2 text-sm text-slate-600">
+                          Numeración esperada:{' '}
+                          <strong>
+                            {globalNumbering
+                              ? 'continua entre bloques'
+                              : `1 a ${Math.max(1, Number(group.quantity || 1))}`}
+                          </strong>
+                        </div>
+                      </div>
 
-                      <Checkbox
-                        label="¿Estos ascensores usan la misma dirección del cliente?"
-                        checked={group.same_address_as_client}
-                        onChange={(v) => updateGroup(groupIndex, 'same_address_as_client', v)}
-                      />
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-2">
+                        <Checkbox
+                          label="¿Estos ascensores usan la misma dirección del cliente?"
+                          checked={group.same_address_as_client}
+                          onChange={(v) => updateGroup(groupIndex, 'same_address_as_client', v)}
+                        />
 
-                      <div className="rounded border bg-white px-3 py-2 text-sm text-slate-600">
-                        Numeración esperada:{' '}
-                        <strong>
-                          {globalNumbering
-                            ? 'continua entre bloques'
-                            : `1 a ${Math.max(1, Number(group.quantity || 1))}`}
-                        </strong>
+                        <Checkbox
+                          label="¿Todos los ascensores de esta dirección o grupo son iguales?"
+                          checked={group.all_equal}
+                          onChange={(v) => updateGroup(groupIndex, 'all_equal', v)}
+                        />
                       </div>
                     </div>
 
@@ -1822,6 +1826,39 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                           >
                             <h5 className="mb-4 font-medium text-slate-900">{title}</h5>
 
+                            <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                <Checkbox
+                                  label="¿Este ascensor usa identificación de torre?"
+                                  checked={template.use_tower}
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'use_tower', v)}
+                                />
+
+                                {template.use_tower && (
+                                  <div className="md:max-w-sm">
+                                    <Field
+                                      label="Torre *"
+                                      value={template.tower_name}
+                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'tower_name', v)}
+                                      placeholder="Ej: Torre A"
+                                    />
+                                  </div>
+                                )}
+
+                                <Checkbox
+                                  label="Tiene sala de máquinas"
+                                  checked={template.has_machine_room}
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'has_machine_room', v)}
+                                />
+
+                                <Checkbox
+                                  label="Sin sala de máquinas"
+                                  checked={template.no_machine_room}
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'no_machine_room', v)}
+                                />
+                              </div>
+                            </div>
+
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                               <SelectField
                                 label="Marca *"
@@ -1845,7 +1882,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 />
                               )}
 
-                              <div className="xl:col-span-2">
+                              <div className="md:max-w-sm">
                                 <Field
                                   label="Modelo"
                                   value={template.model}
@@ -1861,7 +1898,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 </div>
                               </div>
 
-                              <div className="xl:col-span-2">
+                              <div className="md:max-w-sm">
                                 <Field
                                   label="N° serie"
                                   value={template.serial_number}
@@ -1879,7 +1916,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 </div>
                               </div>
 
-                              <div className="xl:col-span-2">
+                              <div className="md:max-w-sm">
                                 <Field
                                   label="Fecha instalación"
                                   type="date"
