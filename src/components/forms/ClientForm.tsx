@@ -218,7 +218,19 @@ function sanitize(value: string) {
 }
 
 function normalizeRut(value: string) {
-  return value.replace(/\./g, '').trim().toUpperCase();
+  const cleaned = value.replace(/\./g, '').replace(/\s+/g, '').toUpperCase();
+  const hyphenIndex = cleaned.indexOf('-');
+
+  if (hyphenIndex === -1) {
+    return cleaned.replace(/\D/g, '').slice(0, 8);
+  }
+
+  const body = cleaned.slice(0, hyphenIndex).replace(/\D/g, '').slice(0, 8);
+  const verifierRaw = cleaned.slice(hyphenIndex + 1).replace(/[^0-9K]/g, '');
+  const verifier = verifierRaw ? verifierRaw[0] : '';
+
+  if (!body) return '';
+  return verifier ? `${body}-${verifier}` : `${body}-`;
 }
 
 function isValidRutFormat(value: string) {
