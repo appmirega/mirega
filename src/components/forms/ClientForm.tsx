@@ -1689,7 +1689,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                   <div className="font-medium text-slate-900">Paso 1</div>
-                  Define si este grupo usa la misma dirección del cliente o una dirección distinta.
+                  Primero define si esta ficha corresponde a la misma dirección del cliente o a otra dirección.
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                   <div className="font-medium text-slate-900">Paso 2</div>
@@ -1697,11 +1697,11 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                   <div className="font-medium text-slate-900">Paso 3</div>
-                  Marca si todos son iguales o si cada ascensor tendrá su propia ficha.
+                  Luego define si todos los ascensores comparten la misma ficha técnica o si se ingresarán por separado.
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                   <div className="font-medium text-slate-900">Paso 4</div>
-                  Si corresponde, activa torre y escribe su identificación: Torre A, Torre 1 o Torre Norte.
+                  Si corresponde, activa torre y escribe una sola identificación por ficha: Torre A, Torre 1 o Torre Norte.
                 </div>
               </div>
             </div>
@@ -1997,36 +1997,6 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 />
                               )}
                             </div>
-
-                            <div className="mt-5 space-y-4">
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                <Checkbox
-                                  label="¿Este ascensor o grupo usa torre?"
-                                  checked={template.use_tower}
-                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'use_tower', v)}
-                                />
-
-                                {template.use_tower && (
-                                  <Field
-                                    label="Identificación de torre *"
-                                    value={template.tower_name}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'tower_name', v)}
-                                    placeholder="Ej: Torre A / Torre 1 / Torre Norte"
-                                  />
-                                )}
-
-                                <Checkbox
-                                  label="Tiene sala de máquinas"
-                                  checked={template.has_machine_room}
-                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'has_machine_room', v)}
-                                />
-
-                                <Checkbox
-                                  label="Sin sala de máquinas"
-                                  checked={template.no_machine_room}
-                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'no_machine_room', v)}
-                                />
-                              </div>
 
                               {group.quantity === 1 ? (
                                 <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
