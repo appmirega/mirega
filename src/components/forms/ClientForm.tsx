@@ -757,7 +757,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     }
 
     if (!isValidRutFormat(rut)) {
-      throw new Error('El RUT debe tener formato 15426257-1, sin puntos.');
+      throw new Error('El RUT debe tener formato 12345678-5, sin puntos.');
     }
 
     if (!sanitize(clientData.company_name)) {
@@ -1410,7 +1410,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               label="RUT"
               value={clientData.rut}
               onChange={(v) => setClientData({ ...clientData, rut: normalizeRut(v) })}
-              placeholder="Ej: 15426257-1"
+              placeholder="Ej: 12345678-5"
             />
 
             <Field
@@ -1667,7 +1667,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               <div>
                 <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                   <Layers3 className="h-5 w-5 text-blue-600" />
-                  Configuración de ascensores por dirección
+                  Configuración guiada de ascensores
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
                   Total configurado: <strong>{totalElevators}</strong> ascensor(es)
@@ -1680,13 +1680,35 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                 className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm hover:bg-slate-50"
               >
                 <Plus className="h-4 w-4" />
-                Agregar dirección
+                Agregar otra dirección o grupo
               </button>
+            </div>
+
+            <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+              <h4 className="text-sm font-semibold text-slate-900">Cómo llenar esta sección</h4>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                  <div className="font-medium text-slate-900">Paso 1</div>
+                  Define si este grupo usa la misma dirección del cliente o una dirección distinta.
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                  <div className="font-medium text-slate-900">Paso 2</div>
+                  Indica cuántos ascensores hay en esa dirección o grupo.
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                  <div className="font-medium text-slate-900">Paso 3</div>
+                  Marca si todos son iguales o si cada ascensor tendrá su propia ficha.
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                  <div className="font-medium text-slate-900">Paso 4</div>
+                  Si corresponde, activa torre y escribe su identificación: Torre A, Torre 1 o Torre Norte.
+                </div>
+              </div>
             </div>
 
             <div className="mb-4">
               <Checkbox
-                label="Numeración continua entre torres y direcciones"
+                label="¿La numeración de ascensores debe ser continua entre torres y direcciones?"
                 checked={globalNumbering}
                 onChange={setGlobalNumbering}
               />
@@ -1695,7 +1717,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800 mb-6">
               {globalNumbering
                 ? 'La numeración será correlativa entre todos los ascensores del formulario: 1 → N.'
-                : 'La numeración se reiniciará por cada bloque/dirección: 1 → N en cada grupo.'}
+                : 'La numeración se reiniciará por cada bloque o dirección: 1 → N en cada grupo.'}
             </div>
 
             <div className="space-y-6">
@@ -1711,10 +1733,10 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       <div>
                         <h4 className="flex items-center gap-2 font-semibold text-slate-900">
                           <MapPin className="h-4 w-4 text-slate-600" />
-                          Bloque dirección #{groupIndex + 1}
+                          Dirección o grupo #{groupIndex + 1}
                         </h4>
                         <p className="text-sm text-slate-500">
-                          Define cantidad y si los ascensores de este bloque son iguales o distintos.
+                          Primero define la dirección, luego la cantidad de ascensores y finalmente si todos comparten la misma ficha técnica.
                         </p>
                       </div>
 
@@ -1724,13 +1746,13 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                         className="inline-flex items-center gap-2 rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
                       >
                         <Trash2 className="h-4 w-4" />
-                        Quitar bloque
+                        Quitar dirección o grupo
                       </button>
                     </div>
 
                     <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                       <Field
-                        label="Cantidad de ascensores *"
+                        label="¿Cuántos ascensores hay en esta dirección o grupo? *"
                         type="number"
                         value={String(group.quantity)}
                         onChange={(v) =>
@@ -1740,13 +1762,13 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       />
 
                       <Checkbox
-                        label="Todos iguales"
+                        label="¿Todos los ascensores de esta dirección o grupo son iguales?"
                         checked={group.all_equal}
                         onChange={(v) => updateGroup(groupIndex, 'all_equal', v)}
                       />
 
                       <Checkbox
-                        label="Usar misma dirección del cliente"
+                        label="¿Estos ascensores usan la misma dirección del cliente?"
                         checked={group.same_address_as_client}
                         onChange={(v) => updateGroup(groupIndex, 'same_address_as_client', v)}
                       />
@@ -1764,21 +1786,21 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                     {!group.same_address_as_client && (
                       <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
                         <Field
-                          label="Dirección de este bloque *"
+                          label="Dirección de esta nueva ubicación *"
                           value={group.address}
                           onChange={(v) => updateGroup(groupIndex, 'address', v)}
                           placeholder="Ej: Apoquindo 1234"
                         />
 
                         <Field
-                          label="Comuna de este bloque *"
+                          label="Comuna de esta nueva ubicación *"
                           value={group.commune}
                           onChange={(v) => updateGroup(groupIndex, 'commune', v)}
                           placeholder="Ej: Las Condes"
                         />
 
                         <Field
-                          label="Región de este bloque *"
+                          label="Región de esta nueva ubicación *"
                           value={group.region}
                           onChange={(v) => updateGroup(groupIndex, 'region', v)}
                           placeholder="Ej: Región Metropolitana"
@@ -1790,7 +1812,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       {Array.from({ length: templateCount }, (_, templateIndex) => {
                         const template = group.templates[templateIndex] || createEmptyTemplate();
                         const title = group.all_equal
-                          ? 'Ficha base para todos los ascensores del bloque'
+                          ? 'Ficha base para todos los ascensores de esta dirección o grupo'
                           : `Ficha ascensor ${templateIndex + 1}`;
 
                         return (
@@ -1942,17 +1964,17 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                             <div className="mt-5 space-y-4">
                               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                                 <Checkbox
-                                  label="Usar torre"
+                                  label="¿Este ascensor o grupo usa torre?"
                                   checked={template.use_tower}
                                   onChange={(v) => updateTemplate(groupIndex, templateIndex, 'use_tower', v)}
                                 />
 
                                 {template.use_tower && (
                                   <Field
-                                    label="Torre *"
+                                    label="Identificación de torre *"
                                     value={template.tower_name}
                                     onChange={(v) => updateTemplate(groupIndex, templateIndex, 'tower_name', v)}
-                                    placeholder="Ej: Torre A"
+                                    placeholder="Ej: Torre A / Torre 1 / Torre Norte"
                                   />
                                 )}
 
