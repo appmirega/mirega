@@ -1409,18 +1409,39 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               icon={<MapPin className="h-4 w-4" />}
             />
 
-            <Field
-              label="Comuna *"
-              value={clientData.commune}
-              onChange={(v) => setClientData({ ...clientData, commune: normalizeUppercaseText(v) })}
-              placeholder="Ej: Las Condes"
-            />
-
-            <Field
+            <SelectField
               label="Región *"
               value={clientData.region}
-              onChange={(v) => setClientData({ ...clientData, region: normalizeUppercaseText(v) })}
-              placeholder="Ej: Región Metropolitana"
+              onChange={(v) =>
+                setClientData({
+                  ...clientData,
+                  region: v,
+                  commune: getCommuneOptions(v).includes(clientData.commune) ? clientData.commune : '',
+                })
+              }
+              options={[
+                { value: '', label: 'Selecciona una región' },
+                ...CHILE_REGIONS.map((region) => ({ value: region, label: region })),
+              ]}
+            />
+
+            <SelectField
+              label="Comuna *"
+              value={clientData.commune}
+              onChange={(v) => setClientData({ ...clientData, commune: v })}
+              options={[
+                {
+                  value: '',
+                  label: clientData.region
+                    ? 'Selecciona una comuna'
+                    : 'Primero selecciona una región',
+                },
+                ...getCommuneOptions(clientData.region).map((commune) => ({
+                  value: commune,
+                  label: commune,
+                })),
+              ]}
+              disabled={!clientData.region}
             />
 
             <SelectField
@@ -2096,11 +2117,13 @@ function SelectField({
   value,
   onChange,
   options,
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
+  disabled?: boolean;
 }) {
   return (
     <div>
@@ -2110,7 +2133,8 @@ function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+        disabled={disabled}
+        className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 disabled:bg-slate-100 disabled:text-slate-400"
       >
         {options.map((option) => (
           <option key={`${option.value}-${option.label}`} value={option.value}>
