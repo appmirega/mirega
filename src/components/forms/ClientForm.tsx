@@ -1107,6 +1107,32 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     }
   };
 
+
+
+  const ensureRutIsUnique = async () => {
+    const normalizedRut = normalizeRut(clientData.rut);
+
+    if (!normalizedRut) return;
+
+    const { data, error } = await supabase
+      .from('clients')
+      .select('id, rut')
+      .eq('rut', normalizedRut)
+      .limit(1);
+
+    if (error) throw error;
+
+    const existingClient = data?.[0];
+
+    if (!existingClient) return;
+
+    if (isEditMode && client?.id && existingClient.id === client.id) {
+      return;
+    }
+
+    throw new Error('Cliente ya creado');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
@@ -1117,6 +1143,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
     try {
       validateClient();
+      await ensureRutIsUnique();
 
       if (isEditMode && client?.id) {
         const { error: updateError } = await supabase
