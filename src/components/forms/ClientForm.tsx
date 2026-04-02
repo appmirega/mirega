@@ -225,6 +225,22 @@ function isValidRutFormat(value: string) {
   return /^[0-9]{7,8}-[0-9K]$/i.test(normalizeRut(value));
 }
 
+function normalizeUppercaseText(value: string) {
+  return value.toUpperCase();
+}
+
+const ADDRESS_GROUP_UPPERCASE_FIELDS = new Set(['address', 'commune', 'region']);
+
+const ADDITIONAL_CONTACT_UPPERCASE_FIELDS = new Set(['name', 'role']);
+
+const TEMPLATE_UPPERCASE_FIELDS = new Set([
+  'brand_other',
+  'model',
+  'serial_number',
+  'classification_other',
+  'tower_name',
+]);
+
 function parseOptionalNumber(value: string) {
   const clean = sanitize(value);
   if (!clean) return null;
@@ -355,7 +371,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       prev.map((group, index) => {
         if (index !== groupIndex) return group;
 
-        let nextGroup: AddressGroup = { ...group, [field]: value };
+        const normalizedValue =
+          typeof value === 'string' && ADDRESS_GROUP_UPPERCASE_FIELDS.has(String(field))
+            ? normalizeUppercaseText(value)
+            : value;
+
+        let nextGroup: AddressGroup = { ...group, [field]: normalizedValue };
 
         if (field === 'same_address_as_client' && value === true) {
           nextGroup.address = clientData.address;
@@ -469,7 +490,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
         const templates = group.templates.map((template, tIndex) => {
           if (tIndex !== templateIndex) return template;
 
-          const nextTemplate = { ...template, [field]: value };
+          const normalizedValue =
+            typeof value === 'string' && TEMPLATE_UPPERCASE_FIELDS.has(String(field))
+              ? normalizeUppercaseText(value)
+              : value;
+
+          const nextTemplate = { ...template, [field]: normalizedValue };
 
           if (field === 'model_unknown' && value === true) {
             nextTemplate.model = '';
@@ -592,7 +618,16 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     value: AdditionalContact[K]
   ) => {
     setAdditionalContacts((prev) =>
-      prev.map((item) => (item.id === contactId ? { ...item, [field]: value } : item))
+      prev.map((item) => {
+        if (item.id !== contactId) return item;
+
+        const normalizedValue =
+          typeof value === 'string' && ADDITIONAL_CONTACT_UPPERCASE_FIELDS.has(String(field))
+            ? normalizeUppercaseText(value)
+            : value;
+
+        return { ...item, [field]: normalizedValue };
+      })
     );
   };
 
@@ -1237,21 +1272,21 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             <Field
               label="Nombre completo / razón social *"
               value={clientData.company_name}
-              onChange={(v) => setClientData({ ...clientData, company_name: v })}
+              onChange={(v) => setClientData({ ...clientData, company_name: normalizeUppercaseText(v) })}
               placeholder="Ej: Comunidad Edificio Alcántara"
             />
 
             <Field
               label="Nombre del edificio *"
               value={clientData.building_name}
-              onChange={(v) => setClientData({ ...clientData, building_name: v })}
+              onChange={(v) => setClientData({ ...clientData, building_name: normalizeUppercaseText(v) })}
               placeholder="Ej: Edificio Alcántara"
             />
 
             <Field
               label="Nombre interno / corto *"
               value={clientData.internal_alias}
-              onChange={(v) => setClientData({ ...clientData, internal_alias: v })}
+              onChange={(v) => setClientData({ ...clientData, internal_alias: normalizeUppercaseText(v) })}
               placeholder="Ej: Alcántara"
             />
 
@@ -1265,7 +1300,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             <Field
               label="Dirección principal *"
               value={clientData.address}
-              onChange={(v) => setClientData({ ...clientData, address: v })}
+              onChange={(v) => setClientData({ ...clientData, address: normalizeUppercaseText(v) })}
               placeholder="Ej: Alcántara 44"
               icon={<MapPin className="h-4 w-4" />}
             />
@@ -1273,14 +1308,14 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             <Field
               label="Comuna *"
               value={clientData.commune}
-              onChange={(v) => setClientData({ ...clientData, commune: v })}
+              onChange={(v) => setClientData({ ...clientData, commune: normalizeUppercaseText(v) })}
               placeholder="Ej: Las Condes"
             />
 
             <Field
               label="Región *"
               value={clientData.region}
-              onChange={(v) => setClientData({ ...clientData, region: v })}
+              onChange={(v) => setClientData({ ...clientData, region: normalizeUppercaseText(v) })}
               placeholder="Ej: Región Metropolitana"
             />
 
@@ -1328,14 +1363,14 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                 <Field
                   label="Nombre del administrador *"
                   value={clientData.admin_name}
-                  onChange={(v) => setClientData({ ...clientData, admin_name: v })}
+                  onChange={(v) => setClientData({ ...clientData, admin_name: normalizeUppercaseText(v) })}
                   placeholder="Nombre administrador"
                 />
 
                 <Field
                   label="Empresa de administración"
                   value={clientData.admin_company}
-                  onChange={(v) => setClientData({ ...clientData, admin_company: v })}
+                  onChange={(v) => setClientData({ ...clientData, admin_company: normalizeUppercaseText(v) })}
                   placeholder="Ej: Administración XYZ"
                 />
 
@@ -1382,7 +1417,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               <Field
                 label="Nombre contacto principal"
                 value={clientData.primary_contact_name}
-                onChange={(v) => setClientData({ ...clientData, primary_contact_name: v })}
+                onChange={(v) => setClientData({ ...clientData, primary_contact_name: normalizeUppercaseText(v) })}
                 placeholder="Ej: Arturo Contreras"
                 icon={<User className="h-4 w-4" />}
               />
@@ -1390,7 +1425,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               <Field
                 label="Cargo o responsabilidad"
                 value={clientData.primary_contact_role}
-                onChange={(v) => setClientData({ ...clientData, primary_contact_role: v })}
+                onChange={(v) => setClientData({ ...clientData, primary_contact_role: normalizeUppercaseText(v) })}
                 placeholder="Ej: Comité, conserje, encargado técnico"
               />
 
