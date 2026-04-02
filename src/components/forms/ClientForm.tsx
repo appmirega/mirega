@@ -217,6 +217,14 @@ function sanitize(value: string) {
   return value.trim();
 }
 
+function normalizeRut(value: string) {
+  return value.replace(/\./g, '').trim().toUpperCase();
+}
+
+function isValidRutFormat(value: string) {
+  return /^[0-9]{7,8}-[0-9K]$/i.test(normalizeRut(value));
+}
+
 function parseOptionalNumber(value: string) {
   const clean = sanitize(value);
   if (!clean) return null;
@@ -596,6 +604,16 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   };
 
   const validateClient = () => {
+    const rut = sanitize(clientData.rut);
+
+    if (!rut) {
+      throw new Error('Debes ingresar el RUT.');
+    }
+
+    if (!isValidRutFormat(rut)) {
+      throw new Error('El RUT debe tener formato 15426257-1, sin puntos.');
+    }
+
     if (!sanitize(clientData.company_name)) {
       throw new Error('Debes ingresar el nombre completo o razón social.');
     }
@@ -834,7 +852,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     company_name: sanitize(clientData.company_name),
     building_name: sanitize(clientData.building_name),
     internal_alias: sanitize(clientData.internal_alias),
-    rut: sanitize(clientData.rut) || null,
+    rut: normalizeRut(clientData.rut) || null,
     address: sanitize(clientData.address) || null,
     commune: sanitize(clientData.commune) || null,
     city: sanitize(clientData.region) || null,
@@ -1213,8 +1231,8 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             <Field
               label="RUT"
               value={clientData.rut}
-              onChange={(v) => setClientData({ ...clientData, rut: v })}
-              placeholder="Ej: 56.049.780-6"
+              onChange={(v) => setClientData({ ...clientData, rut: normalizeRut(v) })}
+              placeholder="Ej: 15426257-1"
             />
 
             <Field
