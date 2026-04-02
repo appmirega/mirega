@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Building2,
@@ -229,6 +229,101 @@ function normalizeUppercaseText(value: string) {
   return value.toUpperCase();
 }
 
+function normalizePhoneCL(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return '';
+
+  let working = digits;
+
+  if (working.startsWith('56')) {
+    working = working.slice(2);
+  }
+
+  if (working.startsWith('0')) {
+    working = working.slice(1);
+  }
+
+  if (working.startsWith('9')) {
+    working = working.slice(1);
+  }
+
+  const subscriber = working.slice(0, 8);
+  return `+569${subscriber}`;
+}
+
+function isValidPhoneCL(value: string) {
+  return /^\+569\d{8}$/.test(normalizePhoneCL(value));
+}
+
+function assertValidPhoneCL(value: string, label: string) {
+  const phone = sanitize(value);
+  if (!phone) return;
+
+  if (!isValidPhoneCL(phone)) {
+    throw new Error(`${label} debe tener formato +56912345678.`);
+  }
+}
+
+const CHILE_REGIONS = [
+  'Arica y Parinacota',
+  'Tarapacá',
+  'Antofagasta',
+  'Atacama',
+  'Coquimbo',
+  'Valparaíso',
+  'Región Metropolitana de Santiago',
+  "Libertador General Bernardo O'Higgins",
+  'Maule',
+  'Ñuble',
+  'Biobío',
+  'La Araucanía',
+  'Los Ríos',
+  'Los Lagos',
+  'Aysén del General Carlos Ibáñez del Campo',
+  'Magallanes y de la Antártica Chilena',
+] as const;
+
+const COMMUNES_BY_REGION: Record<string, string[]> = {
+  'Arica y Parinacota': ['Arica', 'Camarones', 'General Lagos', 'Putre'],
+  'Tarapacá': ['Alto Hospicio', 'Camiña', 'Colchane', 'Huara', 'Iquique', 'Pica', 'Pozo Almonte'],
+  'Antofagasta': ['Antofagasta', 'Calama', 'María Elena', 'Mejillones', 'Ollagüe', 'San Pedro de Atacama', 'Sierra Gorda', 'Taltal', 'Tocopilla'],
+  'Atacama': ['Alto del Carmen', 'Caldera', 'Chañaral', 'Copiapó', 'Diego de Almagro', 'Freirina', 'Huasco', 'Tierra Amarilla', 'Vallenar'],
+  'Coquimbo': ['Andacollo', 'Canela', 'Combarbalá', 'Coquimbo', 'Illapel', 'La Higuera', 'La Serena', 'Los Vilos', 'Monte Patria', 'Ovalle', 'Paihuano', 'Punitaqui', 'Río Hurtado', 'Salamanca', 'Vicuña'],
+  'Valparaíso': ['Algarrobo', 'Cabildo', 'Calera', 'Calle Larga', 'Cartagena', 'Casablanca', 'Catemu', 'Concón', 'El Quisco', 'El Tabo', 'Hijuelas', 'Isla de Pascua', 'Juan Fernández', 'La Cruz', 'La Ligua', 'Limache', 'Llaillay', 'Los Andes', 'Nogales', 'Olmué', 'Panquehue', 'Papudo', 'Petorca', 'Puchuncaví', 'Putaendo', 'Quillota', 'Quilpué', 'Quintero', 'Rinconada', 'San Antonio', 'San Esteban', 'San Felipe', 'Santa María', 'Santo Domingo', 'Valparaíso', 'Villa Alemana', 'Viña del Mar', 'Zapallar'],
+  'Región Metropolitana de Santiago': ['Alhué', 'Buin', 'Calera de Tango', 'Cerrillos', 'Cerro Navia', 'Colina', 'Conchalí', 'Curacaví', 'El Bosque', 'El Monte', 'Estación Central', 'Huechuraba', 'Independencia', 'Isla de Maipo', 'La Cisterna', 'La Florida', 'La Granja', 'La Pintana', 'La Reina', 'Lampa', 'Las Condes', 'Lo Barnechea', 'Lo Espejo', 'Lo Prado', 'Macul', 'Maipú', 'María Pinto', 'Melipilla', 'Ñuñoa', 'Padre Hurtado', 'Paine', 'Pedro Aguirre Cerda', 'Peñaflor', 'Peñalolén', 'Pirque', 'Providencia', 'Pudahuel', 'Puente Alto', 'Quilicura', 'Quinta Normal', 'Recoleta', 'Renca', 'San Bernardo', 'San Joaquín', 'San José de Maipo', 'San Miguel', 'San Pedro', 'San Ramón', 'Santiago', 'Talagante', 'Tiltil', 'Vitacura'],
+  "Libertador General Bernardo O'Higgins": ['Chépica', 'Chimbarongo', 'Codegua', 'Coinco', 'Coltauco', 'Doñihue', 'Graneros', 'La Estrella', 'Las Cabras', 'Litueche', 'Lolol', 'Machalí', 'Malloa', 'Marchigüe', 'Mostazal', 'Nancagua', 'Navidad', 'Olivar', 'Palmilla', 'Paredones', 'Peralillo', 'Peumo', 'Pichidegua', 'Pichilemu', 'Placilla', 'Pumanque', 'Quinta de Tilcoco', 'Rancagua', 'Rengo', 'Requínoa', 'San Fernando', 'San Vicente'],
+  'Maule': ['Cauquenes', 'Chanco', 'Colbún', 'Constitución', 'Curepto', 'Curicó', 'Empedrado', 'Hualañé', 'Licantén', 'Linares', 'Longaví', 'Maule', 'Molina', 'Parral', 'Pelarco', 'Pelluhue', 'Pencahue', 'Rauco', 'Retiro', 'Río Claro', 'Romeral', 'Sagrada Familia', 'San Clemente', 'San Javier', 'San Rafael', 'Talca', 'Teno', 'Vichuquén', 'Villa Alegre', 'Yerbas Buenas'],
+  'Ñuble': ['Bulnes', 'Chillán', 'Chillán Viejo', 'Cobquecura', 'Coelemu', 'Coihueco', 'El Carmen', 'Ninhue', 'Ñiquén', 'Pemuco', 'Pinto', 'Portezuelo', 'Quillón', 'Quirihue', 'Ránquil', 'San Carlos', 'San Fabián', 'San Ignacio', 'San Nicolás', 'Treguaco', 'Yungay'],
+  'Biobío': ['Alto Biobío', 'Antuco', 'Arauco', 'Cabrero', 'Cañete', 'Chiguayante', 'Concepción', 'Contulmo', 'Coronel', 'Curanilahue', 'Florida', 'Hualpén', 'Hualqui', 'Laja', 'Lebu', 'Los Álamos', 'Los Ángeles', 'Lota', 'Mulchén', 'Nacimiento', 'Negrete', 'Penco', 'Quilaco', 'Quilleco', 'San Pedro de la Paz', 'San Rosendo', 'Santa Bárbara', 'Santa Juana', 'Talcahuano', 'Tirúa', 'Tomé', 'Tucapel', 'Yumbel'],
+  'La Araucanía': ['Angol', 'Carahue', 'Cholchol', 'Collipulli', 'Cunco', 'Curacautín', 'Curarrehue', 'Ercilla', 'Freire', 'Galvarino', 'Gorbea', 'Lautaro', 'Loncoche', 'Lonquimay', 'Los Sauces', 'Lumaco', 'Melipeuco', 'Nueva Imperial', 'Padre Las Casas', 'Perquenco', 'Pitrufquén', 'Pucón', 'Purén', 'Renaico', 'Saavedra', 'Temuco', 'Teodoro Schmidt', 'Toltén', 'Traiguén', 'Victoria', 'Vilcún', 'Villarrica'],
+  'Los Ríos': ['Corral', 'Futrono', 'La Unión', 'Lago Ranco', 'Lanco', 'Los Lagos', 'Máfil', 'Mariquina', 'Paillaco', 'Panguipulli', 'Río Bueno', 'Valdivia'],
+  'Los Lagos': ['Ancud', 'Calbuco', 'Castro', 'Chaitén', 'Chonchi', 'Cochamó', 'Curaco de Vélez', 'Dalcahue', 'Fresia', 'Frutillar', 'Futaleufú', 'Hualaihué', 'Llanquihue', 'Los Muermos', 'Maullín', 'Osorno', 'Palena', 'Puerto Montt', 'Puerto Octay', 'Puerto Varas', 'Puqueldón', 'Purranque', 'Puyehue', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Río Negro', 'San Juan de la Costa', 'San Pablo'],
+  'Aysén del General Carlos Ibáñez del Campo': ['Aysén', 'Chile Chico', 'Cisnes', 'Cochrane', 'Coihaique', 'Guaitecas', 'Lago Verde', "O'Higgins", 'Río Ibáñez', 'Tortel'],
+  'Magallanes y de la Antártica Chilena': ['Antártica', 'Cabo de Hornos', 'Laguna Blanca', 'Natales', 'Porvenir', 'Primavera', 'Punta Arenas', 'Río Verde', 'San Gregorio', 'Timaukel', 'Torres del Paine'],
+};
+
+function getCommuneOptions(region: string) {
+  return COMMUNES_BY_REGION[region] || [];
+}
+
+function normalizeRegionValue(value: string) {
+  const clean = sanitize(value);
+  if (!clean) return '';
+  return CHILE_REGIONS.find((region) => region.toUpperCase() === clean.toUpperCase()) || clean;
+}
+
+function normalizeCommuneValue(region: string, commune: string) {
+  const normalizedRegion = normalizeRegionValue(region);
+  const clean = sanitize(commune);
+  if (!clean) return '';
+
+  return (
+    getCommuneOptions(normalizedRegion).find(
+      (option) => option.toUpperCase() === clean.toUpperCase()
+    ) || clean
+  );
+}
+
 const ADDRESS_GROUP_UPPERCASE_FIELDS = new Set(['address', 'commune', 'region']);
 
 const ADDITIONAL_CONTACT_UPPERCASE_FIELDS = new Set(['name', 'role']);
@@ -281,7 +376,7 @@ function mapAdditionalContacts(payload?: ClientAlternateContactsPayload | null):
     name: contact?.name || '',
     role: contact?.role || '',
     email: contact?.email || '',
-    phone: contact?.phone || '',
+    phone: normalizePhoneCL(contact?.phone || ''),
   }));
 }
 
@@ -334,8 +429,8 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       internal_alias: client.internal_alias || '',
       rut: client.rut || '',
       address: client.address || '',
-      commune: client.commune || '',
-      region: client.city || '',
+      commune: normalizeCommuneValue(client.city || '', client.commune || ''),
+      region: normalizeRegionValue(client.city || ''),
       building_type: (client.building_type as BuildingType) || 'residencial',
       self_managed: selfManaged,
       enable_building_contacts:
@@ -343,15 +438,15 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       primary_contact_name: client.contact_name || '',
       primary_contact_role: client.contact_person || '',
       primary_contact_email: client.contact_email || '',
-      primary_contact_phone: client.contact_phone || '',
+      primary_contact_phone: normalizePhoneCL(client.contact_phone || ''),
       admin_name: client.admin_name || '',
       admin_email: client.admin_email || '',
-      admin_phone: client.admin_phone || '',
+      admin_phone: normalizePhoneCL(client.admin_phone || ''),
       admin_company: payload.admin_company || '',
     });
 
     setAdditionalContacts(additional);
-    setGroups([createAddressGroup(client.address || '', client.commune || '', client.city || '')]);
+    setGroups([createAddressGroup(client.address || '', normalizeCommuneValue(client.city || '', client.commune || ''), normalizeRegionValue(client.city || ''))]);
     setGlobalNumbering(true);
   }, [client]);
 
@@ -382,6 +477,10 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
           nextGroup.address = clientData.address;
           nextGroup.commune = clientData.commune;
           nextGroup.region = clientData.region;
+        }
+
+        if (field === 'region' && value !== group.region) {
+          nextGroup.commune = '';
         }
 
         if (field === 'quantity') {
@@ -709,6 +808,9 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       }
     }
 
+    assertValidPhoneCL(clientData.admin_phone, 'El teléfono del administrador');
+    assertValidPhoneCL(clientData.primary_contact_phone, 'El teléfono del contacto principal');
+
     if (showBuildingContacts) {
       additionalContacts.forEach((contact, index) => {
         const hasAnyData =
@@ -730,6 +832,8 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
         if (!hasAnyContactMethod(contact.email, contact.phone)) {
           throw new Error(`Debes ingresar correo o teléfono en contacto adicional #${index + 1}.`);
         }
+
+        assertValidPhoneCL(contact.phone, `El teléfono del contacto adicional #${index + 1}`);
       });
     }
   };
@@ -870,7 +974,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
             name: sanitize(contact.name),
             role: sanitize(contact.role),
             email: sanitize(contact.email),
-            phone: sanitize(contact.phone),
+            phone: normalizePhoneCL(contact.phone) || null,
           }))
           .filter((contact) => contact.name || contact.role || contact.email || contact.phone)
       : [];
@@ -895,10 +999,10 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     contact_name: showBuildingContacts ? sanitize(clientData.primary_contact_name) || null : null,
     contact_person: showBuildingContacts ? sanitize(clientData.primary_contact_role) || null : null,
     contact_email: showBuildingContacts ? sanitize(clientData.primary_contact_email) || null : null,
-    contact_phone: showBuildingContacts ? sanitize(clientData.primary_contact_phone) || null : null,
+    contact_phone: showBuildingContacts ? normalizePhoneCL(clientData.primary_contact_phone) || null : null,
     admin_name: clientData.self_managed ? null : sanitize(clientData.admin_name) || null,
     admin_email: clientData.self_managed ? null : sanitize(clientData.admin_email) || null,
-    admin_phone: clientData.self_managed ? null : sanitize(clientData.admin_phone) || null,
+    admin_phone: clientData.self_managed ? null : normalizePhoneCL(clientData.admin_phone) || null,
     alternate_contacts: buildAlternateContactsPayload(),
   });
 
@@ -1018,7 +1122,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       users.set(normalizedEmail, {
         email: normalizedEmail,
         full_name: sanitize(full_name || '') || normalizedEmail,
-        phone: sanitize(phone || '') || null,
+        phone: normalizePhoneCL(phone || '') || null,
       });
     };
 
@@ -1385,8 +1489,8 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                 <Field
                   label="Teléfono administrador"
                   value={clientData.admin_phone}
-                  onChange={(v) => setClientData({ ...clientData, admin_phone: v })}
-                  placeholder="Teléfono administrador"
+                  onChange={(v) => setClientData({ ...clientData, admin_phone: normalizePhoneCL(v) })}
+                  placeholder="Ej: +56912345678"
                   icon={<Phone className="h-4 w-4" />}
                 />
               </div>
@@ -1440,8 +1544,8 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               <Field
                 label="Teléfono contacto principal"
                 value={clientData.primary_contact_phone}
-                onChange={(v) => setClientData({ ...clientData, primary_contact_phone: v })}
-                placeholder="Ej: +56 9 1234 5678"
+                onChange={(v) => setClientData({ ...clientData, primary_contact_phone: normalizePhoneCL(v) })}
+                placeholder="Ej: +56912345678"
                 icon={<Phone className="h-4 w-4" />}
               />
             </div>
@@ -1513,8 +1617,8 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       <Field
                         label="Teléfono"
                         value={contact.phone}
-                        onChange={(v) => updateAdditionalContact(contact.id, 'phone', v)}
-                        placeholder="Teléfono"
+                        onChange={(v) => updateAdditionalContact(contact.id, 'phone', normalizePhoneCL(v))}
+                        placeholder="Ej: +56912345678"
                       />
                     </div>
                   </div>
@@ -2014,6 +2118,43 @@ function SelectField({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function DatalistField({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder?: string;
+}) {
+  const listId = useId();
+
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium text-slate-700">
+        {label}
+      </label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        list={listId}
+        className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+        placeholder={placeholder}
+      />
+      <datalist id={listId}>
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
     </div>
   );
 }
