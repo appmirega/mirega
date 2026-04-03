@@ -72,7 +72,7 @@ interface ElevatorRow {
   model: string | null;
   serial_number: string | null;
   capacity_kg: number | null;
-  capacity_people: number | null;
+  capacity_persons: number | null;
   floors: number | null;
   installation_date: string | null;
   has_machine_room: boolean | null;
@@ -81,7 +81,7 @@ interface ElevatorRow {
   stops_odd_floors: boolean | null;
   stops_even_floors: boolean | null;
   elevator_type: string | null;
-  equipment_type: string | null;
+  classification: string | null;
   created_at: string;
 }
 
@@ -313,7 +313,7 @@ export function ClientsView() {
           model,
           serial_number,
           capacity_kg,
-          capacity_people,
+          capacity_persons,
           floors,
           installation_date,
           has_machine_room,
@@ -322,7 +322,7 @@ export function ClientsView() {
           stops_odd_floors,
           stops_even_floors,
           elevator_type,
-          equipment_type,
+          classification,
           created_at
         `)
         .eq('client_id', client.id)
@@ -793,7 +793,7 @@ export function ClientsView() {
                                     <div className="text-xs text-slate-500 mt-1">{elevator.model || 'Modelo no indicado'}</div>
                                   </td>
                                   <td className="px-4 py-3 align-top">
-                                    <div>{elevator.capacity_people || '—'} personas</div>
+                                    <div>{elevator.capacity_persons || '—'} personas</div>
                                     <div className="text-xs text-slate-500 mt-1">{elevator.capacity_kg || '—'} kg</div>
                                   </td>
                                   <td className="px-4 py-3 align-top">{elevator.floors || '—'}</td>
