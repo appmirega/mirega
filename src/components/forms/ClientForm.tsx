@@ -101,6 +101,18 @@ interface AddressGroup {
   stop_assignments: StopPattern[];
 }
 
+type TowerLabelMode = 'number' | 'letter' | 'custom';
+
+interface StructureConfig {
+  tower_count: number;
+  elevators_per_group: number;
+  tower_label_mode: TowerLabelMode;
+  custom_tower_names: string[];
+  same_address_for_all_groups: boolean;
+  address_count: number;
+  share_base_data_across_groups: boolean;
+}
+
 const BRAND_OPTIONS = [
   'Otis',
   'Schindler',
@@ -122,6 +134,50 @@ const BRAND_OPTIONS = [
   'Thyssen',
   'Otros',
 ] as const;
+
+function createInitialStructureConfig(): StructureConfig {
+  return {
+    tower_count: 1,
+    elevators_per_group: 1,
+    tower_label_mode: 'letter',
+    custom_tower_names: [''],
+    same_address_for_all_groups: true,
+    address_count: 1,
+    share_base_data_across_groups: true,
+  };
+}
+
+function syncStringArrayLength(values: string[], length: number) {
+  const target = Math.max(1, Number(length || 1));
+  const next = [...values];
+
+  while (next.length < target) {
+    next.push('');
+  }
+
+  return next.slice(0, target);
+}
+
+function getGeneratedTowerName(index: number, mode: TowerLabelMode, customNames: string[] = []) {
+  if (mode === 'number') return `TORRE ${index + 1}`;
+  if (mode === 'custom') return sanitize(customNames[index] || '') || `TORRE ${index + 1}`;
+  return `TORRE ${String.fromCharCode(65 + index)}`;
+}
+
+function copySharedTemplateFields(source: ElevatorTemplate, target: ElevatorTemplate): ElevatorTemplate {
+  return {
+    ...target,
+    brand: source.brand,
+    brand_other: source.brand_other,
+    model: source.model,
+    model_unknown: source.model_unknown,
+    installation_date: source.installation_date,
+    installation_date_unknown: source.installation_date_unknown,
+    elevator_type: source.elevator_type,
+    classification: source.classification,
+    classification_other: source.classification_other,
+  };
+}
 
 function applyStopPattern(template: ElevatorTemplate, pattern: StopPattern): ElevatorTemplate {
   return {
@@ -414,6 +470,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   const [additionalContacts, setAdditionalContacts] = useState<AdditionalContact[]>([]);
   const [groups, setGroups] = useState<AddressGroup[]>([createAddressGroup('', '', '')]);
   const [globalNumbering, setGlobalNumbering] = useState(true);
+  const [structureConfig, setStructureConfig] = useState<StructureConfig>(createInitialStructureConfig);
 
   useEffect(() => {
     setGroups((prev) =>
@@ -436,6 +493,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       setAdditionalContacts([]);
       setGroups([createAddressGroup('', '', '')]);
       setGlobalNumbering(true);
+      setStructureConfig(createInitialStructureConfig());
       return;
     }
 
@@ -471,6 +529,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     setAdditionalContacts(additional);
     setGroups([createAddressGroup(client.address || '', normalizeCommuneValue(client.city || '', client.commune || ''), normalizeRegionValue(client.city || ''))]);
     setGlobalNumbering(true);
+    setStructureConfig(createInitialStructureConfig());
   }, [client]);
 
   const totalElevators = useMemo(
@@ -479,6 +538,119 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   );
 
   const showBuildingContacts = clientData.self_managed || clientData.enable_building_contacts;
+
+
+  useEffect(() => {
+    if (isEditMode) return;
+
+    setStructureConfig((prev) => ({
+      ...prev,
+      custom_tower_names: syncStringArrayLength(prev.custom_tower_names, prev.tower_count),
+    }));
+  }, [isEditMode, structureConfig.tower_count]);
+
+  useEffect(() => {
+    if (isEditMode) return;
+
+    setGroups((prev) => {
+      const desiredCount = structureConfig.same_address_for_all_groups
+        ? Math.max(1, Number(structureConfig.tower_count || 1))
+        : Math.max(1, Number(structureConfig.address_count || 1));
+
+      return Array.from({ length: desiredCount }, (_, groupIndex) => {
+        const previousGroup = prev[groupIndex] || createAddressGroup(clientData.address, clientData.commune, clientData.region);
+        const quantity = Math.max(1, Number(structureConfig.elevators_per_group || 1));
+        const useTower = structureConfig.same_address_for_all_groups && Math.max(1, Number(structureConfig.tower_count || 1)) > 1;
+        const towerName = useTower
+          ? getGeneratedTowerName(groupIndex, structureConfig.tower_label_mode, structureConfig.custom_tower_names)
+          : '';
+        const sameAddress = structureConfig.same_address_for_all_groups;
+        const baseTemplates = previousGroup.all_equal
+          ? [previousGroup.templates[0] || createEmptyTemplate()]
+          : Array.from({ length: quantity }, (_, templateIndex) => previousGroup.templates[templateIndex] || createEmptyTemplate());
+
+        const templates = previousGroup.all_equal
+          ? [
+              {
+                ...(baseTemplates[0] || createEmptyTemplate()),
+                use_tower: useTower,
+                tower_name: towerName,
+              },
+            ]
+          : Array.from({ length: quantity }, (_, templateIndex) => ({
+              ...(baseTemplates[templateIndex] || createEmptyTemplate()),
+              use_tower: useTower,
+              tower_name: towerName,
+            }));
+
+        return {
+          ...previousGroup,
+          id: previousGroup.id,
+          same_address_as_client: sameAddress,
+          address: sameAddress ? clientData.address : previousGroup.address,
+          commune: sameAddress ? clientData.commune : previousGroup.commune,
+          region: sameAddress ? clientData.region : previousGroup.region,
+          quantity,
+          templates,
+          stop_assignments: normalizeStopAssignments(quantity, previousGroup.stop_assignments),
+        };
+      });
+    });
+  }, [
+    isEditMode,
+    clientData.address,
+    clientData.commune,
+    clientData.region,
+    structureConfig.tower_count,
+    structureConfig.elevators_per_group,
+    structureConfig.tower_label_mode,
+    structureConfig.custom_tower_names,
+    structureConfig.same_address_for_all_groups,
+    structureConfig.address_count,
+  ]);
+
+  useEffect(() => {
+    if (isEditMode || !structureConfig.share_base_data_across_groups || groups.length <= 1) return;
+
+    const baseTemplate = groups[0]?.templates?.[0];
+    if (!baseTemplate) return;
+
+    setGroups((prev) =>
+      prev.map((group, groupIndex) => {
+        if (groupIndex === 0) return group;
+
+        const templates = group.templates.map((template, templateIndex) => {
+          const withSharedData = copySharedTemplateFields(baseTemplate, template);
+
+          if (templateIndex === 0 && withSharedData.use_tower) {
+            return {
+              ...withSharedData,
+              tower_name: template.tower_name,
+            };
+          }
+
+          return withSharedData;
+        });
+
+        return {
+          ...group,
+          templates,
+        };
+      })
+    );
+  }, [
+    isEditMode,
+    structureConfig.share_base_data_across_groups,
+    groups[0]?.templates?.[0]?.brand,
+    groups[0]?.templates?.[0]?.brand_other,
+    groups[0]?.templates?.[0]?.model,
+    groups[0]?.templates?.[0]?.model_unknown,
+    groups[0]?.templates?.[0]?.installation_date,
+    groups[0]?.templates?.[0]?.installation_date_unknown,
+    groups[0]?.templates?.[0]?.elevator_type,
+    groups[0]?.templates?.[0]?.classification,
+    groups[0]?.templates?.[0]?.classification_other,
+  ]);
 
   const updateGroup = <K extends keyof AddressGroup>(
     groupIndex: number,
@@ -758,6 +930,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     setAdditionalContacts([]);
     setGroups([createAddressGroup('', '', '')]);
     setGlobalNumbering(true);
+    setStructureConfig(createInitialStructureConfig());
   };
 
   const validateClient = () => {
@@ -768,7 +941,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     }
 
     if (!isValidRutFormat(rut)) {
-      throw new Error('El RUT debe tener formato 15426257-1, sin puntos.');
+      throw new Error('El RUT debe tener formato 12345678-5, sin puntos.');
     }
 
     if (!sanitize(clientData.company_name)) {
@@ -1421,7 +1594,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               label="RUT"
               value={clientData.rut}
               onChange={(v) => setClientData({ ...clientData, rut: normalizeRut(v) })}
-              placeholder="Ej: 15426257-1"
+              placeholder="Ej: 12345678-5"
             />
 
             <Field
@@ -1678,21 +1851,129 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               <div>
                 <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                   <Layers3 className="h-5 w-5 text-blue-600" />
-                  Configuración de ascensores por dirección
+                  Estructura de torres y grupos de ascensores
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
                   Total configurado: <strong>{totalElevators}</strong> ascensor(es)
                 </p>
               </div>
+            </div>
 
-              <button
-                type="button"
-                onClick={addAddressGroup}
-                className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm hover:bg-slate-50"
-              >
-                <Plus className="h-4 w-4" />
-                Agregar nuevo grupo de ascensores
-              </button>
+            <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50 p-4">
+              <h4 className="mb-3 font-semibold text-blue-900">Configuración estructural automática</h4>
+              <p className="mb-4 text-sm text-blue-800">
+                Primero define torres, ascensores por torre y si todas comparten la misma dirección. El formulario generará los grupos automáticamente para evitar repetir la misma ficha desde cero.
+              </p>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <Field
+                  label="Cantidad de torres o grupos principales *"
+                  type="number"
+                  value={String(structureConfig.tower_count)}
+                  onChange={(v) =>
+                    setStructureConfig((prev) => ({
+                      ...prev,
+                      tower_count: Math.max(1, Number(v || 1)),
+                    }))
+                  }
+                  placeholder="Ej: 2"
+                />
+
+                <Field
+                  label="Cantidad de ascensores por torre o grupo *"
+                  type="number"
+                  value={String(structureConfig.elevators_per_group)}
+                  onChange={(v) =>
+                    setStructureConfig((prev) => ({
+                      ...prev,
+                      elevators_per_group: Math.max(1, Number(v || 1)),
+                    }))
+                  }
+                  placeholder="Ej: 3"
+                />
+
+                <SelectField
+                  label="Identificación de torres"
+                  value={structureConfig.tower_label_mode}
+                  onChange={(v) =>
+                    setStructureConfig((prev) => ({
+                      ...prev,
+                      tower_label_mode: v as TowerLabelMode,
+                    }))
+                  }
+                  options={[
+                    { value: 'letter', label: 'Letras (Torre A, B, C)' },
+                    { value: 'number', label: 'Números (Torre 1, 2, 3)' },
+                    { value: 'custom', label: 'Nombre libre por torre' },
+                  ]}
+                />
+
+                <Field
+                  label="Cantidad de direcciones a completar *"
+                  type="number"
+                  value={String(structureConfig.address_count)}
+                  onChange={(v) =>
+                    setStructureConfig((prev) => ({
+                      ...prev,
+                      address_count: Math.max(1, Number(v || 1)),
+                    }))
+                  }
+                  placeholder="Ej: 2"
+                />
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Checkbox
+                  label="Todas las torres o grupos usan la misma dirección del cliente"
+                  checked={structureConfig.same_address_for_all_groups}
+                  onChange={(v) =>
+                    setStructureConfig((prev) => ({
+                      ...prev,
+                      same_address_for_all_groups: v,
+                    }))
+                  }
+                />
+
+                <Checkbox
+                  label="Todas las torres o grupos comparten la misma configuración base"
+                  checked={structureConfig.share_base_data_across_groups}
+                  onChange={(v) =>
+                    setStructureConfig((prev) => ({
+                      ...prev,
+                      share_base_data_across_groups: v,
+                    }))
+                  }
+                />
+              </div>
+
+              {structureConfig.tower_label_mode === 'custom' && structureConfig.same_address_for_all_groups && structureConfig.tower_count > 1 && (
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {syncStringArrayLength(structureConfig.custom_tower_names, structureConfig.tower_count).map((towerName, towerIndex) => (
+                    <Field
+                      key={`custom-tower-${towerIndex}`}
+                      label={`Nombre torre #${towerIndex + 1}`}
+                      value={towerName}
+                      onChange={(v) =>
+                        setStructureConfig((prev) => {
+                          const nextNames = syncStringArrayLength(prev.custom_tower_names, prev.tower_count);
+                          nextNames[towerIndex] = normalizeUppercaseText(v);
+                          return {
+                            ...prev,
+                            custom_tower_names: nextNames,
+                          };
+                        })
+                      }
+                      placeholder={`Ej: TORRE ${towerIndex + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-4 rounded-lg border border-blue-200 bg-white px-4 py-3 text-sm text-slate-700">
+                {structureConfig.same_address_for_all_groups
+                  ? `Se generarán ${Math.max(1, Number(structureConfig.tower_count || 1))} grupo(s) automáticos con ${Math.max(1, Number(structureConfig.elevators_per_group || 1))} ascensor(es) por grupo. Si hay más de una torre y la dirección es la misma, la numeración será continua entre torres.`
+                  : `Se generarán ${Math.max(1, Number(structureConfig.address_count || 1))} grupo(s) para completar direcciones distintas. En esta modalidad, cada grupo reinicia su numeración desde 1 si desactivas la numeración global.`}
+              </div>
             </div>
 
             <div className="mb-4">
@@ -1722,46 +2003,16 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       <div>
                         <h4 className="flex items-center gap-2 font-semibold text-slate-900">
                           <MapPin className="h-4 w-4 text-slate-600" />
-                          Grupo de ascensores #{groupIndex + 1}
+                          {structureConfig.same_address_for_all_groups && structureConfig.tower_count > 1
+                            ? getGeneratedTowerName(groupIndex, structureConfig.tower_label_mode, structureConfig.custom_tower_names)
+                            : `Grupo de ascensores #${groupIndex + 1}`}
                         </h4>
                         <p className="text-sm text-slate-500">
-                          Usa este grupo cuando haya otra ubicación, otra torre o una configuración distinta de ascensores.
+                          {structureConfig.same_address_for_all_groups && structureConfig.tower_count > 1
+                            ? `Grupo generado automáticamente para ${getGeneratedTowerName(groupIndex, structureConfig.tower_label_mode, structureConfig.custom_tower_names)} con ${group.quantity} ascensor(es).`
+                            : `Grupo generado automáticamente para completar ${group.quantity} ascensor(es).`}
                         </p>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => removeAddressGroup(groupIndex)}
-                        className="inline-flex items-center gap-2 rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Quitar grupo
-                      </button>
-                    </div>
-
-                    <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <Field
-                        label="Cantidad de ascensores *"
-                        type="number"
-                        value={String(group.quantity)}
-                        onChange={(v) =>
-                          updateGroup(groupIndex, 'quantity', Math.max(1, Number(v || 1)))
-                        }
-                        placeholder="Ej: 3"
-                      helperText="Define cuántos ascensores tendrá este grupo o torre."
-                      />
-
-                      <Checkbox
-                        label="¿Todos los ascensores de este grupo son iguales?"
-                        checked={group.all_equal}
-                        onChange={(v) => updateGroup(groupIndex, 'all_equal', v)}
-                      />
-
-                      <Checkbox
-                        label="Usar misma dirección del cliente principal"
-                        checked={group.same_address_as_client}
-                        onChange={(v) => updateGroup(groupIndex, 'same_address_as_client', v)}
-                      />
 
                       <div className="rounded border bg-white px-3 py-2 text-sm text-slate-600">
                         Numeración esperada:{' '}
@@ -1773,8 +2024,36 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       </div>
                     </div>
 
-                    {group.all_equal && (
+                    <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <div className="rounded border bg-white px-3 py-2 text-sm text-slate-700">
+                        <div className="font-medium text-slate-900">Ascensores en este grupo</div>
+                        <div>{group.quantity}</div>
+                      </div>
+
+                      <Checkbox
+                        label="¿Todos los ascensores de este grupo son iguales?"
+                        checked={group.all_equal}
+                        onChange={(v) => updateGroup(groupIndex, 'all_equal', v)}
+                      />
+
+                      <div className="rounded border bg-white px-3 py-2 text-sm text-slate-700">
+                        <div className="font-medium text-slate-900">Dirección</div>
+                        <div>
+                          {group.same_address_as_client
+                            ? 'Usa dirección principal del cliente'
+                            : 'Dirección independiente para este grupo'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {structureConfig.share_base_data_across_groups && (
                       <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                        Marca, modelo, fecha de instalación, tipo de ascensor y tipo de equipo se copiarán automáticamente desde el primer grupo al resto. Capacidad, paradas, sala de máquinas y patrón de servicio siguen siendo configurables por grupo o por ascensor.
+                      </div>
+                    )}
+
+                    {group.all_equal && (
+                      <div className="mb-5 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                         Completa una sola ficha técnica para este grupo. Esta opción está pensada para ascensores iguales dentro de una misma torre o grupo.
                       </div>
                     )}
@@ -1969,6 +2248,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                       value={template.brand_other}
                                       onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand_other', v)}
                                       placeholder="Especifica la marca"
+                                      disabled={structureConfig.share_base_data_across_groups && groupIndex > 0}
                                     />
                                   )}
 
@@ -1978,12 +2258,14 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                       value={template.model}
                                       onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model', v)}
                                       placeholder="Ej: Gen2"
+                                      disabled={structureConfig.share_base_data_across_groups && groupIndex > 0}
                                     />
                                     <div className="mt-2">
                                       <Checkbox
                                         label="Modelo no conocido"
                                         checked={template.model_unknown}
                                         onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model_unknown', v)}
+                                        disabled={structureConfig.share_base_data_across_groups && groupIndex > 0}
                                       />
                                     </div>
                                   </div>
@@ -2012,6 +2294,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                       type="date"
                                       value={template.installation_date}
                                       onChange={(v) => updateTemplate(groupIndex, templateIndex, 'installation_date', v)}
+                                      disabled={structureConfig.share_base_data_across_groups && groupIndex > 0}
                                     />
                                     <div className="mt-2">
                                       <Checkbox
@@ -2020,6 +2303,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                         onChange={(v) =>
                                           updateTemplate(groupIndex, templateIndex, 'installation_date_unknown', v)
                                         }
+                                        disabled={structureConfig.share_base_data_across_groups && groupIndex > 0}
                                       />
                                     </div>
                                   </div>
@@ -2084,6 +2368,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                         updateTemplate(groupIndex, templateIndex, 'classification_other', v)
                                       }
                                       placeholder="Especifica"
+                                      disabled={structureConfig.share_base_data_across_groups && groupIndex > 0}
                                     />
                                   )}
                                 </div>
@@ -2094,16 +2379,6 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       })}
                     </div>
 
-                    <div className="mt-5 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={addAddressGroup}
-                        className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm hover:bg-slate-50"
-                      >
-                        <Plus className="h-4 w-4" />
-                        Agregar nuevo grupo de ascensores
-                      </button>
-                    </div>
                   </div>
                 );
               })}
@@ -2148,6 +2423,7 @@ function Field({
   placeholder,
   type = 'text',
   icon,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -2155,6 +2431,7 @@ function Field({
   placeholder?: string;
   type?: string;
   icon?: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <div>
@@ -2166,7 +2443,8 @@ function Field({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+        disabled={disabled}
+        className="w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 disabled:bg-slate-100 disabled:text-slate-400"
         placeholder={placeholder}
       />
     </div>
@@ -2288,16 +2566,19 @@ function Checkbox({
   label,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex items-center gap-2 rounded border bg-white px-3 py-2 text-sm text-slate-700">
+    <label className={`flex items-center gap-2 rounded border bg-white px-3 py-2 text-sm ${disabled ? 'cursor-not-allowed text-slate-400' : 'text-slate-700'}`}>
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
       <span>{label}</span>
