@@ -469,8 +469,9 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
   const [clientData, setClientData] = useState(createInitialClientData);
   const [additionalContacts, setAdditionalContacts] = useState<AdditionalContact[]>([]);
   const [groups, setGroups] = useState<AddressGroup[]>([createAddressGroup('', '', '')]);
-  const [globalNumbering, setGlobalNumbering] = useState(true);
   const [structureConfig, setStructureConfig] = useState<StructureConfig>(createInitialStructureConfig);
+
+  const automaticContinuousNumbering = structureConfig.same_address_for_all_groups;
 
   useEffect(() => {
     setGroups((prev) =>
@@ -492,7 +493,6 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
       setClientData(createInitialClientData());
       setAdditionalContacts([]);
       setGroups([createAddressGroup('', '', '')]);
-      setGlobalNumbering(true);
       setStructureConfig(createInitialStructureConfig());
       return;
     }
@@ -528,7 +528,6 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
     setAdditionalContacts(additional);
     setGroups([createAddressGroup(client.address || '', normalizeCommuneValue(client.city || '', client.commune || ''), normalizeRegionValue(client.city || ''))]);
-    setGlobalNumbering(true);
     setStructureConfig(createInitialStructureConfig());
   }, [client]);
 
@@ -929,7 +928,6 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     setClientData(createInitialClientData());
     setAdditionalContacts([]);
     setGroups([createAddressGroup('', '', '')]);
-    setGlobalNumbering(true);
     setStructureConfig(createInitialStructureConfig());
   };
 
@@ -1245,7 +1243,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
           );
 
       const getNextNumber = () => {
-        if (globalNumbering) {
+        if (automaticContinuousNumbering) {
           return globalElevatorNumber++;
         }
         return localElevatorNumber++;
@@ -1880,7 +1878,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                 />
 
                 <Field
-                  label="Cantidad de ascensores por torre o grupo *"
+                  label="Ascensores por torre o grupo *"
                   type="number"
                   value={String(structureConfig.elevators_per_group)}
                   onChange={(v) =>
@@ -1971,23 +1969,9 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
               <div className="mt-4 rounded-lg border border-blue-200 bg-white px-4 py-3 text-sm text-slate-700">
                 {structureConfig.same_address_for_all_groups
-                  ? `Se generarán ${Math.max(1, Number(structureConfig.tower_count || 1))} grupo(s) automáticos con ${Math.max(1, Number(structureConfig.elevators_per_group || 1))} ascensor(es) por grupo. Si hay más de una torre y la dirección es la misma, la numeración será continua entre torres.`
-                  : `Se generarán ${Math.max(1, Number(structureConfig.address_count || 1))} grupo(s) para completar direcciones distintas. En esta modalidad, cada grupo reinicia su numeración desde 1 si desactivas la numeración global.`}
+                  ? `Se generarán ${Math.max(1, Number(structureConfig.tower_count || 1))} grupo(s) automáticos con ${Math.max(1, Number(structureConfig.elevators_per_group || 1))} ascensor(es) por grupo. Si hay más de una torre y la dirección es la misma, la numeración será continua automáticamente entre torres.`
+                  : `Se generarán ${Math.max(1, Number(structureConfig.address_count || 1))} grupo(s) para completar direcciones distintas. En esta modalidad, cada dirección o grupo reinicia su numeración desde 1 automáticamente.`}
               </div>
-            </div>
-
-            <div className="mb-4">
-              <Checkbox
-                label="Numeración continua entre torres y direcciones"
-                checked={globalNumbering}
-                onChange={setGlobalNumbering}
-              />
-            </div>
-
-            <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800 mb-6">
-              {globalNumbering
-                ? 'La numeración será correlativa entre todos los ascensores del formulario: 1 → N.'
-                : 'La numeración se reiniciará por cada bloque/dirección: 1 → N en cada grupo.'}
             </div>
 
             <div className="space-y-6">
@@ -2017,9 +2001,9 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       <div className="rounded border bg-white px-3 py-2 text-sm text-slate-600">
                         Numeración esperada:{' '}
                         <strong>
-                          {globalNumbering
-                            ? 'continua entre bloques'
-                            : `1 a ${Math.max(1, Number(group.quantity || 1))}`}
+                          {automaticContinuousNumbering
+                            ? 'continua entre torres/grupos'
+                            : `reinicia en 1 por dirección/grupo`}
                         </strong>
                       </div>
                     </div>
