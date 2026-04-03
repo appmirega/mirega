@@ -1807,256 +1807,270 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                           >
                             <h5 className="mb-4 font-medium text-slate-900">{title}</h5>
 
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                              <SelectField
-                                label="Marca *"
-                                value={template.brand}
-                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand', v)}
-                                options={[
-                                  { value: '', label: 'Selecciona marca' },
-                                  ...BRAND_OPTIONS.map((item) => ({
-                                    value: item,
-                                    label: item,
-                                  })),
-                                ]}
-                              />
+                            <div className="space-y-5">
+                              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <h6 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
+                                  Estructura y operación
+                                </h6>
 
-                              {template.brand === 'Otros' && (
-                                <Field
-                                  label="Otra marca *"
-                                  value={template.brand_other}
-                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand_other', v)}
-                                  placeholder="Especifica la marca"
-                                />
-                              )}
-
-                              <div className="xl:col-span-2">
-                                <Field
-                                  label="Modelo"
-                                  value={template.model}
-                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model', v)}
-                                  placeholder="Ej: Gen2"
-                                />
-                                <div className="mt-2">
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                                   <Checkbox
-                                    label="Modelo no conocido"
-                                    checked={template.model_unknown}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model_unknown', v)}
+                                    label="¿Este grupo usa torre?"
+                                    checked={template.use_tower}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'use_tower', v)}
+                                  />
+
+                                  {template.use_tower && (
+                                    <Field
+                                      label="Torre *"
+                                      value={template.tower_name}
+                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'tower_name', v)}
+                                      placeholder="Ej: Torre A"
+                                    />
+                                  )}
+
+                                  <Checkbox
+                                    label="Tiene sala de máquinas"
+                                    checked={template.has_machine_room}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'has_machine_room', v)}
+                                  />
+
+                                  <Checkbox
+                                    label="Sin sala de máquinas"
+                                    checked={template.no_machine_room}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'no_machine_room', v)}
                                   />
                                 </div>
-                              </div>
 
-                              <div className="xl:col-span-2">
-                                <Field
-                                  label="N° serie"
-                                  value={template.serial_number}
-                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'serial_number', v)}
-                                  placeholder="Ej: SN-12345"
-                                />
-                                <div className="mt-2">
-                                  <Checkbox
-                                    label="Número de serie no legible"
-                                    checked={template.serial_number_not_legible}
-                                    onChange={(v) =>
-                                      updateTemplate(groupIndex, templateIndex, 'serial_number_not_legible', v)
-                                    }
-                                  />
-                                </div>
-                              </div>
+                                <div className="mt-4">
+                                  {group.quantity === 1 ? (
+                                    <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                                      Este bloque tiene un solo ascensor, por lo tanto queda marcado automáticamente que se detiene en todos los pisos.
+                                    </div>
+                                  ) : group.all_equal ? (
+                                    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+                                      <Checkbox
+                                        label="Se detiene en todos los pisos"
+                                        checked={template.stops_all_floors}
+                                        onChange={(v) =>
+                                          updateTemplate(groupIndex, templateIndex, 'stops_all_floors', v)
+                                        }
+                                      />
 
-                              <div className="xl:col-span-2">
-                                <Field
-                                  label="Fecha instalación"
-                                  type="date"
-                                  value={template.installation_date}
-                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'installation_date', v)}
-                                />
-                                <div className="mt-2">
-                                  <Checkbox
-                                    label="Fecha no disponible"
-                                    checked={template.installation_date_unknown}
-                                    onChange={(v) =>
-                                      updateTemplate(groupIndex, templateIndex, 'installation_date_unknown', v)
-                                    }
-                                  />
-                                </div>
-                              </div>
+                                      {!template.stops_all_floors && (
+                                        <div className="space-y-3">
+                                          <p className="text-sm font-medium text-slate-700">
+                                            Asignación por ascensor
+                                          </p>
 
-                              <Field
-                                label="N° de paradas *"
-                                value={template.floors}
-                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'floors', v)}
-                                placeholder="Ej: 12"
-                              />
+                                          {group.quantity === 2 ? (
+                                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                              <StopPatternSelector
+                                                label="Ascensor 1"
+                                                value={group.stop_assignments[0] === 'even' ? 'even' : 'odd'}
+                                                onChange={(pattern) => updateGroupStopAssignment(groupIndex, 0, pattern)}
+                                              />
 
-                              <Field
-                                label="Capacidad KG"
-                                value={template.capacity_kg}
-                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_kg', v)}
-                                placeholder="Ej: 630"
-                              />
-
-                              <Field
-                                label="Capacidad personas"
-                                value={template.capacity_persons}
-                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_persons', v)}
-                                placeholder="Ej: 8"
-                              />
-
-                              <SelectField
-                                label="Tipo de ascensor"
-                                value={template.elevator_type}
-                                onChange={(v) =>
-                                  updateTemplate(groupIndex, templateIndex, 'elevator_type', v as ElevatorDriveType)
-                                }
-                                options={[
-                                  { value: 'electromecanico', label: 'Electromecánico' },
-                                  { value: 'hidraulico', label: 'Hidráulico' },
-                                ]}
-                              />
-
-                              <SelectField
-                                label="Tipo de equipo"
-                                value={template.classification}
-                                onChange={(v) =>
-                                  updateTemplate(
-                                    groupIndex,
-                                    templateIndex,
-                                    'classification',
-                                    v as ElevatorClassification
-                                  )
-                                }
-                                options={[
-                                  { value: 'ascensor', label: 'Ascensor' },
-                                  { value: 'montacarga', label: 'Montacarga' },
-                                  { value: 'montaplatos', label: 'Montaplatos' },
-                                  { value: 'otro', label: 'Otro' },
-                                ]}
-                              />
-
-                              {template.classification === 'otro' && (
-                                <Field
-                                  label="Otro tipo de equipo *"
-                                  value={template.classification_other}
-                                  onChange={(v) =>
-                                    updateTemplate(groupIndex, templateIndex, 'classification_other', v)
-                                  }
-                                  placeholder="Especifica"
-                                />
-                              )}
-                            </div>
-
-                            <div className="mt-5 space-y-4">
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                <Checkbox
-                                  label="¿Este grupo usa torre?"
-                                  checked={template.use_tower}
-                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'use_tower', v)}
-                                />
-
-                                {template.use_tower && (
-                                  <Field
-                                    label="Torre *"
-                                    value={template.tower_name}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'tower_name', v)}
-                                    placeholder="Ej: Torre A"
-                                  />
-                                )}
-
-                                <Checkbox
-                                  label="Tiene sala de máquinas"
-                                  checked={template.has_machine_room}
-                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'has_machine_room', v)}
-                                />
-
-                                <Checkbox
-                                  label="Sin sala de máquinas"
-                                  checked={template.no_machine_room}
-                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'no_machine_room', v)}
-                                />
-                              </div>
-
-                              {group.quantity === 1 ? (
-                                <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-                                  Este bloque tiene un solo ascensor, por lo tanto queda marcado automáticamente que se detiene en todos los pisos.
-                                </div>
-                              ) : group.all_equal ? (
-                                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                                  <Checkbox
-                                    label="Se detiene en todos los pisos"
-                                    checked={template.stops_all_floors}
-                                    onChange={(v) =>
-                                      updateTemplate(groupIndex, templateIndex, 'stops_all_floors', v)
-                                    }
-                                  />
-
-                                  {!template.stops_all_floors && (
-                                    <div className="space-y-3">
-                                      <p className="text-sm font-medium text-slate-700">
-                                        Asignación por ascensor
-                                      </p>
-
-                                      {group.quantity === 2 ? (
-                                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                          <StopPatternSelector
-                                            label="Ascensor 1"
-                                            value={group.stop_assignments[0] === 'even' ? 'even' : 'odd'}
-                                            onChange={(pattern) => updateGroupStopAssignment(groupIndex, 0, pattern)}
-                                          />
-
-                                          <div className="rounded border bg-white px-4 py-3 text-sm text-slate-700">
-                                            <div className="font-medium text-slate-900">Ascensor 2</div>
-                                            <div className="mt-1">
-                                              Queda automáticamente en{' '}
-                                              <strong>
-                                                {group.stop_assignments[0] === 'even' ? 'impares' : 'pares'}
-                                              </strong>
+                                              <div className="rounded border bg-white px-4 py-3 text-sm text-slate-700">
+                                                <div className="font-medium text-slate-900">Ascensor 2</div>
+                                                <div className="mt-1">
+                                                  Queda automáticamente en{' '}
+                                                  <strong>
+                                                    {group.stop_assignments[0] === 'even' ? 'impares' : 'pares'}
+                                                  </strong>
+                                                </div>
+                                              </div>
                                             </div>
-                                          </div>
+                                          ) : (
+                                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                              {Array.from({ length: group.quantity }, (_, elevatorIndex) => (
+                                                <StopPatternSelector
+                                                  key={`${group.id}-stop-${elevatorIndex}`}
+                                                  label={`Ascensor ${elevatorIndex + 1}`}
+                                                  value={
+                                                    group.stop_assignments[elevatorIndex] === 'even'
+                                                      ? 'even'
+                                                      : 'odd'
+                                                  }
+                                                  onChange={(pattern) =>
+                                                    updateGroupStopAssignment(groupIndex, elevatorIndex, pattern)
+                                                  }
+                                                />
+                                              ))}
+                                            </div>
+                                          )}
                                         </div>
-                                      ) : (
-                                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                          {Array.from({ length: group.quantity }, (_, elevatorIndex) => (
-                                            <StopPatternSelector
-                                              key={`${group.id}-stop-${elevatorIndex}`}
-                                              label={`Ascensor ${elevatorIndex + 1}`}
-                                              value={
-                                                group.stop_assignments[elevatorIndex] === 'even'
-                                                  ? 'even'
-                                                  : 'odd'
-                                              }
-                                              onChange={(pattern) =>
-                                                updateGroupStopAssignment(groupIndex, elevatorIndex, pattern)
-                                              }
-                                            />
-                                          ))}
-                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+                                      <Checkbox
+                                        label="Se detiene en todos los pisos"
+                                        checked={template.stops_all_floors}
+                                        onChange={(v) =>
+                                          updateTemplate(groupIndex, templateIndex, 'stops_all_floors', v)
+                                        }
+                                      />
+
+                                      {!template.stops_all_floors && (
+                                        <StopPatternSelector
+                                          label={`Ascensor ${templateIndex + 1}`}
+                                          value={template.stops_even_floors ? 'even' : 'odd'}
+                                          onChange={(pattern) => {
+                                            updateTemplate(groupIndex, templateIndex, 'stops_odd_floors', pattern === 'odd');
+                                            updateTemplate(groupIndex, templateIndex, 'stops_even_floors', pattern === 'even');
+                                          }}
+                                        />
                                       )}
                                     </div>
                                   )}
                                 </div>
-                              ) : (
-                                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                                  <Checkbox
-                                    label="Se detiene en todos los pisos"
-                                    checked={template.stops_all_floors}
-                                    onChange={(v) =>
-                                      updateTemplate(groupIndex, templateIndex, 'stops_all_floors', v)
-                                    }
+                              </div>
+
+                              <div>
+                                <h6 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
+                                  Datos técnicos
+                                </h6>
+
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                  <SelectField
+                                    label="Marca *"
+                                    value={template.brand}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand', v)}
+                                    options={[
+                                      { value: '', label: 'Selecciona marca' },
+                                      ...BRAND_OPTIONS.map((item) => ({
+                                        value: item,
+                                        label: item,
+                                      })),
+                                    ]}
                                   />
 
-                                  {!template.stops_all_floors && (
-                                    <StopPatternSelector
-                                      label={`Ascensor ${templateIndex + 1}`}
-                                      value={template.stops_even_floors ? 'even' : 'odd'}
-                                      onChange={(pattern) => {
-                                        updateTemplate(groupIndex, templateIndex, 'stops_odd_floors', pattern === 'odd');
-                                        updateTemplate(groupIndex, templateIndex, 'stops_even_floors', pattern === 'even');
-                                      }}
+                                  {template.brand === 'Otros' && (
+                                    <Field
+                                      label="Otra marca *"
+                                      value={template.brand_other}
+                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand_other', v)}
+                                      placeholder="Especifica la marca"
+                                    />
+                                  )}
+
+                                  <div className="xl:max-w-md">
+                                    <Field
+                                      label="Modelo"
+                                      value={template.model}
+                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model', v)}
+                                      placeholder="Ej: Gen2"
+                                    />
+                                    <div className="mt-2">
+                                      <Checkbox
+                                        label="Modelo no conocido"
+                                        checked={template.model_unknown}
+                                        onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model_unknown', v)}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="xl:max-w-md">
+                                    <Field
+                                      label="N° serie"
+                                      value={template.serial_number}
+                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'serial_number', v)}
+                                      placeholder="Ej: SN-12345"
+                                    />
+                                    <div className="mt-2">
+                                      <Checkbox
+                                        label="Número de serie no legible"
+                                        checked={template.serial_number_not_legible}
+                                        onChange={(v) =>
+                                          updateTemplate(groupIndex, templateIndex, 'serial_number_not_legible', v)
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="xl:max-w-sm">
+                                    <Field
+                                      label="Fecha instalación"
+                                      type="date"
+                                      value={template.installation_date}
+                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'installation_date', v)}
+                                    />
+                                    <div className="mt-2">
+                                      <Checkbox
+                                        label="Fecha no disponible"
+                                        checked={template.installation_date_unknown}
+                                        onChange={(v) =>
+                                          updateTemplate(groupIndex, templateIndex, 'installation_date_unknown', v)
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <Field
+                                    label="N° de paradas *"
+                                    value={template.floors}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'floors', v)}
+                                    placeholder="Ej: 12"
+                                  />
+
+                                  <Field
+                                    label="Capacidad KG"
+                                    value={template.capacity_kg}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_kg', v)}
+                                    placeholder="Ej: 630"
+                                  />
+
+                                  <Field
+                                    label="Capacidad personas"
+                                    value={template.capacity_persons}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_persons', v)}
+                                    placeholder="Ej: 8"
+                                  />
+
+                                  <SelectField
+                                    label="Tipo de ascensor"
+                                    value={template.elevator_type}
+                                    onChange={(v) =>
+                                      updateTemplate(groupIndex, templateIndex, 'elevator_type', v as ElevatorDriveType)
+                                    }
+                                    options={[
+                                      { value: 'electromecanico', label: 'Electromecánico' },
+                                      { value: 'hidraulico', label: 'Hidráulico' },
+                                    ]}
+                                  />
+
+                                  <SelectField
+                                    label="Tipo de equipo"
+                                    value={template.classification}
+                                    onChange={(v) =>
+                                      updateTemplate(
+                                        groupIndex,
+                                        templateIndex,
+                                        'classification',
+                                        v as ElevatorClassification
+                                      )
+                                    }
+                                    options={[
+                                      { value: 'ascensor', label: 'Ascensor' },
+                                      { value: 'montacarga', label: 'Montacarga' },
+                                      { value: 'montaplatos', label: 'Montaplatos' },
+                                      { value: 'otro', label: 'Otro' },
+                                    ]}
+                                  />
+
+                                  {template.classification === 'otro' && (
+                                    <Field
+                                      label="Otro tipo de equipo *"
+                                      value={template.classification_other}
+                                      onChange={(v) =>
+                                        updateTemplate(groupIndex, templateIndex, 'classification_other', v)
+                                      }
+                                      placeholder="Especifica"
                                     />
                                   )}
                                 </div>
-                              )}
+                              </div>
                             </div>
                           </div>
                         );
