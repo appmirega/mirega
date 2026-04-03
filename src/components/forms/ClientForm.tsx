@@ -109,10 +109,17 @@ const BRAND_OPTIONS = [
   'Mitsubishi',
   'Hyundai',
   'Fujitec',
+  'Fuji',
   'Orona',
   'Sigma',
   'Atlas',
   'LG',
+  'FBLT',
+  'CEA',
+  'Carlos Silva',
+  'Cisa',
+  'Dover',
+  'Thyssen',
   'Otros',
 ] as const;
 
@@ -1680,7 +1687,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                 className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm hover:bg-slate-50"
               >
                 <Plus className="h-4 w-4" />
-                Agregar dirección
+                Agregar nuevo grupo de ascensores
               </button>
             </div>
 
@@ -1711,10 +1718,10 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       <div>
                         <h4 className="flex items-center gap-2 font-semibold text-slate-900">
                           <MapPin className="h-4 w-4 text-slate-600" />
-                          Bloque dirección #{groupIndex + 1}
+                          Grupo de ascensores #{groupIndex + 1}
                         </h4>
                         <p className="text-sm text-slate-500">
-                          Define cantidad y si los ascensores de este bloque son iguales o distintos.
+                          Usa este grupo cuando haya otra ubicación, otra torre o una configuración distinta de ascensores.
                         </p>
                       </div>
 
@@ -1724,7 +1731,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                         className="inline-flex items-center gap-2 rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
                       >
                         <Trash2 className="h-4 w-4" />
-                        Quitar bloque
+                        Quitar grupo
                       </button>
                     </div>
 
@@ -1746,7 +1753,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       />
 
                       <Checkbox
-                        label="Usar misma dirección del cliente"
+                        label="Usar misma dirección del cliente principal"
                         checked={group.same_address_as_client}
                         onChange={(v) => updateGroup(groupIndex, 'same_address_as_client', v)}
                       />
@@ -1764,21 +1771,21 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                     {!group.same_address_as_client && (
                       <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
                         <Field
-                          label="Dirección de este bloque *"
+                          label="Dirección de este grupo *"
                           value={group.address}
                           onChange={(v) => updateGroup(groupIndex, 'address', v)}
                           placeholder="Ej: Apoquindo 1234"
                         />
 
                         <Field
-                          label="Comuna de este bloque *"
+                          label="Comuna de este grupo *"
                           value={group.commune}
                           onChange={(v) => updateGroup(groupIndex, 'commune', v)}
                           placeholder="Ej: Las Condes"
                         />
 
                         <Field
-                          label="Región de este bloque *"
+                          label="Región de este grupo *"
                           value={group.region}
                           onChange={(v) => updateGroup(groupIndex, 'region', v)}
                           placeholder="Ej: Región Metropolitana"
@@ -1790,7 +1797,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       {Array.from({ length: templateCount }, (_, templateIndex) => {
                         const template = group.templates[templateIndex] || createEmptyTemplate();
                         const title = group.all_equal
-                          ? 'Ficha base para todos los ascensores del bloque'
+                          ? 'Ficha base para todos los ascensores de este grupo'
                           : `Ficha ascensor ${templateIndex + 1}`;
 
                         return (
@@ -1800,204 +1807,149 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                           >
                             <h5 className="mb-4 font-medium text-slate-900">{title}</h5>
 
-                            <div className="space-y-5">
-                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                                <h6 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                                  Estructura y ubicación
-                                </h6>
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                              <SelectField
+                                label="Marca *"
+                                value={template.brand}
+                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand', v)}
+                                options={[
+                                  { value: '', label: 'Selecciona marca' },
+                                  ...BRAND_OPTIONS.map((item) => ({
+                                    value: item,
+                                    label: item,
+                                  })),
+                                ]}
+                              />
 
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                              {template.brand === 'Otros' && (
+                                <Field
+                                  label="Otra marca *"
+                                  value={template.brand_other}
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand_other', v)}
+                                  placeholder="Especifica la marca"
+                                />
+                              )}
+
+                              <div className="xl:col-span-2">
+                                <Field
+                                  label="Modelo"
+                                  value={template.model}
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model', v)}
+                                  placeholder="Ej: Gen2"
+                                />
+                                <div className="mt-2">
                                   <Checkbox
-                                    label="¿Este ascensor o grupo usa torre?"
-                                    checked={template.use_tower}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'use_tower', v)}
-                                  />
-
-                                  {template.use_tower ? (
-                                    <Field
-                                      label="Identificación de torre *"
-                                      value={template.tower_name}
-                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'tower_name', v)}
-                                      placeholder="Ej: Torre A"
-                                    />
-                                  ) : (
-                                    <div className="rounded border border-dashed border-slate-300 bg-white px-3 py-2 text-sm text-slate-500">
-                                      Este grupo no usa identificación de torre.
-                                    </div>
-                                  )}
-
-                                  <Checkbox
-                                    label="Tiene sala de máquinas"
-                                    checked={template.has_machine_room}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'has_machine_room', v)}
-                                  />
-
-                                  <Checkbox
-                                    label="Sin sala de máquinas"
-                                    checked={template.no_machine_room}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'no_machine_room', v)}
+                                    label="Modelo no conocido"
+                                    checked={template.model_unknown}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model_unknown', v)}
                                   />
                                 </div>
                               </div>
 
-                              <div className="rounded-lg border border-slate-200 bg-white p-4">
-                                <h6 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                                  Datos técnicos principales
-                                </h6>
-
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                  <SelectField
-                                    label="Marca *"
-                                    value={template.brand}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand', v)}
-                                    options={[
-                                      { value: '', label: 'Selecciona marca' },
-                                      ...BRAND_OPTIONS.map((item) => ({
-                                        value: item,
-                                        label: item,
-                                      })),
-                                    ]}
-                                  />
-
-                                  {template.brand === 'Otros' && (
-                                    <Field
-                                      label="Otra marca *"
-                                      value={template.brand_other}
-                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'brand_other', v)}
-                                      placeholder="Especifica la marca"
-                                    />
-                                  )}
-
-                                  <div className="md:max-w-sm">
-                                    <Field
-                                      label="Modelo"
-                                      value={template.model}
-                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model', v)}
-                                      placeholder="Ej: Gen2"
-                                    />
-                                    <div className="mt-2">
-                                      <Checkbox
-                                        label="Modelo no conocido"
-                                        checked={template.model_unknown}
-                                        onChange={(v) => updateTemplate(groupIndex, templateIndex, 'model_unknown', v)}
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="md:max-w-sm">
-                                    <Field
-                                      label="Fecha instalación"
-                                      type="date"
-                                      value={template.installation_date}
-                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'installation_date', v)}
-                                    />
-                                    <div className="mt-2">
-                                      <Checkbox
-                                        label="Fecha no disponible"
-                                        checked={template.installation_date_unknown}
-                                        onChange={(v) =>
-                                          updateTemplate(groupIndex, templateIndex, 'installation_date_unknown', v)
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <SelectField
-                                    label="Tipo de ascensor"
-                                    value={template.elevator_type}
+                              <div className="xl:col-span-2">
+                                <Field
+                                  label="N° serie"
+                                  value={template.serial_number}
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'serial_number', v)}
+                                  placeholder="Ej: SN-12345"
+                                />
+                                <div className="mt-2">
+                                  <Checkbox
+                                    label="Número de serie no legible"
+                                    checked={template.serial_number_not_legible}
                                     onChange={(v) =>
-                                      updateTemplate(groupIndex, templateIndex, 'elevator_type', v as ElevatorDriveType)
+                                      updateTemplate(groupIndex, templateIndex, 'serial_number_not_legible', v)
                                     }
-                                    options={[
-                                      { value: 'electromecanico', label: 'Electromecánico' },
-                                      { value: 'hidraulico', label: 'Hidráulico' },
-                                    ]}
                                   />
+                                </div>
+                              </div>
 
-                                  <SelectField
-                                    label="Tipo de equipo"
-                                    value={template.classification}
+                              <div className="xl:col-span-2">
+                                <Field
+                                  label="Fecha instalación"
+                                  type="date"
+                                  value={template.installation_date}
+                                  onChange={(v) => updateTemplate(groupIndex, templateIndex, 'installation_date', v)}
+                                />
+                                <div className="mt-2">
+                                  <Checkbox
+                                    label="Fecha no disponible"
+                                    checked={template.installation_date_unknown}
                                     onChange={(v) =>
-                                      updateTemplate(
-                                        groupIndex,
-                                        templateIndex,
-                                        'classification',
-                                        v as ElevatorClassification
-                                      )
+                                      updateTemplate(groupIndex, templateIndex, 'installation_date_unknown', v)
                                     }
-                                    options={[
-                                      { value: 'ascensor', label: 'Ascensor' },
-                                      { value: 'montacarga', label: 'Montacarga' },
-                                      { value: 'montaplatos', label: 'Montaplatos' },
-                                      { value: 'otro', label: 'Otro' },
-                                    ]}
-                                  />
-
-                                  {template.classification === 'otro' && (
-                                    <Field
-                                      label="Otro tipo de equipo *"
-                                      value={template.classification_other}
-                                      onChange={(v) =>
-                                        updateTemplate(groupIndex, templateIndex, 'classification_other', v)
-                                      }
-                                      placeholder="Especifica"
-                                    />
-                                  )}
-
-                                  <Field
-                                    label="Capacidad KG"
-                                    value={template.capacity_kg}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_kg', v)}
-                                    placeholder="Ej: 630"
-                                  />
-
-                                  <Field
-                                    label="Capacidad personas"
-                                    value={template.capacity_persons}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_persons', v)}
-                                    placeholder="Ej: 8"
                                   />
                                 </div>
                               </div>
 
-                              <div className="rounded-lg border border-slate-200 bg-white p-4">
-                                <h6 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                                  Operación e identificación
-                                </h6>
+                              <Field
+                                label="N° de paradas *"
+                                value={template.floors}
+                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'floors', v)}
+                                placeholder="Ej: 12"
+                              />
 
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                  <Field
-                                    label="N° de paradas *"
-                                    value={template.floors}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'floors', v)}
-                                    placeholder="Ej: 12"
-                                  />
+                              <Field
+                                label="Capacidad KG"
+                                value={template.capacity_kg}
+                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_kg', v)}
+                                placeholder="Ej: 630"
+                              />
 
-                                  <div className="md:max-w-sm">
-                                    <Field
-                                      label="N° serie"
-                                      value={template.serial_number}
-                                      onChange={(v) => updateTemplate(groupIndex, templateIndex, 'serial_number', v)}
-                                      placeholder="Ej: SN-12345"
-                                    />
-                                    <div className="mt-2">
-                                      <Checkbox
-                                        label="Número de serie no legible"
-                                        checked={template.serial_number_not_legible}
-                                        onChange={(v) =>
-                                          updateTemplate(groupIndex, templateIndex, 'serial_number_not_legible', v)
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
+                              <Field
+                                label="Capacidad personas"
+                                value={template.capacity_persons}
+                                onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_persons', v)}
+                                placeholder="Ej: 8"
+                              />
+
+                              <SelectField
+                                label="Tipo de ascensor"
+                                value={template.elevator_type}
+                                onChange={(v) =>
+                                  updateTemplate(groupIndex, templateIndex, 'elevator_type', v as ElevatorDriveType)
+                                }
+                                options={[
+                                  { value: 'electromecanico', label: 'Electromecánico' },
+                                  { value: 'hidraulico', label: 'Hidráulico' },
+                                ]}
+                              />
+
+                              <SelectField
+                                label="Tipo de equipo"
+                                value={template.classification}
+                                onChange={(v) =>
+                                  updateTemplate(
+                                    groupIndex,
+                                    templateIndex,
+                                    'classification',
+                                    v as ElevatorClassification
+                                  )
+                                }
+                                options={[
+                                  { value: 'ascensor', label: 'Ascensor' },
+                                  { value: 'montacarga', label: 'Montacarga' },
+                                  { value: 'montaplatos', label: 'Montaplatos' },
+                                  { value: 'otro', label: 'Otro' },
+                                ]}
+                              />
+
+                              {template.classification === 'otro' && (
+                                <Field
+                                  label="Otro tipo de equipo *"
+                                  value={template.classification_other}
+                                  onChange={(v) =>
+                                    updateTemplate(groupIndex, templateIndex, 'classification_other', v)
+                                  }
+                                  placeholder="Especifica"
+                                />
+                              )}
                             </div>
 
                             <div className="mt-5 space-y-4">
                               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                                 <Checkbox
-                                  label="Usar torre"
+                                  label="¿Este grupo usa torre?"
                                   checked={template.use_tower}
                                   onChange={(v) => updateTemplate(groupIndex, templateIndex, 'use_tower', v)}
                                 />
@@ -2109,6 +2061,17 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                           </div>
                         );
                       })}
+                    </div>
+
+                    <div className="mt-5 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={addAddressGroup}
+                        className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm hover:bg-slate-50"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Agregar nuevo grupo de ascensores
+                      </button>
                     </div>
                   </div>
                 );
