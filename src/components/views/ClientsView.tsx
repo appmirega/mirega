@@ -1,828 +1,546 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { ClientForm } from '../forms/ClientForm';
-import {
-  Plus,
-  Search,
-  Edit2,
-  Trash2,
-  Power,
-  RefreshCw,
-  Eye,
-  Download,
-  X,
-  Building2,
-  MapPin,
-  Mail,
-  Phone,
-  User,
-  Wrench,
-} from 'lucide-react';
+import { Check, X, ChevronDown, ChevronUp, AlertCircle, Save } from 'lucide-react';
+import PhotoCapture from './PhotoCapture';
 
-interface ContactItem {
-  name: string;
-  role?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  source: 'admin' | 'primary' | 'additional';
-}
-
-interface ClientAlternateContactsPayload {
-  self_managed?: boolean;
-  admin_company?: string | null;
-  enable_building_contacts?: boolean;
-  additional_contacts?: Array<{
-    name?: string | null;
-    role?: string | null;
-    email?: string | null;
-    phone?: string | null;
-  }>;
-}
-
-interface ClientRow {
+interface Question {
   id: string;
-  company_name: string;
-  building_name: string | null;
-  internal_alias: string | null;
-  rut: string | null;
-  address: string;
-  commune: string | null;
-  city: string | null;
-  building_type: 'residencial' | 'corporativo' | null;
-  contact_name: string | null;
-  contact_person: string | null;
-  contact_email: string | null;
-  contact_phone: string | null;
-  admin_name: string | null;
-  admin_email: string | null;
-  admin_phone: string | null;
-  alternate_contacts: ClientAlternateContactsPayload | null;
-  client_code: string | null;
-  is_active: boolean | null;
-  created_at: string;
+  question_number: number;
+  section: string;
+  question_text: string;
+  frequency: 'M' | 'T' | 'S';
+  is_hydraulic_only: boolean;
 }
 
-interface ElevatorRow {
-  id: string;
-  client_id: string;
-  tower_name: string | null;
-  index_number: number | null;
-  address_asc: string | null;
-  manufacturer: string | null;
-  model: string | null;
-  serial_number: string | null;
-  capacity_kg: number | null;
-  capacity_persons: number | null;
-  floors: number | null;
-  installation_date: string | null;
-  has_machine_room: boolean | null;
-  no_machine_room: boolean | null;
-  stops_all_floors: boolean | null;
-  stops_odd_floors: boolean | null;
-  stops_even_floors: boolean | null;
-  elevator_type: string | null;
-  classification: string | null;
-  created_at: string;
+interface Answer {
+  question_id: string;
+  status: 'approved' | 'rejected' | 'pending';
+  observations: string;
+  photo_1_url: string | null;
+  photo_2_url: string | null;
 }
 
-type Mode = 'create' | 'edit' | null;
-
-const clean = (value?: string | null) => (value || '').trim();
-const formatDate = (value?: string | null) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString();
-};
-
-function getClientContacts(client: ClientRow): ContactItem[] {
-  const items: ContactItem[] = [];
-
-  if (clean(client.admin_name) || clean(client.admin_email) || clean(client.admin_phone)) {
-    items.push({
-      name: clean(client.admin_name) || 'Administrador',
-      role: 'Administrador',
-      email: clean(client.admin_email) || null,
-      phone: clean(client.admin_phone) || null,
-      source: 'admin',
-    });
-  }
-
-  if (clean(client.contact_name) || clean(client.contact_email) || clean(client.contact_phone)) {
-    items.push({
-      name: clean(client.contact_name) || 'Contacto principal',
-      role: clean(client.contact_person) || 'Contacto principal',
-      email: clean(client.contact_email) || null,
-      phone: clean(client.contact_phone) || null,
-      source: 'primary',
-    });
-  }
-
-  for (const contact of client.alternate_contacts?.additional_contacts || []) {
-    if (!clean(contact?.name) && !clean(contact?.email) && !clean(contact?.phone)) continue;
-
-    items.push({
-      name: clean(contact?.name) || 'Contacto adicional',
-      role: clean(contact?.role) || 'Contacto adicional',
-      email: clean(contact?.email) || null,
-      phone: clean(contact?.phone) || null,
-      source: 'additional',
-    });
-  }
-
-  return items;
+interface DynamicChecklistFormProps {
+  checklistId: string;
+  elevatorId: string;
+  isHydraulic: boolean;
+  month: number;
+  onComplete: () => void;
+  onSave: () => void;
 }
 
-function escapeCsv(value: string | number | boolean | null | undefined) {
-  if (value === null || value === undefined) return '""';
-  const text = String(value).replace(/"/g, '""');
-  return `"${text}"`;
-}
+export function DynamicChecklistForm({
+  checklistId,
+  elevatorId, // reservado para futuros usos
+  isHydraulic,
+  month,
+  onComplete,
+  onSave,
+}: DynamicChecklistFormProps) {
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [answers, setAnswers] = useState<Map<string, Answer>>(new Map());
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [changeCount, setChangeCount] = useState(0);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
-function getElevatorStopPattern(elevator: ElevatorRow) {
-  if (elevator.stops_all_floors) return 'Todos los pisos';
-  if (elevator.stops_even_floors) return 'Pares';
-  if (elevator.stops_odd_floors) return 'Impares';
-  return 'Personalizado / no definido';
-}
-
-export function ClientsView() {
-  const [clients, setClients] = useState<ClientRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerMode, setDrawerMode] = useState<Mode>(null);
-  const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-
-  const [detailClient, setDetailClient] = useState<ClientRow | null>(null);
-  const [detailElevators, setDetailElevators] = useState<ElevatorRow[]>([]);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
-
-  const openCreate = () => {
-    setSelectedClient(null);
-    setDrawerMode('create');
-    setDrawerOpen(true);
-    setError(null);
-  };
-
-  const openEdit = (client: ClientRow) => {
-    setSelectedClient(client);
-    setDrawerMode('edit');
-    setDrawerOpen(true);
-    setError(null);
-  };
-
-  const closeDrawer = () => {
-    setDrawerOpen(false);
-    setDrawerMode(null);
-    setSelectedClient(null);
-  };
-
-  const closeDetail = () => {
-    setDetailClient(null);
-    setDetailElevators([]);
-    setDetailError(null);
-  };
-
-  const handleFormSuccess = () => {
-    closeDrawer();
-    loadClients();
-  };
-
-  const loadClients = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data, error } = await supabase
-        .from('clients')
-        .select(`
-          id,
-          company_name,
-          building_name,
-          internal_alias,
-          rut,
-          address,
-          commune,
-          city,
-          building_type,
-          contact_name,
-          contact_person,
-          contact_email,
-          contact_phone,
-          admin_name,
-          admin_email,
-          admin_phone,
-          alternate_contacts,
-          client_code,
-          is_active,
-          created_at
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setClients((data || []) as ClientRow[]);
-    } catch (err: any) {
-      console.error('Error loading clients:', err);
-      setError(err.message || 'Error al cargar los clientes desde la base de datos.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Cargar preguntas y respuestas
   useEffect(() => {
-    loadClients();
-  }, []);
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const { data: questionsData, error: questionsError } = await supabase
+          .from('mnt_checklist_questions')
+          .select('*')
+          .order('question_number');
 
-  const enrichedClients = useMemo(
-    () =>
-      clients.map((client) => ({
-        ...client,
-        contacts: getClientContacts(client),
-      })),
-    [clients]
-  );
+        if (questionsError) throw questionsError;
 
-  const toggleActive = async (client: ClientRow) => {
-    try {
-      setActionLoadingId(client.id);
-      const newValue = !client.is_active;
+        const filteredQuestions = filterQuestionsByFrequency(
+          (questionsData || []) as Question[],
+          month,
+          isHydraulic
+        );
+        setQuestions(filteredQuestions);
 
-      const { error } = await supabase
-        .from('clients')
-        .update({ is_active: newValue })
-        .eq('id', client.id);
+        const { data: answersData, error: answersError } = await supabase
+          .from('mnt_checklist_answers')
+          .select('*')
+          .eq('checklist_id', checklistId);
 
-      if (error) throw error;
+        if (answersError) throw answersError;
 
-      setClients((prev) => prev.map((c) => (c.id === client.id ? { ...c, is_active: newValue } : c)));
-      if (detailClient?.id === client.id) {
-        setDetailClient({ ...detailClient, is_active: newValue });
+        const answersMap = new Map<string, Answer>();
+        (answersData || []).forEach((answer: any) => {
+          answersMap.set(answer.question_id, {
+            question_id: answer.question_id,
+            status: answer.status as Answer['status'],
+            observations: answer.observations || '',
+            photo_1_url: answer.photo_1_url,
+            photo_2_url: answer.photo_2_url,
+          });
+        });
+
+        setAnswers(answersMap);
+
+        const sections = new Set<string>();
+        filteredQuestions.forEach((q) => sections.add(q.section));
+        setExpandedSections(sections);
+      } catch (error) {
+        console.error('Error loading checklist data:', error);
+        alert('Error al cargar el checklist');
+      } finally {
+        setLoading(false);
       }
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || 'No se pudo actualizar el estado del cliente.');
-    } finally {
-      setActionLoadingId(null);
+    };
+
+    loadData();
+  }, [checklistId, month, isHydraulic]);
+
+  // Filtrar preguntas por frecuencia y tipo de ascensor
+  const filterQuestionsByFrequency = (
+    allQuestions: Question[],
+    currentMonth: number,
+    isHydraulicElevator: boolean
+  ): Question[] => {
+    const monthlyQuestions = allQuestions.filter((q) => q.frequency === 'M');
+
+    let trimestralQuestions: Question[] = [];
+    let semestralQuestions: Question[] = [];
+
+    if (currentMonth % 3 === 0) {
+      trimestralQuestions = allQuestions.filter((q) => q.frequency === 'T');
     }
+
+    if (currentMonth % 6 === 0) {
+      semestralQuestions = allQuestions.filter((q) => q.frequency === 'S');
+    }
+
+    let filtered = [
+      ...monthlyQuestions,
+      ...trimestralQuestions,
+      ...semestralQuestions,
+    ];
+
+    if (!isHydraulicElevator) {
+      filtered = filtered.filter((q) => !q.is_hydraulic_only);
+    }
+
+    return filtered;
   };
 
-  const deleteClient = async (client: ClientRow) => {
-    const confirmMsg =
-      '¿Seguro que deseas eliminar este cliente?\n\n' +
-      'Si tiene registros relacionados, la base de datos puede bloquear la eliminación.\n' +
-      'En ese caso usa solo la opción Activar/Desactivar.';
+  const getAnswer = (questionId: string): Answer | undefined => {
+    return answers.get(questionId);
+  };
 
-    if (!window.confirm(confirmMsg)) return;
+  const handleAnswerChange = (questionId: string, status: Answer['status']) => {
+    const currentAnswer = answers.get(questionId) || {
+      question_id: questionId,
+      status: 'pending' as Answer['status'],
+      observations: '',
+      photo_1_url: null,
+      photo_2_url: null,
+    };
 
+    const newAnswer: Answer = {
+      ...currentAnswer,
+      status,
+      observations: status === 'approved' ? '' : currentAnswer.observations,
+      photo_1_url: status === 'approved' ? null : currentAnswer.photo_1_url,
+      photo_2_url: status === 'approved' ? null : currentAnswer.photo_2_url,
+    };
+
+    const newMap = new Map(answers);
+    newMap.set(questionId, newAnswer);
+    setAnswers(newMap);
+    setChangeCount((prev) => prev + 1);
+  };
+
+  const handleObservationsChange = (questionId: string, observations: string) => {
+    const currentAnswer = answers.get(questionId);
+    if (!currentAnswer) return;
+
+    const newMap = new Map(answers);
+    newMap.set(questionId, { ...currentAnswer, observations });
+    setAnswers(newMap);
+    setChangeCount((prev) => prev + 1);
+  };
+
+  const handlePhotosChange = (
+    questionId: string,
+    photo1Url: string | null,
+    photo2Url: string | null
+  ) => {
+    const currentAnswer = answers.get(questionId);
+    if (!currentAnswer) return;
+
+    const newMap = new Map(answers);
+    newMap.set(questionId, { ...currentAnswer, photo_1_url: photo1Url, photo_2_url: photo2Url });
+    setAnswers(newMap);
+    setChangeCount((prev) => prev + 1);
+  };
+
+  const handleAutoSave = async () => {
+    await saveAnswers(true);
+  };
+
+  const handleManualSave = async () => {
+    await saveAnswers(false);
+  };
+
+  const saveAnswers = async (isAutoSave: boolean = false) => {
+    setSaving(true);
     try {
-      setActionLoadingId(client.id);
+      const answersToSave = Array.from(answers.values()).map((answer) => ({
+        checklist_id: checklistId,
+        question_id: answer.question_id,
+        status: answer.status,
+        observations: answer.observations,
+        photo_1_url: answer.photo_1_url,
+        photo_2_url: answer.photo_2_url,
+      }));
 
-      const { error } = await supabase.from('clients').delete().eq('id', client.id);
-      if (error) throw error;
+      for (const answer of answersToSave) {
+        const { error } = await supabase
+          .from('mnt_checklist_answers')
+          .upsert(answer, {
+            onConflict: 'checklist_id,question_id',
+          });
 
-      setClients((prev) => prev.filter((c) => c.id !== client.id));
-      if (detailClient?.id === client.id) closeDetail();
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || 'No se pudo eliminar el cliente. Revisa si tiene registros asociados.');
+        if (error) throw error;
+      }
+
+      // Auto-guardado: marcamos que el checklist se actualizó
+      if (isAutoSave) {
+        const { error: updateError } = await supabase
+          .from('mnt_checklists')
+          .update({ updated_at: new Date().toISOString() })
+          .eq('id', checklistId);
+
+        if (updateError) {
+          console.error('Error updating checklist on autosave:', updateError);
+        }
+      }
+
+      setLastSaved(new Date());
+      setChangeCount(0);
+
+      if (!isAutoSave) {
+        onSave();
+      }
+    } catch (error) {
+      console.error('Error saving answers:', error);
+      alert('Error al guardar las respuestas');
     } finally {
-      setActionLoadingId(null);
+      setSaving(false);
     }
   };
 
-  const openDetail = async (client: ClientRow) => {
-    try {
-      setDetailClient(client);
-      setDetailLoading(true);
-      setDetailError(null);
-      setDetailElevators([]);
-
-      const { data, error } = await supabase
-        .from('elevators')
-        .select(`
-          id,
-          client_id,
-          tower_name,
-          index_number,
-          address_asc,
-          manufacturer,
-          model,
-          serial_number,
-          capacity_kg,
-          capacity_persons,
-          floors,
-          installation_date,
-          has_machine_room,
-          no_machine_room,
-          stops_all_floors,
-          stops_odd_floors,
-          stops_even_floors,
-          elevator_type,
-          classification,
-          created_at
-        `)
-        .eq('client_id', client.id)
-        .order('index_number', { ascending: true, nullsFirst: false })
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      setDetailElevators((data || []) as ElevatorRow[]);
-    } catch (err: any) {
-      console.error('Error loading client detail:', err);
-      setDetailError(err.message || 'No se pudo cargar el detalle del cliente.');
-    } finally {
-      setDetailLoading(false);
+  const toggleSection = (section: string) => {
+    const newExpanded = new Set(expandedSections);
+    if (newExpanded.has(section)) {
+      newExpanded.delete(section);
+    } else {
+      newExpanded.add(section);
     }
+    setExpandedSections(newExpanded);
   };
 
-  const filtered = enrichedClients.filter((client) => {
-    const term = search.toLowerCase().trim();
-    if (!term) return true;
+  const getProgress = () => {
+    const total = questions.length;
+    let answered = 0;
 
-    const contactBlob = client.contacts
-      .flatMap((contact) => [contact.name, contact.role || '', contact.email || '', contact.phone || ''])
-      .join(' ')
-      .toLowerCase();
-
-    return [
-      client.company_name,
-      client.building_name || '',
-      client.internal_alias || '',
-      client.rut || '',
-      client.address || '',
-      client.commune || '',
-      client.city || '',
-      client.client_code || '',
-      contactBlob,
-    ]
-      .join(' ')
-      .toLowerCase()
-      .includes(term);
-  });
-
-  const exportClientsToCsv = () => {
-    const rows = filtered.map((client) => {
-      const contacts = client.contacts;
-      const primary = contacts.find((item) => item.source === 'primary') || null;
-      const admin = contacts.find((item) => item.source === 'admin') || null;
-      const additional = contacts.filter((item) => item.source === 'additional');
-
-      return {
-        codigo_cliente: client.client_code || '',
-        razon_social: client.company_name || '',
-        edificio: client.building_name || '',
-        alias_interno: client.internal_alias || '',
-        rut: client.rut || '',
-        direccion: client.address || '',
-        comuna: client.commune || '',
-        ciudad: client.city || '',
-        tipo_edificio: client.building_type || '',
-        administrador: admin?.name || '',
-        email_administrador: admin?.email || '',
-        telefono_administrador: admin?.phone || '',
-        contacto_principal: primary?.name || '',
-        cargo_contacto_principal: primary?.role || '',
-        email_contacto_principal: primary?.email || '',
-        telefono_contacto_principal: primary?.phone || '',
-        contactos_adicionales: additional
-          .map((item) => [item.name, item.role, item.email, item.phone].filter(Boolean).join(' | '))
-          .join(' || '),
-        estado: client.is_active ? 'Activo' : 'Inactivo',
-        fecha_creacion: formatDate(client.created_at),
-      };
+    questions.forEach((q) => {
+      const answer = answers.get(q.id);
+      if (answer && answer.status !== 'pending') {
+        answered++;
+      }
     });
 
-    if (rows.length === 0) {
-      alert('No hay clientes para exportar con el filtro actual.');
+    return {
+      answered,
+      total,
+      percentage: total > 0 ? Math.round((answered / total) * 100) : 0,
+    };
+  };
+
+  // Todas las rechazadas deben tener observación + al menos 1 foto
+  const canComplete = () => {
+    const allAnswered = questions.every((q) => {
+      const answer = answers.get(q.id);
+      if (!answer || answer.status === 'pending') return false;
+
+      if (answer.status === 'rejected') {
+        return (
+          answer.observations.trim() !== '' &&
+          !!answer.photo_1_url
+        );
+      }
+
+      return true;
+    });
+
+    return allAnswered;
+  };
+
+  const handleCompleteClick = () => {
+    if (!canComplete()) {
+      alert('Aún hay preguntas sin responder o sin observaciones/fotos donde corresponde.');
       return;
     }
 
-    const headers = Object.keys(rows[0]);
-    const csv = [
-      headers.map((header) => escapeCsv(header)).join(';'),
-      ...rows.map((row) => headers.map((header) => escapeCsv((row as any)[header])).join(';')),
-    ].join('\n');
+    if (typeof onComplete !== 'function') {
+      console.error('onComplete no es una función válida');
+      return;
+    }
 
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    const dateStamp = new Date().toISOString().slice(0, 10);
-
-    link.href = url;
-    link.setAttribute('download', `clientes_${dateStamp}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    onComplete();
   };
 
-  const detailContacts = detailClient ? getClientContacts(detailClient) : [];
-  const elevatorsGrouped = useMemo(() => {
-    const map = new Map<string, ElevatorRow[]>();
-    detailElevators.forEach((elevator) => {
-      const key = clean(elevator.tower_name) || clean(elevator.address_asc) || 'Sin agrupación';
-      const list = map.get(key) || [];
-      list.push(elevator);
-      map.set(key, list);
+  useEffect(() => {
+    if (changeCount >= 5) {
+      handleAutoSave();
+    }
+  }, [changeCount]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-10">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  const progress = getProgress();
+
+  const groupedQuestions = questions.reduce((groups, question) => {
+    if (!groups[question.section]) {
+      groups[question.section] = [];
+    }
+    groups[question.section].push(question);
+    return groups;
+  }, {} as Record<string, Question[]>);
+
+  const formatDateTime = (date: Date) => {
+    return date.toLocaleString('es-CL', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
-    return Array.from(map.entries());
-  }, [detailElevators]);
+  };
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Gestión de Clientes</h1>
-          <p className="text-sm text-slate-500">
-            Administra la información de tus clientes, sus datos de contacto y estado.
+    <div className="space-y-6">
+      {/* Header de Progreso */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Checklist de Mantenimiento
+          </h2>
+          <p className="text-sm text-slate-600">
+            Responde todas las preguntas. Las respuestas rechazadas requieren observaciones y al menos 1 foto.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={exportClientsToCsv}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-            disabled={loading || filtered.length === 0}
-          >
-            <Download className="w-4 h-4" />
-            Descargar Excel
-          </button>
-          <button
-            type="button"
-            onClick={loadClients}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-            disabled={loading}
-          >
-            <RefreshCw className="w-4 h-4" />
-            Actualizar
-          </button>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" />
-            Nuevo Cliente
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="relative max-w-xl w-full">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre, edificio, contacto, email, teléfono, dirección o código..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-          />
-        </div>
-        <div className="text-xs text-slate-500">
-          Mostrando <span className="font-semibold text-slate-700">{filtered.length}</span> cliente(s)
-        </div>
-      </div>
-
-      {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>}
-
-      <div className="flex-1 overflow-auto bg-white rounded-xl border border-slate-100 shadow-sm">
-        {loading ? (
-          <div className="p-6 text-sm text-slate-500">Cargando clientes...</div>
-        ) : filtered.length === 0 ? (
-          <div className="p-10 flex flex-col items-center justify-center text-slate-400 gap-2">
-            <div className="text-5xl">📄</div>
-            <div className="font-medium">No se encontraron clientes</div>
-            <div className="text-sm">
-              Crea un nuevo cliente con el botón <span className="font-semibold">“Nuevo Cliente”</span>.
+        <div className="flex flex-col items-start md:items-end gap-2">
+          <div className="flex items-center gap-3">
+            <div className="w-40 bg-slate-100 rounded-full h-2.5 overflow-hidden">
+              <div
+                className="h-full bg-blue-600 rounded-full transition-all"
+                style={{ width: `${progress.percentage}%` }}
+              />
             </div>
+            <span className="text-sm font-medium text-slate-700">
+              {progress.answered} / {progress.total} respondidas ({progress.percentage}%)
+            </span>
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-100">
-              <tr className="text-left text-slate-500">
-                <th className="px-4 py-2 font-medium">Cliente</th>
-                <th className="px-4 py-2 font-medium">Contacto</th>
-                <th className="px-4 py-2 font-medium">Dirección</th>
-                <th className="px-4 py-2 font-medium">Código</th>
-                <th className="px-4 py-2 font-medium text-center">Estado</th>
-                <th className="px-4 py-2 font-medium text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((client) => {
-                const mainLabel =
-                  clean(client.internal_alias) ||
-                  clean(client.building_name) ||
-                  clean(client.company_name) ||
-                  'Cliente';
 
-                const secondaryLabel = clean(client.company_name) || clean(client.building_name) || null;
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+            {lastSaved && (
+              <span>
+                Último guardado: <span className="font-medium">{formatDateTime(lastSaved)}</span>
+              </span>
+            )}
+            {changeCount > 0 && (
+              <span className="flex items-center gap-1 text-amber-600">
+                <AlertCircle className="w-4 h-4" />
+                Cambios sin guardar: {changeCount}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
 
-                return (
-                  <tr key={client.id} className="border-b border-slate-50 hover:bg-slate-50/70">
-                    <td className="px-4 py-2 align-top">
-                      <div className="font-semibold text-slate-900">{mainLabel}</div>
-                      {secondaryLabel && secondaryLabel !== mainLabel && (
-                        <div className="text-xs text-slate-500">{secondaryLabel}</div>
-                      )}
-                      <div className="text-[10px] text-slate-400">
-                        Creado: {new Date(client.created_at).toLocaleDateString()}
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-2 align-top">
-                      <div className="space-y-2 min-w-[280px]">
-                        {client.contacts.length === 0 ? (
-                          <div className="text-xs text-slate-400">Sin contactos visibles</div>
-                        ) : (
-                          client.contacts.map((contact, index) => (
-                            <div key={`${client.id}-contact-${index}`} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-                              <div className="text-sm font-medium text-slate-800">{contact.name}</div>
-                              {contact.role && <div className="text-[11px] uppercase tracking-wide text-slate-500">{contact.role}</div>}
-                              {contact.email && <div className="text-xs text-slate-600">{contact.email}</div>}
-                              {contact.phone && <div className="text-xs text-slate-600">{contact.phone}</div>}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-2 align-top">
-                      <div className="text-xs text-slate-700">{client.address}</div>
-                    </td>
-
-                    <td className="px-4 py-2 align-top">
-                      <div className="text-xs font-mono text-slate-700">{client.client_code || '—'}</div>
-                    </td>
-
-                    <td className="px-4 py-2 align-top text-center">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          client.is_active
-                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                            : 'bg-slate-50 text-slate-500 border border-slate-100'
-                        }`}
-                      >
-                        {client.is_active ? 'Activo' : 'Inactivo'}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-2 align-top">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openDetail(client)}
-                          className="p-1.5 rounded-md hover:bg-emerald-50 text-emerald-600"
-                          title="Ver detalle del cliente"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => openEdit(client)}
-                          className="p-1.5 rounded-md hover:bg-blue-50 text-blue-600"
-                          title="Editar cliente"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => toggleActive(client)}
-                          className="p-1.5 rounded-md hover:bg-slate-50 text-slate-700"
-                          title={client.is_active ? 'Desactivar cliente' : 'Activar cliente'}
-                          disabled={actionLoadingId === client.id}
-                        >
-                          <Power className="w-4 h-4" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => deleteClient(client)}
-                          className="p-1.5 rounded-md hover:bg-red-50 text-red-500"
-                          title="Eliminar cliente"
-                          disabled={actionLoadingId === client.id}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* Auto-guardado indicador */}
+      <div className="flex justify-end items-center gap-3 text-xs">
+        {changeCount > 0 && (
+          <span className="flex items-center gap-1 text-amber-600">
+            <AlertCircle className="w-4 h-4" />
+            {changeCount} cambio{changeCount !== 1 ? 's' : ''} sin guardar
+          </span>
+        )}
+        {lastSaved && changeCount === 0 && (
+          <span className="text-green-600">
+            ✓ Guardado {formatDateTime(lastSaved)}
+          </span>
         )}
       </div>
 
-      {drawerOpen && (
-        <div className="fixed inset-0 z-40 flex">
-          <div className="flex-1 bg-black/20" onClick={closeDrawer} />
-          <div className="w-full max-w-3xl bg-white shadow-2xl h-full overflow-y-auto p-6">
-            <ClientForm client={drawerMode === 'edit' ? selectedClient : null} onSuccess={handleFormSuccess} onCancel={closeDrawer} />
+      {/* Mensaje de validación si falta algo */}
+      {!canComplete() && progress.answered > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-amber-900">Checklist Incompleto</p>
+            <p className="text-sm text-amber-800">
+              Todas las preguntas rechazadas deben incluir observaciones y al menos 1 fotografía.
+            </p>
           </div>
         </div>
       )}
 
-      {detailClient && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-slate-900/30" onClick={closeDetail} />
-          <div className="w-full max-w-5xl bg-white shadow-2xl h-full overflow-y-auto">
-            <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-slate-500 text-sm mb-1">
-                  <Building2 className="w-4 h-4" />
-                  Ficha de cliente
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900">
-                  {clean(detailClient.internal_alias) || clean(detailClient.building_name) || detailClient.company_name}
-                </h2>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                  <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-700 font-medium">
-                    Código: {detailClient.client_code || '—'}
-                  </span>
-                  <span className={`px-2 py-1 rounded-full font-medium ${detailClient.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                    {detailClient.is_active ? 'Activo' : 'Inactivo'}
-                  </span>
-                  <span>Creado: {formatDate(detailClient.created_at)}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closeDetail}
-                className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
-                title="Cerrar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {detailError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {detailError}
-                </div>
+      {/* Secciones del checklist */}
+      <div className="space-y-4 pb-32">
+        {Object.entries(groupedQuestions).map(([section, sectionQuestions]) => (
+          <div key={section} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleSection(section)}
+              className="w-full px-4 py-3 flex items-center justify-between bg-slate-50 hover:bg-slate-100"
+            >
+              <span className="font-semibold text-slate-800">{section}</span>
+              {expandedSections.has(section) ? (
+                <ChevronUp className="w-5 h-5 text-slate-500" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-slate-500" />
               )}
+            </button>
 
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="rounded-xl border border-slate-200 p-4 bg-slate-50/60">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Datos generales</div>
-                    <div className="space-y-2 text-sm text-slate-700">
-                      <div><span className="font-medium text-slate-900">Razón social:</span> {detailClient.company_name || '—'}</div>
-                      <div><span className="font-medium text-slate-900">Edificio:</span> {detailClient.building_name || '—'}</div>
-                      <div><span className="font-medium text-slate-900">Alias interno:</span> {detailClient.internal_alias || '—'}</div>
-                      <div><span className="font-medium text-slate-900">RUT:</span> {detailClient.rut || '—'}</div>
-                      <div><span className="font-medium text-slate-900">Tipo edificio:</span> {detailClient.building_type || '—'}</div>
-                    </div>
-                  </div>
+            {expandedSections.has(section) && (
+              <div className="divide-y divide-slate-100">
+                {sectionQuestions.map((question) => {
+                  const answer = getAnswer(question.id);
+                  const status = answer?.status ?? 'pending';
 
-                  <div className="rounded-xl border border-slate-200 p-4 bg-slate-50/60">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Ubicación</div>
-                    <div className="space-y-2 text-sm text-slate-700">
-                      <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 mt-0.5 text-slate-400" />
-                        <div>
-                          <div>{detailClient.address || '—'}</div>
-                          <div className="text-slate-500">{[detailClient.commune, detailClient.city].filter(Boolean).join(', ') || 'Sin comuna / ciudad'}</div>
+                  return (
+                    <div key={question.id} className="p-4 hover:bg-slate-50 transition">
+                      <div className="flex flex-col gap-3">
+                        {/* Número + Pregunta en la misma línea */}
+                        <div className="flex items-start gap-2">
+                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-semibold text-slate-700 flex-shrink-0 mt-0.5">
+                            {question.question_number}
+                          </span>
+                          <p className="font-medium text-slate-900 flex-1">{question.question_text}</p>
                         </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
-                <div className="rounded-xl border border-slate-200 p-4 bg-slate-50/60">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Resumen</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-lg bg-white border border-slate-200 px-3 py-4">
-                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Ascensores</div>
-                      <div className="text-2xl font-bold text-slate-900 mt-1">{detailElevators.length}</div>
-                    </div>
-                    <div className="rounded-lg bg-white border border-slate-200 px-3 py-4">
-                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Grupos / torres</div>
-                      <div className="text-2xl font-bold text-slate-900 mt-1">{elevatorsGrouped.length}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                        {/* Frecuencia debajo de la pregunta */}
+                        <p className="text-xs text-slate-500 ml-8">
+                          Frecuencia:{' '}
+                          {question.frequency === 'M'
+                            ? 'Mensual'
+                            : question.frequency === 'T'
+                            ? 'Trimestral'
+                            : 'Semestral'}
+                          {question.is_hydraulic_only && ' • Solo ascensores hidráulicos'}
+                        </p>
 
-              <div className="rounded-xl border border-slate-200 p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <User className="w-4 h-4 text-slate-500" />
-                  <h3 className="font-semibold text-slate-900">Contactos del cliente</h3>
-                </div>
+                        {/* Botones de respuesta debajo */}
+                        <div className="flex gap-2 ml-8">
+                          <button
+                            onClick={() => handleAnswerChange(question.id, 'approved')}
+                            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold transition ${
+                              status === 'approved'
+                                ? 'bg-green-600 text-white shadow-lg'
+                                : 'bg-white border-2 border-slate-300 text-slate-700 hover:border-green-500'
+                            }`}
+                          >
+                            <Check className="w-5 h-5" />
+                            Aprobado
+                          </button>
 
-                {detailContacts.length === 0 ? (
-                  <div className="text-sm text-slate-500">No hay contactos visibles para este cliente.</div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    {detailContacts.map((contact, index) => (
-                      <div key={`detail-contact-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                        <div className="font-medium text-slate-900">{contact.name}</div>
-                        <div className="text-xs uppercase tracking-wide text-slate-500 mt-1">{contact.role || 'Contacto'}</div>
-                        {contact.email && (
-                          <div className="mt-3 flex items-center gap-2 text-sm text-slate-700">
-                            <Mail className="w-4 h-4 text-slate-400" />
-                            <span>{contact.email}</span>
+                          <button
+                            onClick={() => handleAnswerChange(question.id, 'rejected')}
+                            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold transition ${
+                              status === 'rejected'
+                                ? 'bg-red-600 text-white shadow-lg'
+                                : 'bg-white border-2 border-slate-300 text-slate-700 hover:border-red-500'
+                            }`}
+                          >
+                            <X className="w-5 h-5" />
+                            Rechazado
+                          </button>
+                        </div>
+
+                        {/* Observaciones y fotos para respuestas rechazadas */}
+                        {status === 'rejected' && (
+                          <div className="ml-8 space-y-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                            <div>
+                              <label className="block text-sm font-semibold text-red-900 mb-2">
+                                Observaciones (Obligatorias)
+                              </label>
+                              <textarea
+                                value={answer?.observations || ''}
+                                onChange={(e) =>
+                                  handleObservationsChange(question.id, e.target.value)
+                                }
+                                placeholder="Describe el problema encontrado..."
+                                rows={3}
+                                className="w-full px-4 py-2 border border-red-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-semibold text-red-900 mb-2">
+                                Evidencia Fotográfica (mínimo 1 foto)
+                              </label>
+                              <PhotoCapture
+                                questionId={question.id}
+                                checklistId={checklistId}
+                                existingPhotos={{
+                                  photo1: answer?.photo_1_url || undefined,
+                                  photo2: answer?.photo_2_url || undefined,
+                                }}
+                                onPhotosChange={(photo1Url, photo2Url) =>
+                                  handlePhotosChange(question.id, photo1Url, photo2Url)
+                                }
+                              />
+                              <p className="mt-2 text-xs text-red-700">
+                                • Foto 1 es obligatoria cuando la respuesta es Rechazado. Foto 2 es opcional.
+                              </p>
+                            </div>
                           </div>
                         )}
-                        {contact.phone && (
-                          <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
-                            <Phone className="w-4 h-4 text-slate-400" />
-                            <span>{contact.phone}</span>
-                          </div>
-                        )}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    </div>
+                  );
+                })}
               </div>
-
-              <div className="rounded-xl border border-slate-200 p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <Wrench className="w-4 h-4 text-slate-500" />
-                  <h3 className="font-semibold text-slate-900">Detalle de ascensores</h3>
-                </div>
-
-                {detailLoading ? (
-                  <div className="text-sm text-slate-500">Cargando ascensores del cliente...</div>
-                ) : detailElevators.length === 0 ? (
-                  <div className="text-sm text-slate-500">Este cliente aún no tiene ascensores registrados.</div>
-                ) : (
-                  <div className="space-y-4">
-                    {elevatorsGrouped.map(([groupName, items]) => (
-                      <div key={groupName} className="rounded-xl border border-slate-200 overflow-hidden">
-                        <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
-                          <div>
-                            <div className="font-semibold text-slate-900">{groupName}</div>
-                            <div className="text-xs text-slate-500">{items.length} ascensor(es) en este grupo</div>
-                          </div>
-                        </div>
-
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead className="bg-white border-b border-slate-100 text-slate-500">
-                              <tr>
-                                <th className="px-4 py-2 text-left font-medium">Ascensor</th>
-                                <th className="px-4 py-2 text-left font-medium">Marca / modelo</th>
-                                <th className="px-4 py-2 text-left font-medium">Capacidad</th>
-                                <th className="px-4 py-2 text-left font-medium">Paradas</th>
-                                <th className="px-4 py-2 text-left font-medium">Operación</th>
-                                <th className="px-4 py-2 text-left font-medium">Serie</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {items.map((elevator) => (
-                                <tr key={elevator.id} className="border-b border-slate-50 last:border-0">
-                                  <td className="px-4 py-3 align-top">
-                                    <div className="font-medium text-slate-900">
-                                      Ascensor #{elevator.index_number || '—'}
-                                    </div>
-                                    <div className="text-xs text-slate-500 mt-1">
-                                      {elevator.address_asc || detailClient.address || 'Sin dirección'}
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-3 align-top">
-                                    <div className="text-slate-900">{elevator.manufacturer || '—'}</div>
-                                    <div className="text-xs text-slate-500 mt-1">{elevator.model || 'Modelo no indicado'}</div>
-                                  </td>
-                                  <td className="px-4 py-3 align-top">
-                                    <div>{elevator.capacity_persons || '—'} personas</div>
-                                    <div className="text-xs text-slate-500 mt-1">{elevator.capacity_kg || '—'} kg</div>
-                                  </td>
-                                  <td className="px-4 py-3 align-top">{elevator.floors || '—'}</td>
-                                  <td className="px-4 py-3 align-top">
-                                    <div>{getElevatorStopPattern(elevator)}</div>
-                                    <div className="text-xs text-slate-500 mt-1">
-                                      {elevator.has_machine_room ? 'Con sala de máquinas' : elevator.no_machine_room ? 'Sin sala de máquinas' : 'Sala no definida'}
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-3 align-top">
-                                    <div>{elevator.serial_number || '—'}</div>
-                                    <div className="text-xs text-slate-500 mt-1">Instalación: {formatDate(elevator.installation_date)}</div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
           </div>
+        ))}
+      </div>
+
+      {/* Botón flotante para completar checklist */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-200 shadow-2xl p-4 z-40">
+        <div className="max-w-4xl mx-auto">
+          <button
+            onClick={handleCompleteClick}
+            disabled={!canComplete() || saving}
+            className={`w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-lg text-lg font-bold
+                        text-white shadow-lg transition transform ${
+                          canComplete() && !saving
+                            ? 'bg-green-600 hover:bg-green-700 hover:scale-[1.02] active:scale-[0.98]'
+                            : 'bg-slate-400 cursor-not-allowed opacity-60'
+                        }`}
+          >
+            <Check className="w-6 h-6" />
+            {saving ? 'Guardando...' : 'Completar y Guardar Checklist'}
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
-
-export default ClientsView;
