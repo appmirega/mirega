@@ -355,6 +355,10 @@ const TEMPLATE_UPPERCASE_FIELDS = new Set([
   'tower_name',
 ]);
 
+function normalizeNumericInput(value: string) {
+  return value.replace(/\D/g, '');
+}
+
 function parseOptionalNumber(value: string) {
   const clean = sanitize(value);
   if (!clean) return null;
@@ -2023,21 +2027,21 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                   <Field
                                     label="N° de paradas *"
                                     value={template.floors}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'floors', v)}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'floors', normalizeNumericInput(v))}
                                     placeholder="Ej: 12"
                                   />
 
                                   <Field
                                     label="Capacidad KG"
                                     value={template.capacity_kg}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_kg', v)}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_kg', normalizeNumericInput(v))}
                                     placeholder="Ej: 630"
                                   />
 
                                   <Field
                                     label="Capacidad personas"
                                     value={template.capacity_persons}
-                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_persons', v)}
+                                    onChange={(v) => updateTemplate(groupIndex, templateIndex, 'capacity_persons', normalizeNumericInput(v))}
                                     placeholder="Ej: 8"
                                   />
 
