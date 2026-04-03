@@ -1744,10 +1744,11 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                           updateGroup(groupIndex, 'quantity', Math.max(1, Number(v || 1)))
                         }
                         placeholder="Ej: 3"
+                      helperText="Define cuántos ascensores tendrá este grupo o torre."
                       />
 
                       <Checkbox
-                        label="Todos iguales"
+                        label="¿Todos los ascensores de este grupo son iguales?"
                         checked={group.all_equal}
                         onChange={(v) => updateGroup(groupIndex, 'all_equal', v)}
                       />
@@ -1767,6 +1768,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                         </strong>
                       </div>
                     </div>
+
+                    {group.all_equal && (
+                      <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                        Completa una sola ficha técnica para este grupo. Esta opción está pensada para ascensores iguales dentro de una misma torre o grupo.
+                      </div>
+                    )}
 
                     {!group.same_address_as_client && (
                       <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -1797,7 +1804,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                       {Array.from({ length: templateCount }, (_, templateIndex) => {
                         const template = group.templates[templateIndex] || createEmptyTemplate();
                         const title = group.all_equal
-                          ? 'Ficha base para todos los ascensores de este grupo'
+                          ? 'Ficha técnica común para este grupo'
                           : `Ficha ascensor ${templateIndex + 1}`;
 
                         return (
@@ -1931,6 +1938,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                                 <h6 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
                                   Datos técnicos
                                 </h6>
+
+                                {group.all_equal && (
+                                  <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                                    Marca, modelo, fecha, capacidad, tipo de ascensor y tipo de equipo se cargarán como base común para todos los ascensores de este grupo.
+                                  </div>
+                                )}
 
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                                   <SelectField
