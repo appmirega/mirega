@@ -1,7 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { ClientForm } from '../forms/ClientForm';
-import { Plus, Search, Edit2, Trash2, Power, RefreshCw } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  Edit2,
+  Trash2,
+  Power,
+  RefreshCw,
+  Eye,
+  Download,
+  X,
+  Building2,
+  MapPin,
+  Mail,
+  Phone,
+  User,
+  Wrench,
+} from 'lucide-react';
 
 interface ContactItem {
   name: string;
@@ -46,9 +62,38 @@ interface ClientRow {
   created_at: string;
 }
 
+interface ElevatorRow {
+  id: string;
+  client_id: string;
+  tower_name: string | null;
+  index_number: number | null;
+  address_asc: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  serial_number: string | null;
+  capacity_kg: number | null;
+  capacity_people: number | null;
+  floors: number | null;
+  installation_date: string | null;
+  has_machine_room: boolean | null;
+  no_machine_room: boolean | null;
+  stops_all_floors: boolean | null;
+  stops_odd_floors: boolean | null;
+  stops_even_floors: boolean | null;
+  elevator_type: string | null;
+  equipment_type: string | null;
+  created_at: string;
+}
+
 type Mode = 'create' | 'edit' | null;
 
 const clean = (value?: string | null) => (value || '').trim();
+const formatDate = (value?: string | null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString();
+};
 
 function getClientContacts(client: ClientRow): ContactItem[] {
   const items: ContactItem[] = [];
@@ -88,6 +133,19 @@ function getClientContacts(client: ClientRow): ContactItem[] {
   return items;
 }
 
+function escapeCsv(value: string | number | boolean | null | undefined) {
+  if (value === null || value === undefined) return '""';
+  const text = String(value).replace(/"/g, '""');
+  return `"${text}"`;
+}
+
+function getElevatorStopPattern(elevator: ElevatorRow) {
+  if (elevator.stops_all_floors) return 'Todos los pisos';
+  if (elevator.stops_even_floors) return 'Pares';
+  if (elevator.stops_odd_floors) return 'Impares';
+  return 'Personalizado / no definido';
+}
+
 export function ClientsView() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -97,6 +155,11 @@ export function ClientsView() {
   const [drawerMode, setDrawerMode] = useState<Mode>(null);
   const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+  const [detailClient, setDetailClient] = useState<ClientRow | null>(null);
+  const [detailElevators, setDetailElevators] = useState<ElevatorRow[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   const openCreate = () => {
     setSelectedClient(null);
@@ -116,6 +179,12 @@ export function ClientsView() {
     setDrawerOpen(false);
     setDrawerMode(null);
     setSelectedClient(null);
+  };
+
+  const closeDetail = () => {
+    setDetailClient(null);
+    setDetailElevators([]);
+    setDetailError(null);
   };
 
   const handleFormSuccess = () => {
@@ -190,6 +259,9 @@ export function ClientsView() {
       if (error) throw error;
 
       setClients((prev) => prev.map((c) => (c.id === client.id ? { ...c, is_active: newValue } : c)));
+      if (detailClient?.id === client.id) {
+        setDetailClient({ ...detailClient, is_active: newValue });
+      }
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'No se pudo actualizar el estado del cliente.');
@@ -213,11 +285,57 @@ export function ClientsView() {
       if (error) throw error;
 
       setClients((prev) => prev.filter((c) => c.id !== client.id));
+      if (detailClient?.id === client.id) closeDetail();
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'No se pudo eliminar el cliente. Revisa si tiene registros asociados.');
     } finally {
       setActionLoadingId(null);
+    }
+  };
+
+  const openDetail = async (client: ClientRow) => {
+    try {
+      setDetailClient(client);
+      setDetailLoading(true);
+      setDetailError(null);
+      setDetailElevators([]);
+
+      const { data, error } = await supabase
+        .from('elevators')
+        .select(`
+          id,
+          client_id,
+          tower_name,
+          index_number,
+          address_asc,
+          manufacturer,
+          model,
+          serial_number,
+          capacity_kg,
+          capacity_people,
+          floors,
+          installation_date,
+          has_machine_room,
+          no_machine_room,
+          stops_all_floors,
+          stops_odd_floors,
+          stops_even_floors,
+          elevator_type,
+          equipment_type,
+          created_at
+        `)
+        .eq('client_id', client.id)
+        .order('index_number', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setDetailElevators((data || []) as ElevatorRow[]);
+    } catch (err: any) {
+      console.error('Error loading client detail:', err);
+      setDetailError(err.message || 'No se pudo cargar el detalle del cliente.');
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -246,6 +364,74 @@ export function ClientsView() {
       .includes(term);
   });
 
+  const exportClientsToCsv = () => {
+    const rows = filtered.map((client) => {
+      const contacts = client.contacts;
+      const primary = contacts.find((item) => item.source === 'primary') || null;
+      const admin = contacts.find((item) => item.source === 'admin') || null;
+      const additional = contacts.filter((item) => item.source === 'additional');
+
+      return {
+        codigo_cliente: client.client_code || '',
+        razon_social: client.company_name || '',
+        edificio: client.building_name || '',
+        alias_interno: client.internal_alias || '',
+        rut: client.rut || '',
+        direccion: client.address || '',
+        comuna: client.commune || '',
+        ciudad: client.city || '',
+        tipo_edificio: client.building_type || '',
+        administrador: admin?.name || '',
+        email_administrador: admin?.email || '',
+        telefono_administrador: admin?.phone || '',
+        contacto_principal: primary?.name || '',
+        cargo_contacto_principal: primary?.role || '',
+        email_contacto_principal: primary?.email || '',
+        telefono_contacto_principal: primary?.phone || '',
+        contactos_adicionales: additional
+          .map((item) => [item.name, item.role, item.email, item.phone].filter(Boolean).join(' | '))
+          .join(' || '),
+        estado: client.is_active ? 'Activo' : 'Inactivo',
+        fecha_creacion: formatDate(client.created_at),
+      };
+    });
+
+    if (rows.length === 0) {
+      alert('No hay clientes para exportar con el filtro actual.');
+      return;
+    }
+
+    const headers = Object.keys(rows[0]);
+    const csv = [
+      headers.map((header) => escapeCsv(header)).join(';'),
+      ...rows.map((row) => headers.map((header) => escapeCsv((row as any)[header])).join(';')),
+    ].join('\n');
+
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStamp = new Date().toISOString().slice(0, 10);
+
+    link.href = url;
+    link.setAttribute('download', `clientes_${dateStamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const detailContacts = detailClient ? getClientContacts(detailClient) : [];
+  const elevatorsGrouped = useMemo(() => {
+    const map = new Map<string, ElevatorRow[]>();
+    detailElevators.forEach((elevator) => {
+      const key = clean(elevator.tower_name) || clean(elevator.address_asc) || 'Sin agrupación';
+      const list = map.get(key) || [];
+      list.push(elevator);
+      map.set(key, list);
+    });
+    return Array.from(map.entries());
+  }, [detailElevators]);
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-6">
@@ -257,6 +443,15 @@ export function ClientsView() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={exportClientsToCsv}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+            disabled={loading || filtered.length === 0}
+          >
+            <Download className="w-4 h-4" />
+            Descargar Excel
+          </button>
           <button
             type="button"
             onClick={loadClients}
@@ -277,8 +472,8 @@ export function ClientsView() {
         </div>
       </div>
 
-      <div className="mb-4">
-        <div className="relative max-w-xl">
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="relative max-w-xl w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -287,6 +482,9 @@ export function ClientsView() {
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           />
+        </div>
+        <div className="text-xs text-slate-500">
+          Mostrando <span className="font-semibold text-slate-700">{filtered.length}</span> cliente(s)
         </div>
       </div>
 
@@ -323,10 +521,7 @@ export function ClientsView() {
                   clean(client.company_name) ||
                   'Cliente';
 
-                const secondaryLabel =
-                  clean(client.company_name) ||
-                  clean(client.building_name) ||
-                  null;
+                const secondaryLabel = clean(client.company_name) || clean(client.building_name) || null;
 
                 return (
                   <tr key={client.id} className="border-b border-slate-50 hover:bg-slate-50/70">
@@ -381,6 +576,15 @@ export function ClientsView() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
+                          onClick={() => openDetail(client)}
+                          className="p-1.5 rounded-md hover:bg-emerald-50 text-emerald-600"
+                          title="Ver detalle del cliente"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => openEdit(client)}
                           className="p-1.5 rounded-md hover:bg-blue-50 text-blue-600"
                           title="Editar cliente"
@@ -422,6 +626,198 @@ export function ClientsView() {
           <div className="flex-1 bg-black/20" onClick={closeDrawer} />
           <div className="w-full max-w-3xl bg-white shadow-2xl h-full overflow-y-auto p-6">
             <ClientForm client={drawerMode === 'edit' ? selectedClient : null} onSuccess={handleFormSuccess} onCancel={closeDrawer} />
+          </div>
+        </div>
+      )}
+
+      {detailClient && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="flex-1 bg-slate-900/30" onClick={closeDetail} />
+          <div className="w-full max-w-5xl bg-white shadow-2xl h-full overflow-y-auto">
+            <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-slate-500 text-sm mb-1">
+                  <Building2 className="w-4 h-4" />
+                  Ficha de cliente
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900">
+                  {clean(detailClient.internal_alias) || clean(detailClient.building_name) || detailClient.company_name}
+                </h2>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-700 font-medium">
+                    Código: {detailClient.client_code || '—'}
+                  </span>
+                  <span className={`px-2 py-1 rounded-full font-medium ${detailClient.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                    {detailClient.is_active ? 'Activo' : 'Inactivo'}
+                  </span>
+                  <span>Creado: {formatDate(detailClient.created_at)}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeDetail}
+                className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+                title="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {detailError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {detailError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-xl border border-slate-200 p-4 bg-slate-50/60">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Datos generales</div>
+                    <div className="space-y-2 text-sm text-slate-700">
+                      <div><span className="font-medium text-slate-900">Razón social:</span> {detailClient.company_name || '—'}</div>
+                      <div><span className="font-medium text-slate-900">Edificio:</span> {detailClient.building_name || '—'}</div>
+                      <div><span className="font-medium text-slate-900">Alias interno:</span> {detailClient.internal_alias || '—'}</div>
+                      <div><span className="font-medium text-slate-900">RUT:</span> {detailClient.rut || '—'}</div>
+                      <div><span className="font-medium text-slate-900">Tipo edificio:</span> {detailClient.building_type || '—'}</div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 p-4 bg-slate-50/60">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Ubicación</div>
+                    <div className="space-y-2 text-sm text-slate-700">
+                      <div className="flex items-start gap-2">
+                        <MapPin className="w-4 h-4 mt-0.5 text-slate-400" />
+                        <div>
+                          <div>{detailClient.address || '—'}</div>
+                          <div className="text-slate-500">{[detailClient.commune, detailClient.city].filter(Boolean).join(', ') || 'Sin comuna / ciudad'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-4 bg-slate-50/60">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Resumen</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-white border border-slate-200 px-3 py-4">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Ascensores</div>
+                      <div className="text-2xl font-bold text-slate-900 mt-1">{detailElevators.length}</div>
+                    </div>
+                    <div className="rounded-lg bg-white border border-slate-200 px-3 py-4">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Grupos / torres</div>
+                      <div className="text-2xl font-bold text-slate-900 mt-1">{elevatorsGrouped.length}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 p-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <User className="w-4 h-4 text-slate-500" />
+                  <h3 className="font-semibold text-slate-900">Contactos del cliente</h3>
+                </div>
+
+                {detailContacts.length === 0 ? (
+                  <div className="text-sm text-slate-500">No hay contactos visibles para este cliente.</div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {detailContacts.map((contact, index) => (
+                      <div key={`detail-contact-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                        <div className="font-medium text-slate-900">{contact.name}</div>
+                        <div className="text-xs uppercase tracking-wide text-slate-500 mt-1">{contact.role || 'Contacto'}</div>
+                        {contact.email && (
+                          <div className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+                            <Mail className="w-4 h-4 text-slate-400" />
+                            <span>{contact.email}</span>
+                          </div>
+                        )}
+                        {contact.phone && (
+                          <div className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                            <Phone className="w-4 h-4 text-slate-400" />
+                            <span>{contact.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 p-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <Wrench className="w-4 h-4 text-slate-500" />
+                  <h3 className="font-semibold text-slate-900">Detalle de ascensores</h3>
+                </div>
+
+                {detailLoading ? (
+                  <div className="text-sm text-slate-500">Cargando ascensores del cliente...</div>
+                ) : detailElevators.length === 0 ? (
+                  <div className="text-sm text-slate-500">Este cliente aún no tiene ascensores registrados.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {elevatorsGrouped.map(([groupName, items]) => (
+                      <div key={groupName} className="rounded-xl border border-slate-200 overflow-hidden">
+                        <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-semibold text-slate-900">{groupName}</div>
+                            <div className="text-xs text-slate-500">{items.length} ascensor(es) en este grupo</div>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-white border-b border-slate-100 text-slate-500">
+                              <tr>
+                                <th className="px-4 py-2 text-left font-medium">Ascensor</th>
+                                <th className="px-4 py-2 text-left font-medium">Marca / modelo</th>
+                                <th className="px-4 py-2 text-left font-medium">Capacidad</th>
+                                <th className="px-4 py-2 text-left font-medium">Paradas</th>
+                                <th className="px-4 py-2 text-left font-medium">Operación</th>
+                                <th className="px-4 py-2 text-left font-medium">Serie</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {items.map((elevator) => (
+                                <tr key={elevator.id} className="border-b border-slate-50 last:border-0">
+                                  <td className="px-4 py-3 align-top">
+                                    <div className="font-medium text-slate-900">
+                                      Ascensor #{elevator.index_number || '—'}
+                                    </div>
+                                    <div className="text-xs text-slate-500 mt-1">
+                                      {elevator.address_asc || detailClient.address || 'Sin dirección'}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 align-top">
+                                    <div className="text-slate-900">{elevator.manufacturer || '—'}</div>
+                                    <div className="text-xs text-slate-500 mt-1">{elevator.model || 'Modelo no indicado'}</div>
+                                  </td>
+                                  <td className="px-4 py-3 align-top">
+                                    <div>{elevator.capacity_people || '—'} personas</div>
+                                    <div className="text-xs text-slate-500 mt-1">{elevator.capacity_kg || '—'} kg</div>
+                                  </td>
+                                  <td className="px-4 py-3 align-top">{elevator.floors || '—'}</td>
+                                  <td className="px-4 py-3 align-top">
+                                    <div>{getElevatorStopPattern(elevator)}</div>
+                                    <div className="text-xs text-slate-500 mt-1">
+                                      {elevator.has_machine_room ? 'Con sala de máquinas' : elevator.no_machine_room ? 'Sin sala de máquinas' : 'Sala no definida'}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 align-top">
+                                    <div>{elevator.serial_number || '—'}</div>
+                                    <div className="text-xs text-slate-500 mt-1">Instalación: {formatDate(elevator.installation_date)}</div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
