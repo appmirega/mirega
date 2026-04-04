@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { ClientForm } from '../forms/ClientForm';
@@ -67,6 +66,7 @@ interface ElevatorRow {
   id: string;
   client_id: string;
   tower_name: string | null;
+  elevator_number: number | null;
   index_number: number | null;
   address_asc: string | null;
   manufacturer: string | null;
@@ -88,17 +88,7 @@ interface ElevatorRow {
 
 type Mode = 'create' | 'edit' | null;
 
-type ElevatorGroup = {
-  key: string;
-  address: string;
-  tower: string | null;
-  title: string;
-  subtitle: string;
-  items: ElevatorRow[];
-};
-
 const clean = (value?: string | null) => (value || '').trim();
-
 const formatDate = (value?: string | null) => {
   if (!value) return '—';
   const date = new Date(value);
@@ -157,32 +147,55 @@ function getElevatorStopPattern(elevator: ElevatorRow) {
   return 'Personalizado / no definido';
 }
 
-function compareNaturalText(a: string, b: string) {
-  return a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
+
+function naturalCompare(a?: string | null, b?: string | null) {
+  return clean(a).localeCompare(clean(b), 'es', { numeric: true, sensitivity: 'base' });
 }
 
-function getTowerSortValue(value: string | null) {
-  const tower = clean(value).toUpperCase();
-  if (!tower) return { type: 3, value: 'ZZZ' };
+function getTowerTypeAndValue(value?: string | null) {
+  const text = clean(value);
+  if (!text) return { type: 3 as const, text: '', num: Number.POSITIVE_INFINITY };
 
-  if (/^[A-Z]$/.test(tower)) {
-    return { type: 0, value: tower };
+  const letterMatch = text.match(/^(?:TORRE\s*)?([A-Z])$/i);
+  if (letterMatch) {
+    return { type: 0 as const, text: letterMatch[1].toUpperCase(), num: letterMatch[1].toUpperCase().charCodeAt(0) };
   }
 
-  if (/^\d+$/.test(tower)) {
-    return { type: 1, value: tower.padStart(6, '0') };
+  const numberMatch = text.match(/^(?:TORRE\s*)?(\d+)$/i);
+  if (numberMatch) {
+    return { type: 1 as const, text, num: Number(numberMatch[1]) };
   }
 
-  return { type: 2, value: tower };
+  return { type: 2 as const, text, num: Number.POSITIVE_INFINITY };
 }
 
-function compareElevators(a: ElevatorRow, b: ElevatorRow) {
-  const numA = a.index_number ?? Number.MAX_SAFE_INTEGER;
-  const numB = b.index_number ?? Number.MAX_SAFE_INTEGER;
+function compareTowerNames(a?: string | null, b?: string | null) {
+  const left = getTowerTypeAndValue(a);
+  const right = getTowerTypeAndValue(b);
 
-  if (numA !== numB) return numA - numB;
+  if (left.type !== right.type) return left.type - right.type;
+  if (left.type === 0 || left.type === 1) return left.num - right.num;
+  return naturalCompare(left.text, right.text);
+}
 
-  return compareNaturalText(clean(a.address_asc), clean(b.address_asc));
+function getRawElevatorSortValue(elevator: ElevatorRow) {
+  return elevator.elevator_number ?? elevator.index_number ?? Number.POSITIVE_INFINITY;
+}
+
+function compareElevatorsSameAddress(a: ElevatorRow, b: ElevatorRow) {
+  const diff = getRawElevatorSortValue(a) - getRawElevatorSortValue(b);
+  if (diff !== 0) return diff;
+  return naturalCompare(a.created_at, b.created_at);
+}
+
+function compareElevatorsWithinAddress(a: ElevatorRow, b: ElevatorRow) {
+  const towerDiff = compareTowerNames(a.tower_name, b.tower_name);
+  if (towerDiff !== 0) return towerDiff;
+
+  const diff = (a.index_number ?? a.elevator_number ?? Number.POSITIVE_INFINITY) - (b.index_number ?? b.elevator_number ?? Number.POSITIVE_INFINITY);
+  if (diff !== 0) return diff;
+
+  return naturalCompare(a.created_at, b.created_at);
 }
 
 export function ClientsView() {
@@ -346,6 +359,7 @@ export function ClientsView() {
           id,
           client_id,
           tower_name,
+          elevator_number,
           index_number,
           address_asc,
           manufacturer,
@@ -365,10 +379,11 @@ export function ClientsView() {
           created_at
         `)
         .eq('client_id', client.id)
+        .order('index_number', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: true });
 
       if (error) throw error;
-      setDetailElevators(((data || []) as ElevatorRow[]).sort(compareElevators));
+      setDetailElevators((data || []) as ElevatorRow[]);
     } catch (err: any) {
       console.error('Error loading client detail:', err);
       setDetailError(err.message || 'No se pudo cargar el detalle del cliente.');
@@ -460,46 +475,88 @@ export function ClientsView() {
 
   const detailContacts = detailClient ? getClientContacts(detailClient) : [];
 
-  const elevatorsGrouped = useMemo(() => {
-    const groups = new Map<string, ElevatorGroup>();
+  const normalizedAddresses = useMemo(
+    () => Array.from(new Set(detailElevators.map((elevator) => clean(elevator.address_asc) || clean(detailClient?.address)).filter(Boolean))),
+    [detailElevators, detailClient]
+  );
 
-    for (const elevator of detailElevators) {
-      const address = clean(elevator.address_asc) || clean(detailClient?.address) || 'Sin dirección';
-      const tower = clean(elevator.tower_name) || null;
-      const key = tower ? `${address}__${tower}` : address;
+  const hasMultipleAddresses = normalizedAddresses.length > 1;
 
-      if (!groups.has(key)) {
-        groups.set(key, {
-          key,
-          address,
-          tower,
-          title: tower || address,
-          subtitle: tower ? address : 'Sin torre',
-          items: [],
-        });
-      }
+  const displayedNumbersByElevatorId = useMemo(() => {
+    const map = new Map<string, number>();
 
-      groups.get(key)!.items.push(elevator);
+    if (!hasMultipleAddresses) {
+      const ordered = [...detailElevators].sort(compareElevatorsSameAddress);
+      ordered.forEach((elevator, index) => {
+        map.set(elevator.id, elevator.elevator_number ?? elevator.index_number ?? index + 1);
+      });
+      return map;
     }
 
-    const sorted = Array.from(groups.values())
-      .map((group) => ({
-        ...group,
-        items: [...group.items].sort(compareElevators),
-      }))
-      .sort((a, b) => {
-        const addressCompare = compareNaturalText(a.address, b.address);
-        if (addressCompare !== 0) return addressCompare;
+    const byAddress = new Map<string, ElevatorRow[]>();
+    detailElevators.forEach((elevator) => {
+      const addressKey = clean(elevator.address_asc) || clean(detailClient?.address) || 'Sin dirección';
+      const list = byAddress.get(addressKey) || [];
+      list.push(elevator);
+      byAddress.set(addressKey, list);
+    });
 
-        const rankA = getTowerSortValue(a.tower);
-        const rankB = getTowerSortValue(b.tower);
-
-        if (rankA.type !== rankB.type) return rankA.type - rankB.type;
-        return compareNaturalText(rankA.value, rankB.value);
+    Array.from(byAddress.entries())
+      .sort(([a], [b]) => naturalCompare(a, b))
+      .forEach(([, elevators]) => {
+        const ordered = [...elevators].sort(compareElevatorsWithinAddress);
+        ordered.forEach((elevator, index) => {
+          map.set(elevator.id, index + 1);
+        });
       });
 
-    return sorted;
-  }, [detailElevators, detailClient]);
+    return map;
+  }, [detailElevators, detailClient, hasMultipleAddresses]);
+
+  const elevatorsGrouped = useMemo(() => {
+    const map = new Map<string, { title: string; subtitle: string; sortAddress: string; sortTower: string; elevators: ElevatorRow[]; }>();
+
+    detailElevators.forEach((elevator) => {
+      const address = clean(elevator.address_asc) || clean(detailClient?.address) || 'Sin dirección';
+      const tower = clean(elevator.tower_name);
+      const groupKey = hasMultipleAddresses
+        ? `${address}|||${tower || 'SIN_TORRE'}`
+        : `${tower || address || 'Sin agrupación'}`;
+
+      const existing = map.get(groupKey) || {
+        title: hasMultipleAddresses ? (tower || address) : (tower || address || 'Sin agrupación'),
+        subtitle: hasMultipleAddresses ? (tower ? address : 'Dirección sin torre') : `${address}`,
+        sortAddress: address,
+        sortTower: tower,
+        elevators: [],
+      };
+
+      existing.elevators.push(elevator);
+      map.set(groupKey, existing);
+    });
+
+    return Array.from(map.values())
+      .sort((a, b) => {
+        if (hasMultipleAddresses) {
+          const addressDiff = naturalCompare(a.sortAddress, b.sortAddress);
+          if (addressDiff !== 0) return addressDiff;
+        }
+
+        const towerDiff = compareTowerNames(a.sortTower, b.sortTower);
+        if (towerDiff !== 0) return towerDiff;
+
+        return naturalCompare(a.title, b.title);
+      })
+      .map((group) => ({
+        ...group,
+        elevators: [...group.elevators].sort((a, b) => {
+          const displayedA = displayedNumbersByElevatorId.get(a.id) ?? 0;
+          const displayedB = displayedNumbersByElevatorId.get(b.id) ?? 0;
+          if (displayedA !== displayedB) return displayedA - displayedB;
+          return naturalCompare(a.created_at, b.created_at);
+        }),
+      }));
+  }, [detailElevators, detailClient, hasMultipleAddresses, displayedNumbersByElevatorId]);
 
   return (
     <div className="h-full flex flex-col">
@@ -826,12 +883,12 @@ export function ClientsView() {
                 ) : (
                   <div className="space-y-4">
                     {elevatorsGrouped.map((group) => (
-                      <div key={group.key} className="rounded-xl border border-slate-200 overflow-hidden">
+                      <div key={`${group.sortAddress}-${group.sortTower || group.title}`} className="rounded-xl border border-slate-200 overflow-hidden">
                         <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
                           <div>
                             <div className="font-semibold text-slate-900">{group.title}</div>
-                            <div className="text-xs text-slate-500">{group.items.length} ascensor(es) en este grupo</div>
-                            <div className="text-xs text-slate-400 mt-1">{group.subtitle}</div>
+                            <div className="text-xs text-slate-500">{group.subtitle}</div>
+                            <div className="text-xs text-slate-500 mt-1">{group.elevators.length} ascensor(es) en este grupo</div>
                           </div>
                         </div>
 
@@ -848,11 +905,11 @@ export function ClientsView() {
                               </tr>
                             </thead>
                             <tbody>
-                              {group.items.map((elevator, localIndex) => (
+                              {group.elevators.map((elevator) => (
                                 <tr key={elevator.id} className="border-b border-slate-50 last:border-0">
                                   <td className="px-4 py-3 align-top">
                                     <div className="font-medium text-slate-900">
-                                      Ascensor #{localIndex + 1}
+                                      Ascensor #{displayedNumbersByElevatorId.get(elevator.id) || elevator.elevator_number || elevator.index_number || '—'}
                                     </div>
                                     <div className="text-xs text-slate-500 mt-1">
                                       {elevator.address_asc || detailClient.address || 'Sin dirección'}
