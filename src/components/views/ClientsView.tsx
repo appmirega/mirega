@@ -373,18 +373,17 @@ export function ClientsView() {
     try {
       const clientIds = filtered.map((client) => client.id);
 
-      const { data: elevatorsForExport, error: elevatorsError } = await supabase
+      const { data: elevatorCountsData, error: elevatorCountsError } = await supabase
         .from('elevators')
         .select('client_id')
         .in('client_id', clientIds);
 
-      if (elevatorsError) throw elevatorsError;
+      if (elevatorCountsError) throw elevatorCountsError;
 
       const elevatorCountByClient = new Map<string, number>();
-      for (const elevator of elevatorsForExport || []) {
-        const clientId = elevator.client_id as string | undefined;
-        if (!clientId) continue;
-        elevatorCountByClient.set(clientId, (elevatorCountByClient.get(clientId) || 0) + 1);
+      for (const row of elevatorCountsData || []) {
+        const key = row.client_id as string;
+        elevatorCountByClient.set(key, (elevatorCountByClient.get(key) || 0) + 1);
       }
 
       const rows = filtered.map((client) => {
@@ -403,7 +402,6 @@ export function ClientsView() {
           comuna: client.commune || '',
           ciudad: client.city || '',
           tipo_edificio: client.building_type || '',
-          total_ascensores: elevatorCountByClient.get(client.id) || 0,
           administrador: admin?.name || '',
           email_administrador: admin?.email || '',
           telefono_administrador: admin?.phone || '',
@@ -414,6 +412,7 @@ export function ClientsView() {
           contactos_adicionales: additional
             .map((item) => [item.name, item.role, item.email, item.phone].filter(Boolean).join(' | '))
             .join(' || '),
+          total_ascensores: elevatorCountByClient.get(client.id) || 0,
           estado: client.is_active ? 'Activo' : 'Inactivo',
           fecha_creacion: formatDate(client.created_at),
         };
@@ -438,7 +437,7 @@ export function ClientsView() {
       URL.revokeObjectURL(url);
     } catch (err: any) {
       console.error('Error exporting clients CSV:', err);
-      alert(err.message || 'No se pudo exportar el archivo Excel de clientes.');
+      alert(err.message || 'No se pudo generar el archivo de clientes.');
     }
   };
 
