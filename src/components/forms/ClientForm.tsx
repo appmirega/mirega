@@ -106,6 +106,7 @@ type TowerLabelMode = 'number' | 'letter' | 'custom';
 interface StructureConfig {
   tower_count: number;
   elevators_per_group: number;
+  same_elevator_count_across_groups: boolean;
   tower_label_mode: TowerLabelMode;
   custom_tower_names: string[];
   same_address_for_all_groups: boolean;
@@ -139,6 +140,7 @@ function createInitialStructureConfig(): StructureConfig {
   return {
     tower_count: 1,
     elevators_per_group: 1,
+    same_elevator_count_across_groups: true,
     tower_label_mode: 'letter',
     custom_tower_names: [''],
     same_address_for_all_groups: true,
@@ -558,7 +560,9 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
       return Array.from({ length: desiredCount }, (_, groupIndex) => {
         const previousGroup = prev[groupIndex] || createAddressGroup(clientData.address, clientData.commune, clientData.region);
-        const quantity = Math.max(1, Number(structureConfig.elevators_per_group || 1));
+        const quantity = structureConfig.same_elevator_count_across_groups
+          ? Math.max(1, Number(structureConfig.elevators_per_group || 1))
+          : Math.max(1, Number(previousGroup.quantity || 1));
         const useTower = structureConfig.same_address_for_all_groups && Math.max(1, Number(structureConfig.tower_count || 1)) > 1;
         const towerName = useTower
           ? getGeneratedTowerName(groupIndex, structureConfig.tower_label_mode, structureConfig.custom_tower_names)
@@ -602,6 +606,7 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
     clientData.region,
     structureConfig.tower_count,
     structureConfig.elevators_per_group,
+    structureConfig.same_elevator_count_across_groups,
     structureConfig.tower_label_mode,
     structureConfig.custom_tower_names,
     structureConfig.same_address_for_all_groups,
@@ -1877,18 +1882,32 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                   placeholder="Ej: 2"
                 />
 
-                <Field
-                  label="Ascensores por torre o grupo *"
-                  type="number"
-                  value={String(structureConfig.elevators_per_group)}
-                  onChange={(v) =>
-                    setStructureConfig((prev) => ({
-                      ...prev,
-                      elevators_per_group: Math.max(1, Number(v || 1)),
-                    }))
-                  }
-                  placeholder="Ej: 3"
-                />
+                {structureConfig.same_elevator_count_across_groups ? (
+                  <Field
+                    label="Ascensores por torre o grupo *"
+                    type="number"
+                    value={String(structureConfig.elevators_per_group)}
+                    onChange={(v) => {
+                      const nextValue = Math.max(1, Number(v || 1));
+                      setStructureConfig((prev) => ({
+                        ...prev,
+                        elevators_per_group: nextValue,
+                      }));
+                      setGroups((prev) =>
+                        prev.map((group) => ({
+                          ...group,
+                          quantity: nextValue,
+                        }))
+                      );
+                    }}
+                    placeholder="Ej: 3"
+                  />
+                ) : (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <div className="font-medium">Cantidad de ascensores por grupo personalizada</div>
+                    <p className="mt-1">Podrás definir una cantidad distinta dentro de cada grupo generado automáticamente.</p>
+                  </div>
+                )}
 
                 <SelectField
                   label="Identificación de torres"
@@ -1921,6 +1940,26 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Checkbox
+                  label="Todas las torres o grupos tienen la misma cantidad de ascensores"
+                  checked={structureConfig.same_elevator_count_across_groups}
+                  onChange={(v) => {
+                    setStructureConfig((prev) => ({
+                      ...prev,
+                      same_elevator_count_across_groups: v,
+                    }));
+
+                    if (v) {
+                      setGroups((prev) =>
+                        prev.map((group) => ({
+                          ...group,
+                          quantity: Math.max(1, Number(structureConfig.elevators_per_group || 1)),
+                        }))
+                      );
+                    }
+                  }}
+                />
+
                 <Checkbox
                   label="Todas las torres o grupos usan la misma dirección del cliente"
                   checked={structureConfig.same_address_for_all_groups}
@@ -1969,8 +2008,12 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
 
               <div className="mt-4 rounded-lg border border-blue-200 bg-white px-4 py-3 text-sm text-slate-700">
                 {structureConfig.same_address_for_all_groups
-                  ? `Se generarán ${Math.max(1, Number(structureConfig.tower_count || 1))} grupo(s) automáticos con ${Math.max(1, Number(structureConfig.elevators_per_group || 1))} ascensor(es) por grupo. Si hay más de una torre y la dirección es la misma, la numeración será continua automáticamente entre torres.`
-                  : `Se generarán ${Math.max(1, Number(structureConfig.address_count || 1))} grupo(s) para completar direcciones distintas. En esta modalidad, cada dirección o grupo reinicia su numeración desde 1 automáticamente.`}
+                  ? structureConfig.same_elevator_count_across_groups
+                    ? `Se generarán ${Math.max(1, Number(structureConfig.tower_count || 1))} grupo(s) automáticos con ${Math.max(1, Number(structureConfig.elevators_per_group || 1))} ascensor(es) por grupo. Si hay más de una torre y la dirección es la misma, la numeración será continua automáticamente entre torres.`
+                    : `Se generarán ${Math.max(1, Number(structureConfig.tower_count || 1))} grupo(s) automáticos y podrás definir una cantidad distinta de ascensores dentro de cada grupo. Si hay más de una torre y la dirección es la misma, la numeración será continua automáticamente entre torres.`
+                  : structureConfig.same_elevator_count_across_groups
+                    ? `Se generarán ${Math.max(1, Number(structureConfig.address_count || 1))} grupo(s) para completar direcciones distintas, con ${Math.max(1, Number(structureConfig.elevators_per_group || 1))} ascensor(es) por grupo. En esta modalidad, cada dirección o grupo reinicia su numeración desde 1 automáticamente.`
+                    : `Se generarán ${Math.max(1, Number(structureConfig.address_count || 1))} grupo(s) para completar direcciones distintas y podrás definir una cantidad distinta de ascensores por grupo. En esta modalidad, cada dirección o grupo reinicia su numeración desde 1 automáticamente.`}
               </div>
             </div>
 
@@ -2009,10 +2052,20 @@ export function ClientForm({ client, onSuccess, onCancel }: ClientFormProps) {
                     </div>
 
                     <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <div className="rounded border bg-white px-3 py-2 text-sm text-slate-700">
-                        <div className="font-medium text-slate-900">Ascensores en este grupo</div>
-                        <div>{group.quantity}</div>
-                      </div>
+                      {structureConfig.same_elevator_count_across_groups ? (
+                        <div className="rounded border bg-white px-3 py-2 text-sm text-slate-700">
+                          <div className="font-medium text-slate-900">Ascensores en este grupo</div>
+                          <div>{group.quantity}</div>
+                        </div>
+                      ) : (
+                        <Field
+                          label="Ascensores en este grupo *"
+                          type="number"
+                          value={String(group.quantity)}
+                          onChange={(v) => updateGroup(groupIndex, 'quantity', Math.max(1, Number(v || 1)))}
+                          placeholder="Ej: 2"
+                        />
+                      )}
 
                       <Checkbox
                         label="¿Todos los ascensores de este grupo son iguales?"
