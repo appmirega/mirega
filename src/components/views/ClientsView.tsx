@@ -66,6 +66,7 @@ interface ElevatorRow {
   id: string;
   client_id: string;
   tower_name: string | null;
+  elevator_number: number | null;
   index_number: number | null;
   address_asc: string | null;
   manufacturer: string | null;
@@ -144,6 +145,47 @@ function getElevatorStopPattern(elevator: ElevatorRow) {
   if (elevator.stops_even_floors) return 'Pares';
   if (elevator.stops_odd_floors) return 'Impares';
   return 'Personalizado / no definido';
+}
+
+function getNaturalTowerRank(value: string) {
+  const text = clean(value).toUpperCase();
+
+  if (!text) return { type: 99, value: 9999, text };
+
+  if (/^[A-Z]$/.test(text)) {
+    return { type: 1, value: text.charCodeAt(0), text };
+  }
+
+  if (/^\d+$/.test(text)) {
+    return { type: 2, value: Number(text), text };
+  }
+
+  const torreMatch = text.match(/^TORRE\s+([A-Z]|\d+)$/);
+  if (torreMatch) {
+    const inner = torreMatch[1];
+    if (/^[A-Z]$/.test(inner)) {
+      return { type: 1, value: inner.charCodeAt(0), text };
+    }
+    if (/^\d+$/.test(inner)) {
+      return { type: 2, value: Number(inner), text };
+    }
+  }
+
+  return { type: 3, value: 0, text };
+}
+
+function compareTowerNames(a: string, b: string) {
+  const ra = getNaturalTowerRank(a);
+  const rb = getNaturalTowerRank(b);
+
+  if (ra.type !== rb.type) return ra.type - rb.type;
+  if (ra.type === 1 || ra.type === 2) return ra.value - rb.value;
+
+  return ra.text.localeCompare(rb.text, 'es', { numeric: true, sensitivity: 'base' });
+}
+
+function compareAddresses(a: string, b: string) {
+  return clean(a).localeCompare(clean(b), 'es', { numeric: true, sensitivity: 'base' });
 }
 
 export function ClientsView() {
@@ -307,6 +349,7 @@ export function ClientsView() {
           id,
           client_id,
           tower_name,
+          elevator_number,
           index_number,
           address_asc,
           manufacturer,
@@ -326,7 +369,6 @@ export function ClientsView() {
           created_at
         `)
         .eq('client_id', client.id)
-        .order('index_number', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -364,94 +406,132 @@ export function ClientsView() {
       .includes(term);
   });
 
-  const exportClientsToCsv = async () => {
-    if (filtered.length === 0) {
+  const exportClientsToCsv = () => {
+    const rows = filtered.map((client) => {
+      const contacts = client.contacts;
+      const primary = contacts.find((item) => item.source === 'primary') || null;
+      const admin = contacts.find((item) => item.source === 'admin') || null;
+      const additional = contacts.filter((item) => item.source === 'additional');
+
+      return {
+        codigo_cliente: client.client_code || '',
+        razon_social: client.company_name || '',
+        edificio: client.building_name || '',
+        alias_interno: client.internal_alias || '',
+        rut: client.rut || '',
+        direccion: client.address || '',
+        comuna: client.commune || '',
+        ciudad: client.city || '',
+        tipo_edificio: client.building_type || '',
+        administrador: admin?.name || '',
+        email_administrador: admin?.email || '',
+        telefono_administrador: admin?.phone || '',
+        contacto_principal: primary?.name || '',
+        cargo_contacto_principal: primary?.role || '',
+        email_contacto_principal: primary?.email || '',
+        telefono_contacto_principal: primary?.phone || '',
+        contactos_adicionales: additional
+          .map((item) => [item.name, item.role, item.email, item.phone].filter(Boolean).join(' | '))
+          .join(' || '),
+        estado: client.is_active ? 'Activo' : 'Inactivo',
+        fecha_creacion: formatDate(client.created_at),
+      };
+    });
+
+    if (rows.length === 0) {
       alert('No hay clientes para exportar con el filtro actual.');
       return;
     }
 
-    try {
-      const clientIds = filtered.map((client) => client.id);
+    const headers = Object.keys(rows[0]);
+    const csv = [
+      headers.map((header) => escapeCsv(header)).join(';'),
+      ...rows.map((row) => headers.map((header) => escapeCsv((row as any)[header])).join(';')),
+    ].join('\n');
 
-      const { data: elevatorCountsData, error: elevatorCountsError } = await supabase
-        .from('elevators')
-        .select('client_id')
-        .in('client_id', clientIds);
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStamp = new Date().toISOString().slice(0, 10);
 
-      if (elevatorCountsError) throw elevatorCountsError;
-
-      const elevatorCountByClient = new Map<string, number>();
-      for (const row of elevatorCountsData || []) {
-        const key = row.client_id as string;
-        elevatorCountByClient.set(key, (elevatorCountByClient.get(key) || 0) + 1);
-      }
-
-      const rows = filtered.map((client) => {
-        const contacts = client.contacts;
-        const primary = contacts.find((item) => item.source === 'primary') || null;
-        const admin = contacts.find((item) => item.source === 'admin') || null;
-        const additional = contacts.filter((item) => item.source === 'additional');
-
-        return {
-          codigo_cliente: client.client_code || '',
-          razon_social: client.company_name || '',
-          edificio: client.building_name || '',
-          alias_interno: client.internal_alias || '',
-          rut: client.rut || '',
-          direccion: client.address || '',
-          comuna: client.commune || '',
-          ciudad: client.city || '',
-          tipo_edificio: client.building_type || '',
-          administrador: admin?.name || '',
-          email_administrador: admin?.email || '',
-          telefono_administrador: admin?.phone || '',
-          contacto_principal: primary?.name || '',
-          cargo_contacto_principal: primary?.role || '',
-          email_contacto_principal: primary?.email || '',
-          telefono_contacto_principal: primary?.phone || '',
-          contactos_adicionales: additional
-            .map((item) => [item.name, item.role, item.email, item.phone].filter(Boolean).join(' | '))
-            .join(' || '),
-          total_ascensores: elevatorCountByClient.get(client.id) || 0,
-          estado: client.is_active ? 'Activo' : 'Inactivo',
-          fecha_creacion: formatDate(client.created_at),
-        };
-      });
-
-      const headers = Object.keys(rows[0]);
-      const csv = [
-        headers.map((header) => escapeCsv(header)).join(';'),
-        ...rows.map((row) => headers.map((header) => escapeCsv((row as any)[header])).join(';')),
-      ].join('\n');
-
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      const dateStamp = new Date().toISOString().slice(0, 10);
-
-      link.href = url;
-      link.setAttribute('download', `clientes_${dateStamp}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      console.error('Error exporting clients CSV:', err);
-      alert(err.message || 'No se pudo generar el archivo de clientes.');
-    }
+    link.href = url;
+    link.setAttribute('download', `clientes_${dateStamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const detailContacts = detailClient ? getClientContacts(detailClient) : [];
   const elevatorsGrouped = useMemo(() => {
-    const map = new Map<string, ElevatorRow[]>();
+    const uniqueAddresses = Array.from(
+      new Set(detailElevators.map((e) => clean(e.address_asc)).filter(Boolean))
+    );
+
+    const hasMultipleAddresses = uniqueAddresses.length > 1;
+
+    const map = new Map<
+      string,
+      {
+        groupName: string;
+        addressLabel: string;
+        towerLabel: string;
+        items: ElevatorRow[];
+      }
+    >();
+
     detailElevators.forEach((elevator) => {
-      const key = clean(elevator.tower_name) || clean(elevator.address_asc) || 'Sin agrupación';
-      const list = map.get(key) || [];
-      list.push(elevator);
-      map.set(key, list);
+      const addressLabel = clean(elevator.address_asc) || clean(detailClient?.address) || 'Sin dirección';
+      const towerLabel = clean(elevator.tower_name) || 'Sin torre';
+
+      const key = hasMultipleAddresses
+        ? `${addressLabel}__${towerLabel}`
+        : towerLabel;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          groupName: hasMultipleAddresses
+            ? towerLabel === 'Sin torre'
+              ? addressLabel
+              : `${addressLabel} — ${towerLabel}`
+            : towerLabel,
+          addressLabel,
+          towerLabel,
+          items: [],
+        });
+      }
+
+      map.get(key)!.items.push(elevator);
     });
-    return Array.from(map.entries());
-  }, [detailElevators]);
+
+    const groups = Array.from(map.values());
+
+    groups.sort((a, b) => {
+      if (hasMultipleAddresses) {
+        const addressCompare = compareAddresses(a.addressLabel, b.addressLabel);
+        if (addressCompare !== 0) return addressCompare;
+      }
+      return compareTowerNames(a.towerLabel, b.towerLabel);
+    });
+
+    return groups.map((group) => ({
+      ...group,
+      items: [...group.items].sort((a, b) => {
+        if (hasMultipleAddresses) {
+          const aNum = a.index_number ?? 0;
+          const bNum = b.index_number ?? 0;
+          if (aNum !== bNum) return aNum - bNum;
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        }
+
+        const aNum = a.elevator_number ?? a.index_number ?? 0;
+        const bNum = b.elevator_number ?? b.index_number ?? 0;
+        if (aNum !== bNum) return aNum - bNum;
+
+        return compareTowerNames(clean(a.tower_name), clean(b.tower_name));
+      }),
+    }));
+  }, [detailElevators, detailClient]);
 
   return (
     <div className="h-full flex flex-col">
@@ -777,66 +857,75 @@ export function ClientsView() {
                   <div className="text-sm text-slate-500">Este cliente aún no tiene ascensores registrados.</div>
                 ) : (
                   <div className="space-y-4">
-                    {elevatorsGrouped.map(([groupName, items]) => (
-                      <div key={groupName} className="rounded-xl border border-slate-200 overflow-hidden">
-                        <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
-                          <div>
-                            <div className="font-semibold text-slate-900">{groupName}</div>
-                            <div className="text-xs text-slate-500">{items.length} ascensor(es) en este grupo</div>
+                    {elevatorsGrouped.map((group) => {
+                      const hasMultipleAddresses =
+                        Array.from(new Set(detailElevators.map((e) => clean(e.address_asc)).filter(Boolean))).length > 1;
+
+                      return (
+                        <div key={`${group.addressLabel}-${group.towerLabel}`} className="rounded-xl border border-slate-200 overflow-hidden">
+                          <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="font-semibold text-slate-900">{group.groupName}</div>
+                              <div className="text-xs text-slate-500">{group.items.length} ascensor(es) en este grupo</div>
+                            </div>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-white border-b border-slate-100 text-slate-500">
+                                <tr>
+                                  <th className="px-4 py-2 text-left font-medium">Ascensor</th>
+                                  <th className="px-4 py-2 text-left font-medium">Marca / modelo</th>
+                                  <th className="px-4 py-2 text-left font-medium">Capacidad</th>
+                                  <th className="px-4 py-2 text-left font-medium">Paradas</th>
+                                  <th className="px-4 py-2 text-left font-medium">Operación</th>
+                                  <th className="px-4 py-2 text-left font-medium">Serie</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {group.items.map((elevator, index) => {
+                                  const displayNumber = hasMultipleAddresses
+                                    ? index + 1
+                                    : elevator.elevator_number ?? elevator.index_number ?? '—';
+
+                                  return (
+                                    <tr key={elevator.id} className="border-b border-slate-50 last:border-0">
+                                      <td className="px-4 py-3 align-top">
+                                        <div className="font-medium text-slate-900">
+                                          Ascensor #{displayNumber}
+                                        </div>
+                                        <div className="text-xs text-slate-500 mt-1">
+                                          {elevator.address_asc || detailClient.address || 'Sin dirección'}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3 align-top">
+                                        <div className="text-slate-900">{elevator.manufacturer || '—'}</div>
+                                        <div className="text-xs text-slate-500 mt-1">{elevator.model || 'Modelo no indicado'}</div>
+                                      </td>
+                                      <td className="px-4 py-3 align-top">
+                                        <div>{elevator.capacity_persons || '—'} personas</div>
+                                        <div className="text-xs text-slate-500 mt-1">{elevator.capacity_kg || '—'} kg</div>
+                                      </td>
+                                      <td className="px-4 py-3 align-top">{elevator.floors || '—'}</td>
+                                      <td className="px-4 py-3 align-top">
+                                        <div>{getElevatorStopPattern(elevator)}</div>
+                                        <div className="text-xs text-slate-500 mt-1">
+                                          {elevator.has_machine_room ? 'Con sala de máquinas' : elevator.no_machine_room ? 'Sin sala de máquinas' : 'Sala no definida'}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3 align-top">
+                                        <div>{elevator.serial_number || '—'}</div>
+                                        <div className="text-xs text-slate-500 mt-1">Instalación: {formatDate(elevator.installation_date)}</div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
-
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead className="bg-white border-b border-slate-100 text-slate-500">
-                              <tr>
-                                <th className="px-4 py-2 text-left font-medium">Ascensor</th>
-                                <th className="px-4 py-2 text-left font-medium">Marca / modelo</th>
-                                <th className="px-4 py-2 text-left font-medium">Capacidad</th>
-                                <th className="px-4 py-2 text-left font-medium">Paradas</th>
-                                <th className="px-4 py-2 text-left font-medium">Operación</th>
-                                <th className="px-4 py-2 text-left font-medium">Serie</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {items.map((elevator) => (
-                                <tr key={elevator.id} className="border-b border-slate-50 last:border-0">
-                                  <td className="px-4 py-3 align-top">
-                                    <div className="font-medium text-slate-900">
-                                      Ascensor #{elevator.index_number || '—'}
-                                    </div>
-                                    <div className="text-xs text-slate-500 mt-1">
-                                      {elevator.address_asc || detailClient.address || 'Sin dirección'}
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-3 align-top">
-                                    <div className="text-slate-900">{elevator.manufacturer || '—'}</div>
-                                    <div className="text-xs text-slate-500 mt-1">{elevator.model || 'Modelo no indicado'}</div>
-                                  </td>
-                                  <td className="px-4 py-3 align-top">
-                                    <div>{elevator.capacity_persons || '—'} personas</div>
-                                    <div className="text-xs text-slate-500 mt-1">{elevator.capacity_kg || '—'} kg</div>
-                                  </td>
-                                  <td className="px-4 py-3 align-top">{elevator.floors || '—'}</td>
-                                  <td className="px-4 py-3 align-top">
-                                    <div>{getElevatorStopPattern(elevator)}</div>
-                                    <div className="text-xs text-slate-500 mt-1">
-                                      {elevator.has_machine_room ? 'Con sala de máquinas' : elevator.no_machine_room ? 'Sin sala de máquinas' : 'Sala no definida'}
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-3 align-top">
-                                    <div>{elevator.serial_number || '—'}</div>
-                                    <div className="text-xs text-slate-500 mt-1">Instalación: {formatDate(elevator.installation_date)}</div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      );
+                    })}
               </div>
             </div>
           </div>
