@@ -66,7 +66,6 @@ interface ElevatorRow {
   id: string;
   client_id: string;
   tower_name: string | null;
-  elevator_number: number | null;
   index_number: number | null;
   address_asc: string | null;
   manufacturer: string | null;
@@ -145,57 +144,6 @@ function getElevatorStopPattern(elevator: ElevatorRow) {
   if (elevator.stops_even_floors) return 'Pares';
   if (elevator.stops_odd_floors) return 'Impares';
   return 'Personalizado / no definido';
-}
-
-
-function naturalCompare(a?: string | null, b?: string | null) {
-  return clean(a).localeCompare(clean(b), 'es', { numeric: true, sensitivity: 'base' });
-}
-
-function getTowerTypeAndValue(value?: string | null) {
-  const text = clean(value);
-  if (!text) return { type: 3 as const, text: '', num: Number.POSITIVE_INFINITY };
-
-  const letterMatch = text.match(/^(?:TORRE\s*)?([A-Z])$/i);
-  if (letterMatch) {
-    return { type: 0 as const, text: letterMatch[1].toUpperCase(), num: letterMatch[1].toUpperCase().charCodeAt(0) };
-  }
-
-  const numberMatch = text.match(/^(?:TORRE\s*)?(\d+)$/i);
-  if (numberMatch) {
-    return { type: 1 as const, text, num: Number(numberMatch[1]) };
-  }
-
-  return { type: 2 as const, text, num: Number.POSITIVE_INFINITY };
-}
-
-function compareTowerNames(a?: string | null, b?: string | null) {
-  const left = getTowerTypeAndValue(a);
-  const right = getTowerTypeAndValue(b);
-
-  if (left.type !== right.type) return left.type - right.type;
-  if (left.type === 0 || left.type === 1) return left.num - right.num;
-  return naturalCompare(left.text, right.text);
-}
-
-function getRawElevatorSortValue(elevator: ElevatorRow) {
-  return elevator.elevator_number ?? elevator.index_number ?? Number.POSITIVE_INFINITY;
-}
-
-function compareElevatorsSameAddress(a: ElevatorRow, b: ElevatorRow) {
-  const diff = getRawElevatorSortValue(a) - getRawElevatorSortValue(b);
-  if (diff !== 0) return diff;
-  return naturalCompare(a.created_at, b.created_at);
-}
-
-function compareElevatorsWithinAddress(a: ElevatorRow, b: ElevatorRow) {
-  const towerDiff = compareTowerNames(a.tower_name, b.tower_name);
-  if (towerDiff !== 0) return towerDiff;
-
-  const diff = (a.index_number ?? a.elevator_number ?? Number.POSITIVE_INFINITY) - (b.index_number ?? b.elevator_number ?? Number.POSITIVE_INFINITY);
-  if (diff !== 0) return diff;
-
-  return naturalCompare(a.created_at, b.created_at);
 }
 
 export function ClientsView() {
@@ -359,7 +307,6 @@ export function ClientsView() {
           id,
           client_id,
           tower_name,
-          elevator_number,
           index_number,
           address_asc,
           manufacturer,
@@ -417,146 +364,95 @@ export function ClientsView() {
       .includes(term);
   });
 
-  const exportClientsToCsv = () => {
-    const rows = filtered.map((client) => {
-      const contacts = client.contacts;
-      const primary = contacts.find((item) => item.source === 'primary') || null;
-      const admin = contacts.find((item) => item.source === 'admin') || null;
-      const additional = contacts.filter((item) => item.source === 'additional');
-
-      return {
-        codigo_cliente: client.client_code || '',
-        razon_social: client.company_name || '',
-        edificio: client.building_name || '',
-        alias_interno: client.internal_alias || '',
-        rut: client.rut || '',
-        direccion: client.address || '',
-        comuna: client.commune || '',
-        ciudad: client.city || '',
-        tipo_edificio: client.building_type || '',
-        administrador: admin?.name || '',
-        email_administrador: admin?.email || '',
-        telefono_administrador: admin?.phone || '',
-        contacto_principal: primary?.name || '',
-        cargo_contacto_principal: primary?.role || '',
-        email_contacto_principal: primary?.email || '',
-        telefono_contacto_principal: primary?.phone || '',
-        contactos_adicionales: additional
-          .map((item) => [item.name, item.role, item.email, item.phone].filter(Boolean).join(' | '))
-          .join(' || '),
-        estado: client.is_active ? 'Activo' : 'Inactivo',
-        fecha_creacion: formatDate(client.created_at),
-      };
-    });
-
-    if (rows.length === 0) {
+  const exportClientsToCsv = async () => {
+    if (filtered.length === 0) {
       alert('No hay clientes para exportar con el filtro actual.');
       return;
     }
 
-    const headers = Object.keys(rows[0]);
-    const csv = [
-      headers.map((header) => escapeCsv(header)).join(';'),
-      ...rows.map((row) => headers.map((header) => escapeCsv((row as any)[header])).join(';')),
-    ].join('\n');
+    try {
+      const clientIds = filtered.map((client) => client.id);
 
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    const dateStamp = new Date().toISOString().slice(0, 10);
+      const { data: elevatorsForExport, error: elevatorsError } = await supabase
+        .from('elevators')
+        .select('client_id')
+        .in('client_id', clientIds);
 
-    link.href = url;
-    link.setAttribute('download', `clientes_${dateStamp}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      if (elevatorsError) throw elevatorsError;
+
+      const elevatorCountByClient = new Map<string, number>();
+      for (const elevator of elevatorsForExport || []) {
+        const clientId = elevator.client_id as string | undefined;
+        if (!clientId) continue;
+        elevatorCountByClient.set(clientId, (elevatorCountByClient.get(clientId) || 0) + 1);
+      }
+
+      const rows = filtered.map((client) => {
+        const contacts = client.contacts;
+        const primary = contacts.find((item) => item.source === 'primary') || null;
+        const admin = contacts.find((item) => item.source === 'admin') || null;
+        const additional = contacts.filter((item) => item.source === 'additional');
+
+        return {
+          codigo_cliente: client.client_code || '',
+          razon_social: client.company_name || '',
+          edificio: client.building_name || '',
+          alias_interno: client.internal_alias || '',
+          rut: client.rut || '',
+          direccion: client.address || '',
+          comuna: client.commune || '',
+          ciudad: client.city || '',
+          tipo_edificio: client.building_type || '',
+          total_ascensores: elevatorCountByClient.get(client.id) || 0,
+          administrador: admin?.name || '',
+          email_administrador: admin?.email || '',
+          telefono_administrador: admin?.phone || '',
+          contacto_principal: primary?.name || '',
+          cargo_contacto_principal: primary?.role || '',
+          email_contacto_principal: primary?.email || '',
+          telefono_contacto_principal: primary?.phone || '',
+          contactos_adicionales: additional
+            .map((item) => [item.name, item.role, item.email, item.phone].filter(Boolean).join(' | '))
+            .join(' || '),
+          estado: client.is_active ? 'Activo' : 'Inactivo',
+          fecha_creacion: formatDate(client.created_at),
+        };
+      });
+
+      const headers = Object.keys(rows[0]);
+      const csv = [
+        headers.map((header) => escapeCsv(header)).join(';'),
+        ...rows.map((row) => headers.map((header) => escapeCsv((row as any)[header])).join(';')),
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const dateStamp = new Date().toISOString().slice(0, 10);
+
+      link.href = url;
+      link.setAttribute('download', `clientes_${dateStamp}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Error exporting clients CSV:', err);
+      alert(err.message || 'No se pudo exportar el archivo Excel de clientes.');
+    }
   };
 
   const detailContacts = detailClient ? getClientContacts(detailClient) : [];
-
-  const normalizedAddresses = useMemo(
-    () => Array.from(new Set(detailElevators.map((elevator) => clean(elevator.address_asc) || clean(detailClient?.address)).filter(Boolean))),
-    [detailElevators, detailClient]
-  );
-
-  const hasMultipleAddresses = normalizedAddresses.length > 1;
-
-  const displayedNumbersByElevatorId = useMemo(() => {
-    const map = new Map<string, number>();
-
-    if (!hasMultipleAddresses) {
-      const ordered = [...detailElevators].sort(compareElevatorsSameAddress);
-      ordered.forEach((elevator, index) => {
-        map.set(elevator.id, elevator.elevator_number ?? elevator.index_number ?? index + 1);
-      });
-      return map;
-    }
-
-    const byAddress = new Map<string, ElevatorRow[]>();
-    detailElevators.forEach((elevator) => {
-      const addressKey = clean(elevator.address_asc) || clean(detailClient?.address) || 'Sin dirección';
-      const list = byAddress.get(addressKey) || [];
-      list.push(elevator);
-      byAddress.set(addressKey, list);
-    });
-
-    Array.from(byAddress.entries())
-      .sort(([a], [b]) => naturalCompare(a, b))
-      .forEach(([, elevators]) => {
-        const ordered = [...elevators].sort(compareElevatorsWithinAddress);
-        ordered.forEach((elevator, index) => {
-          map.set(elevator.id, index + 1);
-        });
-      });
-
-    return map;
-  }, [detailElevators, detailClient, hasMultipleAddresses]);
-
   const elevatorsGrouped = useMemo(() => {
-    const map = new Map<string, { title: string; subtitle: string; sortAddress: string; sortTower: string; elevators: ElevatorRow[]; }>();
-
+    const map = new Map<string, ElevatorRow[]>();
     detailElevators.forEach((elevator) => {
-      const address = clean(elevator.address_asc) || clean(detailClient?.address) || 'Sin dirección';
-      const tower = clean(elevator.tower_name);
-      const groupKey = hasMultipleAddresses
-        ? `${address}|||${tower || 'SIN_TORRE'}`
-        : `${tower || address || 'Sin agrupación'}`;
-
-      const existing = map.get(groupKey) || {
-        title: hasMultipleAddresses ? (tower || address) : (tower || address || 'Sin agrupación'),
-        subtitle: hasMultipleAddresses ? (tower ? address : 'Dirección sin torre') : `${address}`,
-        sortAddress: address,
-        sortTower: tower,
-        elevators: [],
-      };
-
-      existing.elevators.push(elevator);
-      map.set(groupKey, existing);
+      const key = clean(elevator.tower_name) || clean(elevator.address_asc) || 'Sin agrupación';
+      const list = map.get(key) || [];
+      list.push(elevator);
+      map.set(key, list);
     });
-
-    return Array.from(map.values())
-      .sort((a, b) => {
-        if (hasMultipleAddresses) {
-          const addressDiff = naturalCompare(a.sortAddress, b.sortAddress);
-          if (addressDiff !== 0) return addressDiff;
-        }
-
-        const towerDiff = compareTowerNames(a.sortTower, b.sortTower);
-        if (towerDiff !== 0) return towerDiff;
-
-        return naturalCompare(a.title, b.title);
-      })
-      .map((group) => ({
-        ...group,
-        elevators: [...group.elevators].sort((a, b) => {
-          const displayedA = displayedNumbersByElevatorId.get(a.id) ?? 0;
-          const displayedB = displayedNumbersByElevatorId.get(b.id) ?? 0;
-          if (displayedA !== displayedB) return displayedA - displayedB;
-          return naturalCompare(a.created_at, b.created_at);
-        }),
-      }));
-  }, [detailElevators, detailClient, hasMultipleAddresses, displayedNumbersByElevatorId]);
+    return Array.from(map.entries());
+  }, [detailElevators]);
 
   return (
     <div className="h-full flex flex-col">
@@ -882,13 +778,12 @@ export function ClientsView() {
                   <div className="text-sm text-slate-500">Este cliente aún no tiene ascensores registrados.</div>
                 ) : (
                   <div className="space-y-4">
-                    {elevatorsGrouped.map((group) => (
-                      <div key={`${group.sortAddress}-${group.sortTower || group.title}`} className="rounded-xl border border-slate-200 overflow-hidden">
+                    {elevatorsGrouped.map(([groupName, items]) => (
+                      <div key={groupName} className="rounded-xl border border-slate-200 overflow-hidden">
                         <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
                           <div>
-                            <div className="font-semibold text-slate-900">{group.title}</div>
-                            <div className="text-xs text-slate-500">{group.subtitle}</div>
-                            <div className="text-xs text-slate-500 mt-1">{group.elevators.length} ascensor(es) en este grupo</div>
+                            <div className="font-semibold text-slate-900">{groupName}</div>
+                            <div className="text-xs text-slate-500">{items.length} ascensor(es) en este grupo</div>
                           </div>
                         </div>
 
@@ -905,11 +800,11 @@ export function ClientsView() {
                               </tr>
                             </thead>
                             <tbody>
-                              {group.elevators.map((elevator) => (
+                              {items.map((elevator) => (
                                 <tr key={elevator.id} className="border-b border-slate-50 last:border-0">
                                   <td className="px-4 py-3 align-top">
                                     <div className="font-medium text-slate-900">
-                                      Ascensor #{displayedNumbersByElevatorId.get(elevator.id) || elevator.elevator_number || elevator.index_number || '—'}
+                                      Ascensor #{elevator.index_number || '—'}
                                     </div>
                                     <div className="text-xs text-slate-500 mt-1">
                                       {elevator.address_asc || detailClient.address || 'Sin dirección'}
