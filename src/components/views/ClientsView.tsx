@@ -147,6 +147,44 @@ function getElevatorStopPattern(elevator: ElevatorRow) {
   return 'Personalizado / no definido';
 }
 
+
+type GroupRank = { kind: 'letter' | 'number' | 'custom'; value: number };
+
+function getNaturalGroupRank(groupName: string): GroupRank {
+  const text = clean(groupName).toUpperCase();
+  const towerMatch = text.match(/^TORRE\s+(.+)$/i);
+  const core = clean(towerMatch?.[1] || text).toUpperCase();
+
+  if (/^[A-Z]$/.test(core)) {
+    return { kind: 'letter', value: core.charCodeAt(0) - 64 };
+  }
+
+  if (/^\d+$/.test(core)) {
+    return { kind: 'number', value: Number(core) };
+  }
+
+  return { kind: 'custom', value: Number.MAX_SAFE_INTEGER };
+}
+
+function compareElevators(a: ElevatorRow, b: ElevatorRow) {
+  const numberA = a.elevator_number ?? a.index_number ?? Number.MAX_SAFE_INTEGER;
+  const numberB = b.elevator_number ?? b.index_number ?? Number.MAX_SAFE_INTEGER;
+  if (numberA !== numberB) return numberA - numberB;
+
+  const createdA = a.created_at ? new Date(a.created_at).getTime() : 0;
+  const createdB = b.created_at ? new Date(b.created_at).getTime() : 0;
+  if (createdA !== createdB) return createdA - createdB;
+
+  return (a.tower_name || '').localeCompare(b.tower_name || '', 'es', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+function getDisplayedElevatorNumber(elevator: ElevatorRow) {
+  return elevator.elevator_number ?? elevator.index_number ?? null;
+}
+
 export function ClientsView() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(false);

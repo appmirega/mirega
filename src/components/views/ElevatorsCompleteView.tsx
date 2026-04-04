@@ -17,6 +17,7 @@ interface Elevator {
   id: string;
   tower_name: string | null;
   index_number: number | null;
+  elevator_number: number | null;
   location_name: string | null;
   address: string | null;
   address_asc: string | null;
@@ -107,7 +108,38 @@ export function ElevatorsCompleteView({ onNavigate }: Props) {
 
       if (error) throw error;
 
-      setElevators((data as Elevator[]) || []);
+      const sortedElevators = ((data as Elevator[]) || []).sort((a, b) => {
+        const clientA = (a.clients?.company_name || '').localeCompare(b.clients?.company_name || '', 'es', { numeric: true, sensitivity: 'base' });
+        if (clientA !== 0) return clientA;
+
+        const towerA = (a.tower_name || a.location_name || '').toUpperCase();
+        const towerB = (b.tower_name || b.location_name || '').toUpperCase();
+
+        const parseTower = (value: string) => {
+          const match = value.match(/^TORRE\s+(.+)$/i);
+          const core = (match?.[1] || value).trim().toUpperCase();
+          if (/^[A-Z]$/.test(core)) return { kind: 0, value: core.charCodeAt(0) - 64 };
+          if (/^\d+$/.test(core)) return { kind: 1, value: Number(core) };
+          return { kind: 2, value: core };
+        };
+
+        const parsedA = parseTower(towerA);
+        const parsedB = parseTower(towerB);
+        if (parsedA.kind !== parsedB.kind) return parsedA.kind - parsedB.kind;
+        if (parsedA.kind < 2 && parsedA.value !== parsedB.value) return Number(parsedA.value) - Number(parsedB.value);
+        if (parsedA.kind === 2) {
+          const customCompare = String(parsedA.value).localeCompare(String(parsedB.value), 'es', { numeric: true, sensitivity: 'base' });
+          if (customCompare !== 0) return customCompare;
+        }
+
+        const numA = a.elevator_number ?? a.index_number ?? Number.MAX_SAFE_INTEGER;
+        const numB = b.elevator_number ?? b.index_number ?? Number.MAX_SAFE_INTEGER;
+        if (numA !== numB) return numA - numB;
+
+        return (a.created_at || '').localeCompare(b.created_at || '');
+      });
+
+      setElevators(sortedElevators);
 
       // Cargar información de formularios de partes
       const { data: partsForms } = await supabase
@@ -264,7 +296,7 @@ export function ElevatorsCompleteView({ onNavigate }: Props) {
                         {typeof elevator.index_number === 'number' &&
                           elevator.index_number > 0 && (
                             <span className="text-sm font-normal text-slate-500">
-                              · Ascensor #{elevator.index_number}
+                              · Ascensor #{elevator.elevator_number ?? elevator.index_number}
                             </span>
                           )}
                       </h3>
@@ -481,7 +513,7 @@ export function ElevatorsCompleteView({ onNavigate }: Props) {
                 {typeof viewingDetails.index_number === 'number' &&
                   viewingDetails.index_number > 0 && (
                     <span className="text-sm font-normal text-slate-500">
-                      · Ascensor #{viewingDetails.index_number}
+                      · Ascensor #{viewingDetails.elevator_number ?? viewingDetails.index_number}
                     </span>
                   )}
               </h2>
