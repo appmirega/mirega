@@ -67,6 +67,7 @@ interface ElevatorRow {
   client_id: string;
   tower_name: string | null;
   index_number: number | null;
+  elevator_number: number | null;
   address_asc: string | null;
   manufacturer: string | null;
   model: string | null;
@@ -308,6 +309,7 @@ export function ClientsView() {
           client_id,
           tower_name,
           index_number,
+          elevator_number,
           address_asc,
           manufacturer,
           model,
@@ -423,13 +425,41 @@ export function ClientsView() {
   const detailContacts = detailClient ? getClientContacts(detailClient) : [];
   const elevatorsGrouped = useMemo(() => {
     const map = new Map<string, ElevatorRow[]>();
+
     detailElevators.forEach((elevator) => {
       const key = clean(elevator.tower_name) || clean(elevator.address_asc) || 'Sin agrupación';
       const list = map.get(key) || [];
       list.push(elevator);
       map.set(key, list);
     });
-    return Array.from(map.entries());
+
+    return Array.from(map.entries())
+      .map(([groupName, items]) => [groupName, [...items].sort(compareElevators)] as [string, ElevatorRow[]])
+      .sort(([groupA, itemsA], [groupB, itemsB]) => {
+        const rankA = getNaturalGroupRank(groupA);
+        const rankB = getNaturalGroupRank(groupB);
+
+        if (rankA.kind === rankB.kind && rankA.kind !== 'custom' && rankA.value !== rankB.value) {
+          return rankA.value - rankB.value;
+        }
+
+        if (rankA.kind !== rankB.kind) {
+          const order = { letter: 0, number: 1, custom: 2 } as const;
+          return order[rankA.kind] - order[rankB.kind];
+        }
+
+        const firstA = [...itemsA].sort(compareElevators)[0];
+        const firstB = [...itemsB].sort(compareElevators)[0];
+        const firstANumber = firstA?.elevator_number ?? firstA?.index_number ?? Number.MAX_SAFE_INTEGER;
+        const firstBNumber = firstB?.elevator_number ?? firstB?.index_number ?? Number.MAX_SAFE_INTEGER;
+        if (firstANumber !== firstBNumber) return firstANumber - firstBNumber;
+
+        const createdA = firstA?.created_at ? new Date(firstA.created_at).getTime() : 0;
+        const createdB = firstB?.created_at ? new Date(firstB.created_at).getTime() : 0;
+        if (createdA !== createdB) return createdA - createdB;
+
+        return groupA.localeCompare(groupB, 'es', { numeric: true, sensitivity: 'base' });
+      });
   }, [detailElevators]);
 
   return (
@@ -782,7 +812,7 @@ export function ClientsView() {
                                 <tr key={elevator.id} className="border-b border-slate-50 last:border-0">
                                   <td className="px-4 py-3 align-top">
                                     <div className="font-medium text-slate-900">
-                                      Ascensor #{elevator.index_number || '—'}
+                                      Ascensor #{elevator.elevator_number ?? elevator.index_number ?? '—'}
                                     </div>
                                     <div className="text-xs text-slate-500 mt-1">
                                       {elevator.address_asc || detailClient.address || 'Sin dirección'}
