@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { ClientForm } from '../forms/ClientForm';
@@ -87,7 +88,17 @@ interface ElevatorRow {
 
 type Mode = 'create' | 'edit' | null;
 
+type ElevatorGroup = {
+  key: string;
+  address: string;
+  tower: string | null;
+  title: string;
+  subtitle: string;
+  items: ElevatorRow[];
+};
+
 const clean = (value?: string | null) => (value || '').trim();
+
 const formatDate = (value?: string | null) => {
   if (!value) return '—';
   const date = new Date(value);
@@ -144,6 +155,34 @@ function getElevatorStopPattern(elevator: ElevatorRow) {
   if (elevator.stops_even_floors) return 'Pares';
   if (elevator.stops_odd_floors) return 'Impares';
   return 'Personalizado / no definido';
+}
+
+function compareNaturalText(a: string, b: string) {
+  return a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
+}
+
+function getTowerSortValue(value: string | null) {
+  const tower = clean(value).toUpperCase();
+  if (!tower) return { type: 3, value: 'ZZZ' };
+
+  if (/^[A-Z]$/.test(tower)) {
+    return { type: 0, value: tower };
+  }
+
+  if (/^\d+$/.test(tower)) {
+    return { type: 1, value: tower.padStart(6, '0') };
+  }
+
+  return { type: 2, value: tower };
+}
+
+function compareElevators(a: ElevatorRow, b: ElevatorRow) {
+  const numA = a.index_number ?? Number.MAX_SAFE_INTEGER;
+  const numB = b.index_number ?? Number.MAX_SAFE_INTEGER;
+
+  if (numA !== numB) return numA - numB;
+
+  return compareNaturalText(clean(a.address_asc), clean(b.address_asc));
 }
 
 export function ClientsView() {
@@ -326,11 +365,10 @@ export function ClientsView() {
           created_at
         `)
         .eq('client_id', client.id)
-        .order('index_number', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: true });
 
       if (error) throw error;
-      setDetailElevators((data || []) as ElevatorRow[]);
+      setDetailElevators(((data || []) as ElevatorRow[]).sort(compareElevators));
     } catch (err: any) {
       console.error('Error loading client detail:', err);
       setDetailError(err.message || 'No se pudo cargar el detalle del cliente.');
@@ -421,16 +459,47 @@ export function ClientsView() {
   };
 
   const detailContacts = detailClient ? getClientContacts(detailClient) : [];
+
   const elevatorsGrouped = useMemo(() => {
-    const map = new Map<string, ElevatorRow[]>();
-    detailElevators.forEach((elevator) => {
-      const key = clean(elevator.tower_name) || clean(elevator.address_asc) || 'Sin agrupación';
-      const list = map.get(key) || [];
-      list.push(elevator);
-      map.set(key, list);
-    });
-    return Array.from(map.entries());
-  }, [detailElevators]);
+    const groups = new Map<string, ElevatorGroup>();
+
+    for (const elevator of detailElevators) {
+      const address = clean(elevator.address_asc) || clean(detailClient?.address) || 'Sin dirección';
+      const tower = clean(elevator.tower_name) || null;
+      const key = tower ? `${address}__${tower}` : address;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          address,
+          tower,
+          title: tower || address,
+          subtitle: tower ? address : 'Sin torre',
+          items: [],
+        });
+      }
+
+      groups.get(key)!.items.push(elevator);
+    }
+
+    const sorted = Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        items: [...group.items].sort(compareElevators),
+      }))
+      .sort((a, b) => {
+        const addressCompare = compareNaturalText(a.address, b.address);
+        if (addressCompare !== 0) return addressCompare;
+
+        const rankA = getTowerSortValue(a.tower);
+        const rankB = getTowerSortValue(b.tower);
+
+        if (rankA.type !== rankB.type) return rankA.type - rankB.type;
+        return compareNaturalText(rankA.value, rankB.value);
+      });
+
+    return sorted;
+  }, [detailElevators, detailClient]);
 
   return (
     <div className="h-full flex flex-col">
@@ -756,12 +825,13 @@ export function ClientsView() {
                   <div className="text-sm text-slate-500">Este cliente aún no tiene ascensores registrados.</div>
                 ) : (
                   <div className="space-y-4">
-                    {elevatorsGrouped.map(([groupName, items]) => (
-                      <div key={groupName} className="rounded-xl border border-slate-200 overflow-hidden">
+                    {elevatorsGrouped.map((group) => (
+                      <div key={group.key} className="rounded-xl border border-slate-200 overflow-hidden">
                         <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
                           <div>
-                            <div className="font-semibold text-slate-900">{groupName}</div>
-                            <div className="text-xs text-slate-500">{items.length} ascensor(es) en este grupo</div>
+                            <div className="font-semibold text-slate-900">{group.title}</div>
+                            <div className="text-xs text-slate-500">{group.items.length} ascensor(es) en este grupo</div>
+                            <div className="text-xs text-slate-400 mt-1">{group.subtitle}</div>
                           </div>
                         </div>
 
@@ -778,11 +848,11 @@ export function ClientsView() {
                               </tr>
                             </thead>
                             <tbody>
-                              {items.map((elevator) => (
+                              {group.items.map((elevator, localIndex) => (
                                 <tr key={elevator.id} className="border-b border-slate-50 last:border-0">
                                   <td className="px-4 py-3 align-top">
                                     <div className="font-medium text-slate-900">
-                                      Ascensor #{elevator.index_number || '—'}
+                                      Ascensor #{localIndex + 1}
                                     </div>
                                     <div className="text-xs text-slate-500 mt-1">
                                       {elevator.address_asc || detailClient.address || 'Sin dirección'}
