@@ -1,10 +1,10 @@
 // src/components/forms/AdminForm.tsx
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Shield, User, Mail, Phone, X, AlertCircle, CheckCircle, KeyRound } from 'lucide-react';
 import { safeJson } from '../../lib/safeJson';
 
-interface EditableProfile {
+interface ExistingAdminProfile {
   id: string;
   full_name?: string | null;
   email?: string | null;
@@ -12,77 +12,62 @@ interface EditableProfile {
 }
 
 export interface AdminFormProps {
-  existingProfile?: EditableProfile | null;
+  existingProfile?: ExistingAdminProfile | null;
   onSuccess?: () => void;
   onCancel?: () => void;
 }
 
-const CHILE_COUNTRY_CODE = '56';
-const CHILE_LOCAL_LENGTH = 9;
+const normalizeName = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trimStart()
+    .toUpperCase();
 
-function sanitizeFullName(value: string) {
-  return value
-    .toUpperCase()
-    .replace(/[^A-ZÁÉÍÓÚÜÑ\s]/g, '')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/^\s+/, '');
-}
+const normalizeChilePhone = (value: string) => {
+  const digits = value.replace(/\D/g, '');
+  const withoutCountry = digits.startsWith('56') ? digits.slice(2) : digits;
+  return withoutCountry.slice(0, 9);
+};
 
-function sanitizeChilePhoneDigits(value: string) {
-  let digits = value.replace(/\D/g, '');
-
-  if (digits.startsWith(CHILE_COUNTRY_CODE)) {
-    digits = digits.slice(CHILE_COUNTRY_CODE.length);
-  }
-
-  return digits.slice(0, CHILE_LOCAL_LENGTH);
-}
-
-function normalizePhoneForStorage(value: string) {
-  const digits = sanitizeChilePhoneDigits(value);
-  return digits ? `+${CHILE_COUNTRY_CODE}${digits}` : null;
-}
-
-function getPhoneDigitsFromStoredValue(value?: string | null) {
-  return sanitizeChilePhoneDigits(value || '');
-}
+const formatChilePhone = (digits: string) => `+56${digits}`;
 
 export default function AdminForm({ existingProfile, onSuccess, onCancel }: AdminFormProps) {
   const isEditMode = Boolean(existingProfile?.id);
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phoneDigits, setPhoneDigits] = useState('');
+
+  const [fullName, setFullName] = useState(existingProfile?.full_name ?? '');
+  const [email, setEmail] = useState(existingProfile?.email ?? '');
+  const [phone, setPhone] = useState(normalizeChilePhone(existingProfile?.phone ?? ''));
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => {
-    setFullName(sanitizeFullName(existingProfile?.full_name || ''));
-    setEmail((existingProfile?.email || '').trim());
-    setPhoneDigits(getPhoneDigitsFromStoredValue(existingProfile?.phone));
-    setMessage(null);
-  }, [existingProfile]);
 
   const defaultPassword = useMemo(() => {
     const year = new Date().getFullYear();
     return `Mirega${year}@@`;
   }, []);
 
-  const canSubmit = fullName.trim().length > 0 && email.trim().length > 0 && !loading;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (loading) return;
 
     setLoading(true);
     setMessage(null);
 
     try {
+      const normalizedName = normalizeName(fullName).trim();
+      const normalizedPhone = normalizeChilePhone(phone);
+
+      if (!normalizedName) throw new Error('El nombre es obligatorio.');
+      if (!email.trim()) throw new Error('El email es obligatorio.');
+
       if (isEditMode && existingProfile?.id) {
         const { error } = await supabase
           .from('profiles')
           .update({
-            full_name: fullName.trim(),
-            phone: normalizePhoneForStorage(phoneDigits),
+            full_name: normalizedName,
+            phone: normalizedPhone ? formatChilePhone(normalizedPhone) : null,
           })
           .eq('id', existingProfile.id);
 
@@ -90,53 +75,52 @@ export default function AdminForm({ existingProfile, onSuccess, onCancel }: Admi
 
         setMessage({
           type: 'success',
-          text: `Administrador ${fullName.trim()} actualizado correctamente.`,
-        });
-      } else {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session) throw new Error('No hay sesión activa');
-
-        const res = await fetch('/api/users/create', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            full_name: fullName.trim(),
-            email: email.trim(),
-            phone: normalizePhoneForStorage(phoneDigits),
-            password: null,
-            role: 'admin',
-            person_type: 'internal',
-            company_name: null,
-            grant_access: true,
-          }),
+          text: `Administrador ${normalizedName} actualizado correctamente.`,
         });
 
-        const result = await safeJson(res);
-        if (!res.ok || !result?.ok) {
-          throw new Error(result?.error || 'No se pudo crear el administrador');
-        }
-
-        setMessage({
-          type: 'success',
-          text: `Administrador ${fullName.trim()} creado. Clave inicial: ${defaultPassword} (podrá cambiarla después).`,
-        });
-
-        setFullName('');
-        setEmail('');
-        setPhoneDigits('');
+        onSuccess?.();
+        return;
       }
 
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) throw new Error('No hay sesión activa');
+
+      const res = await fetch('/api/users/create', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          full_name: normalizedName,
+          email: email.trim(),
+          phone: normalizedPhone ? formatChilePhone(normalizedPhone) : null,
+          password: null,
+          role: 'admin',
+          person_type: 'internal',
+          company_name: null,
+          grant_access: true,
+        }),
+      });
+
+      const result = await safeJson(res);
+      if (!res.ok || !result?.ok) {
+        throw new Error(result?.error || 'No se pudo crear el administrador');
+      }
+
+      setMessage({
+        type: 'success',
+        text: `Administrador ${normalizedName} creado. Clave inicial: ${defaultPassword} (podrá cambiarla después).`,
+      });
+
+      setFullName('');
+      setEmail('');
+      setPhone('');
       onSuccess?.();
     } catch (err: any) {
-      setMessage({
-        type: 'error',
-        text: err?.message || (isEditMode ? 'No se pudo actualizar el administrador' : 'No se pudo crear el administrador'),
-      });
+      setMessage({ type: 'error', text: err?.message || 'No se pudo procesar el administrador' });
     } finally {
       setLoading(false);
     }
@@ -176,17 +160,17 @@ export default function AdminForm({ existingProfile, onSuccess, onCancel }: Admi
           <input
             type="text"
             value={fullName}
-            onChange={(e) => setFullName(sanitizeFullName(e.target.value))}
+            onChange={(e) => setFullName(normalizeName(e.target.value))}
             required
             className="w-full outline-none bg-transparent"
-            placeholder="Ej: JUAN PÉREZ"
+            placeholder="Ej: JUAN PEREZ"
           />
         </div>
       </div>
 
       <div>
         <label className="block text-sm font-medium">Email</label>
-        <div className="flex items-center border rounded p-2">
+        <div className="flex items-center border rounded p-2 bg-slate-50">
           <Mail className="w-4 h-4 mr-2 text-gray-400" />
           <input
             type="email"
@@ -194,7 +178,7 @@ export default function AdminForm({ existingProfile, onSuccess, onCancel }: Admi
             onChange={(e) => setEmail(e.target.value)}
             required
             disabled={isEditMode}
-            className="w-full outline-none bg-transparent disabled:text-gray-500 disabled:cursor-not-allowed"
+            className="w-full outline-none bg-transparent disabled:text-slate-500"
             placeholder="correo@empresa.cl"
           />
         </div>
@@ -202,17 +186,17 @@ export default function AdminForm({ existingProfile, onSuccess, onCancel }: Admi
 
       <div>
         <label className="block text-sm font-medium">Teléfono</label>
-        <div className="flex items-center border rounded p-2 gap-2">
-          <Phone className="w-4 h-4 text-gray-400" />
-          <span className="text-sm font-medium text-gray-600">+56</span>
+        <div className="flex items-center border rounded p-2">
+          <Phone className="w-4 h-4 mr-2 text-gray-400" />
+          <span className="text-sm text-slate-500 mr-2">+56</span>
           <input
             type="tel"
             inputMode="numeric"
-            value={phoneDigits}
-            onChange={(e) => setPhoneDigits(sanitizeChilePhoneDigits(e.target.value))}
+            pattern="[0-9]*"
+            value={phone}
+            onChange={(e) => setPhone(normalizeChilePhone(e.target.value))}
             className="w-full outline-none bg-transparent"
             placeholder="912345678"
-            maxLength={CHILE_LOCAL_LENGTH}
           />
         </div>
       </div>
@@ -237,7 +221,7 @@ export default function AdminForm({ existingProfile, onSuccess, onCancel }: Admi
         )}
         <button
           type="submit"
-          disabled={!canSubmit}
+          disabled={loading}
           className={`px-4 py-2 text-white rounded ${loading ? 'bg-blue-300' : 'bg-blue-600 hover:bg-blue-700'}`}
         >
           {loading ? (isEditMode ? 'Guardando...' : 'Creando...') : isEditMode ? 'Guardar cambios' : 'Crear Administrador'}

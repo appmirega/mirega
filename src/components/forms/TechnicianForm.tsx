@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
 type PersonType = 'internal' | 'external';
@@ -10,7 +10,6 @@ interface ExistingTechnicianProfile {
   phone?: string | null;
   person_type?: PersonType | null;
   company_name?: string | null;
-  grant_access?: boolean | null;
 }
 
 interface TechnicianFormProps {
@@ -19,35 +18,22 @@ interface TechnicianFormProps {
   onCancel?: () => void;
 }
 
-const CHILE_COUNTRY_CODE = '56';
-const CHILE_LOCAL_LENGTH = 9;
+const normalizeName = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trimStart()
+    .toUpperCase();
 
-function sanitizeFullName(value: string) {
-  return value
-    .toUpperCase()
-    .replace(/[^A-ZÁÉÍÓÚÜÑ\s]/g, '')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/^\s+/, '');
-}
+const normalizeChilePhone = (value: string) => {
+  const digits = value.replace(/\D/g, '');
+  const withoutCountry = digits.startsWith('56') ? digits.slice(2) : digits;
+  return withoutCountry.slice(0, 9);
+};
 
-function sanitizeChilePhoneDigits(value: string) {
-  let digits = value.replace(/\D/g, '');
-
-  if (digits.startsWith(CHILE_COUNTRY_CODE)) {
-    digits = digits.slice(CHILE_COUNTRY_CODE.length);
-  }
-
-  return digits.slice(0, CHILE_LOCAL_LENGTH);
-}
-
-function normalizePhoneForStorage(value: string) {
-  const digits = sanitizeChilePhoneDigits(value);
-  return digits ? `+${CHILE_COUNTRY_CODE}${digits}` : null;
-}
-
-function getPhoneDigitsFromStoredValue(value?: string | null) {
-  return sanitizeChilePhoneDigits(value || '');
-}
+const formatChilePhone = (digits: string) => `+56${digits}`;
 
 export default function TechnicianForm({ existingProfile, onSuccess, onCancel }: TechnicianFormProps) {
   const isEditMode = Boolean(existingProfile?.id);
@@ -56,30 +42,15 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
   const [success, setSuccess] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
-    full_name: '',
-    email: '',
-    phone: '',
-    person_type: 'internal' as PersonType,
-    company_name: '',
+    full_name: existingProfile?.full_name ?? '',
+    email: existingProfile?.email ?? '',
+    phone: normalizeChilePhone(existingProfile?.phone ?? ''),
+    person_type: (existingProfile?.person_type as PersonType) || 'internal',
+    company_name: existingProfile?.company_name ?? '',
     grant_access: true,
     password: '',
     confirmPassword: '',
   });
-
-  useEffect(() => {
-    setFormData({
-      full_name: sanitizeFullName(existingProfile?.full_name || ''),
-      email: (existingProfile?.email || '').trim(),
-      phone: getPhoneDigitsFromStoredValue(existingProfile?.phone),
-      person_type: existingProfile?.person_type === 'external' ? 'external' : 'internal',
-      company_name: existingProfile?.company_name || '',
-      grant_access: existingProfile?.grant_access ?? true,
-      password: '',
-      confirmPassword: '',
-    });
-    setError(null);
-    setSuccess(null);
-  }, [existingProfile]);
 
   const isExternal = formData.person_type === 'external';
 
@@ -101,11 +72,11 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
     let nextValue = value;
 
     if (key === 'full_name') {
-      nextValue = sanitizeFullName(String(value));
+      nextValue = normalizeName(String(value));
     }
 
     if (key === 'phone') {
-      nextValue = sanitizeChilePhoneDigits(String(value));
+      nextValue = normalizeChilePhone(String(value));
     }
 
     setFormData((prev) => ({ ...prev, [key]: nextValue }));
@@ -140,63 +111,66 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
 
     setLoading(true);
     try {
+      const normalizedName = normalizeName(formData.full_name).trim();
+      const normalizedPhone = normalizeChilePhone(formData.phone);
+
       if (isEditMode && existingProfile?.id) {
         const { error: updateError } = await supabase
           .from('profiles')
           .update({
-            full_name: formData.full_name.trim(),
-            phone: normalizePhoneForStorage(formData.phone),
+            full_name: normalizedName,
+            phone: normalizedPhone ? formatChilePhone(normalizedPhone) : null,
             person_type: formData.person_type,
             company_name: isExternal ? formData.company_name.trim() : null,
           })
           .eq('id', existingProfile.id);
 
-        if (updateError) {
-          throw new Error(updateError.message || 'Error actualizando técnico.');
-        }
+        if (updateError) throw updateError;
 
         setSuccess('✅ Técnico actualizado correctamente.');
-      } else {
-        const payload = {
-          email: formData.email.trim(),
-          password: formData.grant_access ? formData.password : null,
-          full_name: formData.full_name.trim(),
-          phone: normalizePhoneForStorage(formData.phone),
-          role: 'technician',
-          person_type: formData.person_type,
-          company_name: isExternal ? formData.company_name.trim() : null,
-          grant_access: formData.grant_access,
-        };
-
-        const res = await fetch('/api/users/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        const data = await res.json().catch(() => ({}));
-
-        if (!res.ok || !data?.ok) {
-          throw new Error(data?.error || 'Error creando técnico.');
-        }
-
-        if (formData.grant_access) {
-          setSuccess('✅ Técnico creado con acceso a la plataforma.');
-        } else {
-          setSuccess('✅ Técnico creado sin acceso (registrado para asignaciones).');
-        }
-
-        setFormData({
-          full_name: '',
-          email: '',
-          phone: '',
-          person_type: 'internal',
-          company_name: '',
-          grant_access: true,
-          password: '',
-          confirmPassword: '',
-        });
+        onSuccess?.();
+        return;
       }
+
+      const payload = {
+        email: formData.email.trim(),
+        password: formData.grant_access ? formData.password : null,
+        full_name: normalizedName,
+        phone: normalizedPhone ? formatChilePhone(normalizedPhone) : null,
+        role: 'technician',
+        person_type: formData.person_type,
+        company_name: isExternal ? formData.company_name.trim() : null,
+        grant_access: formData.grant_access,
+      };
+
+      const res = await fetch('/api/users/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || 'Error creando técnico.');
+      }
+
+      if (formData.grant_access) {
+        setSuccess('✅ Técnico creado con acceso a la plataforma.');
+      } else {
+        setSuccess('✅ Técnico creado sin acceso (registrado para asignaciones).');
+      }
+
+      setFormData({
+        full_name: '',
+        email: '',
+        phone: '',
+        person_type: 'internal',
+        company_name: '',
+        grant_access: true,
+        password: '',
+        confirmPassword: '',
+      });
 
       onSuccess?.();
     } catch (err: any) {
@@ -208,9 +182,7 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-6">
-      <h2 className="text-lg font-semibold text-slate-900 mb-4">
-        {isEditMode ? 'Editar técnico' : 'Crear nuevo técnico'}
-      </h2>
+      <h2 className="text-lg font-semibold text-slate-900 mb-4">{isEditMode ? 'Editar técnico' : 'Crear nuevo técnico'}</h2>
 
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
@@ -236,7 +208,7 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
                 onChange={() => {
                   handleChange('person_type', 'internal');
                   handleChange('company_name', '');
-                  if (!isEditMode) handleChange('grant_access', true);
+                  handleChange('grant_access', true);
                 }}
               />
               Técnico Interno
@@ -264,7 +236,7 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
             value={formData.full_name}
             onChange={(e) => handleChange('full_name', e.target.value)}
             className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="Ej: JUAN PÉREZ"
+            placeholder="Ej: JUAN PEREZ"
             required
           />
         </div>
@@ -275,7 +247,7 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
             type="email"
             value={formData.email}
             onChange={(e) => handleChange('email', e.target.value)}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:text-slate-500 disabled:cursor-not-allowed"
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-slate-50 disabled:text-slate-500"
             placeholder="juan@correo.com"
             required
             disabled={isEditMode}
@@ -284,16 +256,16 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-2">Teléfono</label>
-          <div className="flex items-center gap-2 w-full px-4 py-2 border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-green-500 focus-within:border-transparent">
-            <span className="text-sm font-medium text-slate-600">+56</span>
+          <div className="flex items-center border border-slate-300 rounded-lg px-4 py-2 focus-within:ring-2 focus-within:ring-green-500 focus-within:border-transparent">
+            <span className="text-slate-500 mr-2">+56</span>
             <input
               type="tel"
               inputMode="numeric"
+              pattern="[0-9]*"
               value={formData.phone}
               onChange={(e) => handleChange('phone', e.target.value)}
               className="w-full outline-none bg-transparent"
               placeholder="912345678"
-              maxLength={CHILE_LOCAL_LENGTH}
             />
           </div>
         </div>
