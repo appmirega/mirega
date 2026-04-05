@@ -422,11 +422,9 @@ function App() {
         break;
 
       case "client-service-requests":
-      case "settings":
         content = (
           <div className="py-12 text-center text-slate-600">
-            Esta vista aún no está conectada en App.tsx, pero la navegación global
-            ya fue restaurada.
+            Esta vista aún no está conectada en App.tsx.
           </div>
         );
         break;

@@ -1,7 +1,5 @@
-import { ReactNode, useState, useEffect } from 'react';
+import { ReactNode, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { NotificationCenter } from './NotificationCenter';
-import { supabase } from '../lib/supabase';
 import { useViewPermissions } from '../hooks/useViewPermissions';
 import {
   LayoutDashboard,
@@ -9,7 +7,6 @@ import {
   FileText,
   AlertTriangle,
   ClipboardList,
-  Settings,
   LogOut,
   Menu,
   X,
@@ -97,7 +94,6 @@ const navSections: NavSection[] = [
       { label: 'Manuales Técnicos', icon: BookOpen, path: 'manuals', roles: ['developer', 'admin', 'technician'] },
       { label: 'Permisos Globales', icon: Shield, path: 'developer-permissions', roles: ['developer'] },
       { label: 'Permisos', icon: Shield, path: 'admin-permissions', roles: ['admin'] },
-      { label: 'Configuración', icon: Settings, path: 'settings', roles: ['developer', 'admin'] },
     ],
   },
 ];
@@ -114,7 +110,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
   const { canAccessView } = useViewPermissions();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [notificationCount, setNotificationCount] = useState(0);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     Principal: true,
     Operaciones: false,
@@ -146,58 +141,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
       }),
     }))
     .filter((section) => section.items.length > 0);
-
-  useEffect(() => {
-    if (!profile?.id) return;
-
-    loadUnreadNotifications();
-    const unsubscribe = subscribeToNotifications();
-
-    return () => {
-      unsubscribe();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id]);
-
-  const loadUnreadNotifications = async () => {
-    if (!profile?.id) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('id, is_read')
-        .eq('user_id', profile.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-
-      const unread = (data ?? []).filter((n: any) => !n.is_read).length;
-      setNotificationCount(unread);
-    } catch (error) {
-      console.error('Error loading unread notifications:', error);
-    }
-  };
-
-  const subscribeToNotifications = () => {
-    const channel = supabase
-      .channel('layout_notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notifications',
-        },
-        () => {
-          loadUnreadNotifications();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   };
 
   const handleNavigation = (path: string) => {
@@ -235,7 +178,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <NotificationCenter onNavigate={handleNavigation} />
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="p-2 hover:bg-gray-100 rounded-lg transition"
@@ -253,7 +195,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
       >
         <div className="h-full flex flex-col">
           <div className="p-6 border-b border-gray-200 hidden lg:block">
-            <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-4">
               <div className="flex items-center gap-3">
                 <img
                   src="/logo-circular (2).png"
@@ -264,16 +206,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
                   <h1 className="text-xl font-bold text-gray-900">MIREGA</h1>
                   <p className="text-sm text-gray-600">Ascensores</p>
                 </div>
-              </div>
-              <div className="relative">
-                <NotificationCenter onNavigate={handleNavigation} />
-                {notificationCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {notificationCount > 9 ? '9+' : notificationCount}
-                  </span>
-                )}
-              </div>
-            </div>
+              </div>            </div>
           </div>
 
           <div className="p-4 border-b border-gray-200 lg:mt-0 mt-16 space-y-3">
