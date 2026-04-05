@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Plus } from 'lucide-react';
+import { Plus, Download, FileDown, ExternalLink } from 'lucide-react';
 import { TechnicianEmergencyView } from './TechnicianEmergencyView';
 
 interface Filters {
@@ -8,6 +8,7 @@ interface Filters {
   elevator: string;
   client: string;
   year: string;
+  month: string;
   status: string;
 }
 
@@ -20,6 +21,9 @@ interface EmergencyItem {
   date: string;
   status: string;
   year: string;
+  month: string;
+  monthLabel: string;
+  pdfUrl: string | null;
 }
 
 interface EmergencyVisitRow {
@@ -31,6 +35,7 @@ interface EmergencyVisitRow {
   visit_time: string | null;
   created_at: string | null;
   completed_at: string | null;
+  pdf_url: string | null;
 }
 
 interface EmergencyVisitElevatorRow {
@@ -53,6 +58,42 @@ interface ClientRow {
   building_name?: string | null;
 }
 
+const MONTH_LABELS: Record<string, string> = {
+  '01': 'Enero',
+  '02': 'Febrero',
+  '03': 'Marzo',
+  '04': 'Abril',
+  '05': 'Mayo',
+  '06': 'Junio',
+  '07': 'Julio',
+  '08': 'Agosto',
+  '09': 'Septiembre',
+  '10': 'Octubre',
+  '11': 'Noviembre',
+  '12': 'Diciembre',
+};
+
+const getMonthLabel = (month: string) => MONTH_LABELS[month] || month || '-';
+
+const sanitizeFilePart = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+
+const triggerFileDownload = (url: string, fileName: string) => {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
 export function AdminEmergenciesDashboard() {
   const [emergencies, setEmergencies] = useState<EmergencyItem[]>([]);
   const [filtered, setFiltered] = useState<EmergencyItem[]>([]);
@@ -61,6 +102,7 @@ export function AdminEmergenciesDashboard() {
     elevator: '',
     client: '',
     year: '',
+    month: '',
     status: '',
   });
 
@@ -68,9 +110,11 @@ export function AdminEmergenciesDashboard() {
   const [elevatorOptions, setElevatorOptions] = useState<string[]>([]);
   const [clientOptions, setClientOptions] = useState<string[]>([]);
   const [yearOptions, setYearOptions] = useState<string[]>([]);
+  const [monthOptions, setMonthOptions] = useState<string[]>([]);
   const [statusOptions, setStatusOptions] = useState<string[]>([]);
   const [showNewEmergency, setShowNewEmergency] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     loadEmergencies();
@@ -148,19 +192,56 @@ export function AdminEmergenciesDashboard() {
     }
   };
 
-  const getYear = (visitDate?: string | null, fallback?: string | null) => {
-    if (visitDate && visitDate.length >= 4) {
-      return visitDate.slice(0, 4);
+  const getYearMonth = (visitDate?: string | null, fallback?: string | null) => {
+    if (visitDate) {
+      const [yearPart, monthPart] = visitDate.split('-');
+      return {
+        year: yearPart || '',
+        month: monthPart || '',
+        monthLabel: getMonthLabel(monthPart || ''),
+      };
     }
 
     if (fallback) {
       const date = new Date(fallback);
       if (!Number.isNaN(date.getTime())) {
-        return String(date.getFullYear());
+        const year = String(date.getFullYear());
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        return {
+          year,
+          month,
+          monthLabel: getMonthLabel(month),
+        };
       }
     }
 
-    return '';
+    return {
+      year: '',
+      month: '',
+      monthLabel: '-',
+    };
+  };
+
+  const buildFileName = (record: EmergencyItem) => {
+    const parts = [
+      'emergencia',
+      sanitizeFilePart(record.clientName || 'cliente'),
+      sanitizeFilePart(record.buildingName || 'edificio'),
+      sanitizeFilePart(record.elevatorLabel || 'ascensor'),
+      record.year || 'sin_anio',
+      record.month || 'sin_mes',
+    ].filter(Boolean);
+
+    return `${parts.join('_')}.pdf`;
+  };
+
+  const downloadSinglePdf = (record: EmergencyItem) => {
+    if (!record.pdfUrl) {
+      alert('Esta emergencia no tiene PDF disponible');
+      return;
+    }
+
+    triggerFileDownload(record.pdfUrl, buildFileName(record));
   };
 
   const loadEmergencies = async () => {
@@ -169,7 +250,7 @@ export function AdminEmergenciesDashboard() {
     try {
       const { data: visitsData, error: visitsError } = await supabase
         .from('emergency_visits')
-        .select('id, client_id, status, final_status, visit_date, visit_time, created_at, completed_at')
+        .select('id, client_id, status, final_status, visit_date, visit_time, created_at, completed_at, pdf_url')
         .order('created_at', { ascending: false });
 
       if (visitsError) throw visitsError;
@@ -183,6 +264,7 @@ export function AdminEmergenciesDashboard() {
         setElevatorOptions([]);
         setClientOptions([]);
         setYearOptions([]);
+        setMonthOptions([]);
         setStatusOptions([]);
         return;
       }
@@ -202,6 +284,10 @@ export function AdminEmergenciesDashboard() {
       let elevatorsMap = new Map<string, ElevatorRow>();
       let clientsMap = new Map<string, ClientRow>();
 
+      const explicitClientIds = Array.from(
+        new Set(visits.map((visit) => visit.client_id).filter((id): id is string => !!id))
+      );
+
       if (elevatorIds.length > 0) {
         const { data: elevatorsData, error: elevatorsError } = await supabase
           .from('elevators')
@@ -214,11 +300,12 @@ export function AdminEmergenciesDashboard() {
         elevatorsMap = new Map(elevators.map((e) => [e.id, e]));
 
         const clientIds = Array.from(
-          new Set(
-            elevators
+          new Set([
+            ...explicitClientIds,
+            ...elevators
               .map((e) => e.client_id)
-              .filter((id): id is string => !!id)
-          )
+              .filter((id): id is string => !!id),
+          ])
         );
 
         if (clientIds.length > 0) {
@@ -232,6 +319,16 @@ export function AdminEmergenciesDashboard() {
           const clients = (clientsData || []) as ClientRow[];
           clientsMap = new Map(clients.map((c) => [c.id, c]));
         }
+      } else if (explicitClientIds.length > 0) {
+        const { data: clientsData, error: clientsError } = await supabase
+          .from('clients')
+          .select('id, company_name, internal_alias, building_name')
+          .in('id', explicitClientIds);
+
+        if (clientsError) throw clientsError;
+
+        const clients = (clientsData || []) as ClientRow[];
+        clientsMap = new Map(clients.map((c) => [c.id, c]));
       }
 
       const visitElevatorsMap = new Map<string, EmergencyVisitElevatorRow[]>();
@@ -243,6 +340,7 @@ export function AdminEmergenciesDashboard() {
 
       const rows: EmergencyItem[] = visits.flatMap((visit) => {
         const linkedElevators = visitElevatorsMap.get(visit.id) || [];
+        const { year, month, monthLabel } = getYearMonth(visit.visit_date, visit.created_at);
 
         if (linkedElevators.length === 0) {
           const fallbackClient = visit.client_id ? clientsMap.get(visit.client_id) : null;
@@ -263,7 +361,10 @@ export function AdminEmergenciesDashboard() {
                 'Sin cliente',
               date: formatDate(visit.visit_date, visit.visit_time, visit.created_at),
               status: normalizeStatus(visit.status, visit.final_status, null),
-              year: getYear(visit.visit_date, visit.created_at),
+              year,
+              month,
+              monthLabel,
+              pdfUrl: visit.pdf_url || null,
             },
           ];
         }
@@ -288,7 +389,10 @@ export function AdminEmergenciesDashboard() {
               'Sin cliente',
             date: formatDate(visit.visit_date, visit.visit_time, visit.created_at),
             status: normalizeStatus(visit.status, visit.final_status, linked.final_status),
-            year: getYear(visit.visit_date, visit.created_at),
+            year,
+            month,
+            monthLabel,
+            pdfUrl: visit.pdf_url || null,
           };
         });
       });
@@ -306,6 +410,11 @@ export function AdminEmergenciesDashboard() {
       setYearOptions(
         Array.from(new Set(rows.map((e) => e.year).filter(Boolean))).sort(
           (a, b) => Number(b) - Number(a)
+        )
+      );
+      setMonthOptions(
+        Array.from(new Set(rows.map((e) => e.month).filter(Boolean))).sort(
+          (a, b) => Number(a) - Number(b)
         )
       );
       setStatusOptions(
@@ -339,6 +448,10 @@ export function AdminEmergenciesDashboard() {
       result = result.filter((e) => e.year === filters.year);
     }
 
+    if (filters.month) {
+      result = result.filter((e) => e.month === filters.month);
+    }
+
     if (filters.status) {
       result = result.filter((e) => e.status === filters.status);
     }
@@ -350,6 +463,32 @@ export function AdminEmergenciesDashboard() {
     setFilters({ ...filters, [e.target.name]: e.target.value });
   };
 
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const available = filtered.filter((e) => !!e.pdfUrl);
+      const uniqueByVisit = Array.from(new Map(available.map((e) => [e.visitId, e])).values());
+
+      if (uniqueByVisit.length === 0) {
+        alert('No hay PDFs de emergencia disponibles para los filtros seleccionados');
+        return;
+      }
+
+      alert(`Iniciando descarga de ${uniqueByVisit.length} PDF(s) de emergencia...`);
+
+      uniqueByVisit.forEach((record, index) => {
+        setTimeout(() => {
+          triggerFileDownload(record.pdfUrl!, buildFileName(record));
+        }, index * 450);
+      });
+    } catch (error) {
+      console.error('Error downloading emergency PDFs:', error);
+      alert('Error al descargar PDFs de emergencia');
+    } finally {
+      setTimeout(() => setDownloading(false), 1000);
+    }
+  };
+
   if (showNewEmergency) {
     return <TechnicianEmergencyView />;
   }
@@ -357,7 +496,12 @@ export function AdminEmergenciesDashboard() {
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Gestión de Emergencias</h1>
+        <div>
+          <h1 className="text-2xl font-bold">Gestión de Emergencias</h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Descarga individual o masiva de informes PDF por cliente, mes y año.
+          </p>
+        </div>
         <button
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
           onClick={() => setShowNewEmergency(true)}
@@ -426,6 +570,20 @@ export function AdminEmergenciesDashboard() {
 
         <select
           className="px-3 py-2 border rounded"
+          name="month"
+          value={filters.month}
+          onChange={handleFilterChange}
+        >
+          <option value="">Filtrar por mes</option>
+          {monthOptions.map((opt) => (
+            <option key={opt} value={opt}>
+              {getMonthLabel(opt)}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="px-3 py-2 border rounded"
           name="status"
           value={filters.status}
           onChange={handleFilterChange}
@@ -437,6 +595,19 @@ export function AdminEmergenciesDashboard() {
             </option>
           ))}
         </select>
+
+        <button
+          className="flex items-center gap-2 px-3 py-2 bg-green-200 rounded hover:bg-green-300 disabled:opacity-60"
+          onClick={handleDownload}
+          disabled={downloading}
+        >
+          <Download className="w-4 h-4" />
+          {downloading ? 'Descargando...' : 'Descargar PDFs'}
+        </button>
+      </div>
+
+      <div className="mb-4 text-sm text-slate-600">
+        Registros filtrados: <span className="font-semibold">{filtered.length}</span>
       </div>
 
       <table className="w-full bg-white rounded shadow">
@@ -446,19 +617,21 @@ export function AdminEmergenciesDashboard() {
             <th className="p-2">Edificio</th>
             <th className="p-2">Cliente</th>
             <th className="p-2">Fecha</th>
+            <th className="p-2">Mes</th>
             <th className="p-2">Estado</th>
+            <th className="p-2">Acciones</th>
           </tr>
         </thead>
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={5} className="text-center p-4">
+              <td colSpan={7} className="text-center p-4">
                 Cargando...
               </td>
             </tr>
           ) : filtered.length === 0 ? (
             <tr>
-              <td colSpan={5} className="text-center p-4">
+              <td colSpan={7} className="text-center p-4">
                 No hay emergencias
               </td>
             </tr>
@@ -469,7 +642,33 @@ export function AdminEmergenciesDashboard() {
                 <td className="p-2">{e.buildingName}</td>
                 <td className="p-2">{e.clientName}</td>
                 <td className="p-2">{e.date}</td>
+                <td className="p-2">{e.monthLabel} {e.year ? `- ${e.year}` : ''}</td>
                 <td className="p-2">{e.status}</td>
+                <td className="p-2">
+                  {e.pdfUrl ? (
+                    <div className="flex flex-wrap gap-3 text-sm">
+                      <a
+                        href={e.pdfUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Ver PDF
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => downloadSinglePdf(e)}
+                        className="inline-flex items-center gap-1 text-green-700 hover:underline"
+                      >
+                        <FileDown className="w-4 h-4" />
+                        Descargar
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-slate-400">Sin PDF</span>
+                  )}
+                </td>
               </tr>
             ))
           )}
