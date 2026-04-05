@@ -66,8 +66,8 @@ interface ElevatorRow {
   id: string;
   client_id: string;
   tower_name: string | null;
-  elevator_number: number | null;
   index_number: number | null;
+  elevator_number: number | null;
   address_asc: string | null;
   manufacturer: string | null;
   model: string | null;
@@ -147,7 +147,8 @@ function getElevatorStopPattern(elevator: ElevatorRow) {
   return 'Personalizado / no definido';
 }
 
-function getNaturalTowerRank(value: string) {
+
+function getNaturalTowerRank(value?: string | null) {
   const text = clean(value).toUpperCase();
 
   if (!text) return { type: 99, value: 9999, text };
@@ -174,7 +175,7 @@ function getNaturalTowerRank(value: string) {
   return { type: 3, value: 0, text };
 }
 
-function compareTowerNames(a: string, b: string) {
+function compareTowerNames(a?: string | null, b?: string | null) {
   const ra = getNaturalTowerRank(a);
   const rb = getNaturalTowerRank(b);
 
@@ -184,7 +185,7 @@ function compareTowerNames(a: string, b: string) {
   return ra.text.localeCompare(rb.text, 'es', { numeric: true, sensitivity: 'base' });
 }
 
-function compareAddresses(a: string, b: string) {
+function compareAddresses(a?: string | null, b?: string | null) {
   return clean(a).localeCompare(clean(b), 'es', { numeric: true, sensitivity: 'base' });
 }
 
@@ -349,8 +350,8 @@ export function ClientsView() {
           id,
           client_id,
           tower_name,
-          elevator_number,
           index_number,
+          elevator_number,
           address_asc,
           manufacturer,
           model,
@@ -406,66 +407,88 @@ export function ClientsView() {
       .includes(term);
   });
 
-  const exportClientsToCsv = () => {
-    const rows = filtered.map((client) => {
-      const contacts = client.contacts;
-      const primary = contacts.find((item) => item.source === 'primary') || null;
-      const admin = contacts.find((item) => item.source === 'admin') || null;
-      const additional = contacts.filter((item) => item.source === 'additional');
+  const exportClientsToCsv = async () => {
+    try {
+      if (filtered.length === 0) {
+        alert('No hay clientes para exportar con el filtro actual.');
+        return;
+      }
 
-      return {
-        codigo_cliente: client.client_code || '',
-        razon_social: client.company_name || '',
-        edificio: client.building_name || '',
-        alias_interno: client.internal_alias || '',
-        rut: client.rut || '',
-        direccion: client.address || '',
-        comuna: client.commune || '',
-        ciudad: client.city || '',
-        tipo_edificio: client.building_type || '',
-        administrador: admin?.name || '',
-        email_administrador: admin?.email || '',
-        telefono_administrador: admin?.phone || '',
-        contacto_principal: primary?.name || '',
-        cargo_contacto_principal: primary?.role || '',
-        email_contacto_principal: primary?.email || '',
-        telefono_contacto_principal: primary?.phone || '',
-        contactos_adicionales: additional
-          .map((item) => [item.name, item.role, item.email, item.phone].filter(Boolean).join(' | '))
-          .join(' || '),
-        estado: client.is_active ? 'Activo' : 'Inactivo',
-        fecha_creacion: formatDate(client.created_at),
-      };
-    });
+      const clientIds = filtered.map((client) => client.id);
+      const elevatorCounts = new Map<string, number>();
 
-    if (rows.length === 0) {
-      alert('No hay clientes para exportar con el filtro actual.');
-      return;
+      const { data: elevatorsData, error: elevatorsError } = await supabase
+        .from('elevators')
+        .select('client_id')
+        .in('client_id', clientIds);
+
+      if (elevatorsError) throw elevatorsError;
+
+      (elevatorsData || []).forEach((row: { client_id: string | null }) => {
+        const key = row.client_id || '';
+        if (!key) return;
+        elevatorCounts.set(key, (elevatorCounts.get(key) || 0) + 1);
+      });
+
+      const rows = filtered.map((client) => {
+        const contacts = client.contacts;
+        const primary = contacts.find((item) => item.source === 'primary') || null;
+        const admin = contacts.find((item) => item.source === 'admin') || null;
+        const additional = contacts.filter((item) => item.source === 'additional');
+
+        return {
+          codigo_cliente: client.client_code || '',
+          razon_social: client.company_name || '',
+          edificio: client.building_name || '',
+          alias_interno: client.internal_alias || '',
+          rut: client.rut || '',
+          direccion: client.address || '',
+          comuna: client.commune || '',
+          ciudad: client.city || '',
+          tipo_edificio: client.building_type || '',
+          administrador: admin?.name || '',
+          email_administrador: admin?.email || '',
+          telefono_administrador: admin?.phone || '',
+          contacto_principal: primary?.name || '',
+          cargo_contacto_principal: primary?.role || '',
+          email_contacto_principal: primary?.email || '',
+          telefono_contacto_principal: primary?.phone || '',
+          contactos_adicionales: additional
+            .map((item) => [item.name, item.role, item.email, item.phone].filter(Boolean).join(' | '))
+            .join(' || '),
+          total_ascensores: elevatorCounts.get(client.id) || 0,
+          estado: client.is_active ? 'Activo' : 'Inactivo',
+          fecha_creacion: formatDate(client.created_at),
+        };
+      });
+
+      const headers = Object.keys(rows[0]);
+      const csv = [
+        headers.map((header) => escapeCsv(header)).join(';'),
+        ...rows.map((row) => headers.map((header) => escapeCsv((row as any)[header])).join(';')),
+      ].join('\n');
+
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const dateStamp = new Date().toISOString().slice(0, 10);
+
+      link.href = url;
+      link.setAttribute('download', `clientes_${dateStamp}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'No se pudo exportar el archivo.');
     }
-
-    const headers = Object.keys(rows[0]);
-    const csv = [
-      headers.map((header) => escapeCsv(header)).join(';'),
-      ...rows.map((row) => headers.map((header) => escapeCsv((row as any)[header])).join(';')),
-    ].join('\n');
-
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    const dateStamp = new Date().toISOString().slice(0, 10);
-
-    link.href = url;
-    link.setAttribute('download', `clientes_${dateStamp}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   const detailContacts = detailClient ? getClientContacts(detailClient) : [];
   const elevatorsGrouped = useMemo(() => {
     const uniqueAddresses = Array.from(
-      new Set(detailElevators.map((e) => clean(e.address_asc)).filter(Boolean))
+      new Set(detailElevators.map((elevator) => clean(elevator.address_asc)).filter(Boolean))
     );
 
     const hasMultipleAddresses = uniqueAddresses.length > 1;
@@ -473,6 +496,7 @@ export function ClientsView() {
     const map = new Map<
       string,
       {
+        key: string;
         groupName: string;
         addressLabel: string;
         towerLabel: string;
@@ -484,12 +508,11 @@ export function ClientsView() {
       const addressLabel = clean(elevator.address_asc) || clean(detailClient?.address) || 'Sin dirección';
       const towerLabel = clean(elevator.tower_name) || 'Sin torre';
 
-      const key = hasMultipleAddresses
-        ? `${addressLabel}__${towerLabel}`
-        : towerLabel;
+      const key = hasMultipleAddresses ? `${addressLabel}__${towerLabel}` : towerLabel;
 
       if (!map.has(key)) {
         map.set(key, {
+          key,
           groupName: hasMultipleAddresses
             ? towerLabel === 'Sin torre'
               ? addressLabel
@@ -504,33 +527,31 @@ export function ClientsView() {
       map.get(key)!.items.push(elevator);
     });
 
-    const groups = Array.from(map.values());
-
-    groups.sort((a, b) => {
-      if (hasMultipleAddresses) {
-        const addressCompare = compareAddresses(a.addressLabel, b.addressLabel);
-        if (addressCompare !== 0) return addressCompare;
-      }
-      return compareTowerNames(a.towerLabel, b.towerLabel);
-    });
-
-    return groups.map((group) => ({
-      ...group,
-      items: [...group.items].sort((a, b) => {
+    return Array.from(map.values())
+      .sort((a, b) => {
         if (hasMultipleAddresses) {
-          const aNum = a.index_number ?? 0;
-          const bNum = b.index_number ?? 0;
-          if (aNum !== bNum) return aNum - bNum;
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          const addressCompare = compareAddresses(a.addressLabel, b.addressLabel);
+          if (addressCompare !== 0) return addressCompare;
         }
+        return compareTowerNames(a.towerLabel, b.towerLabel);
+      })
+      .map((group) => ({
+        ...group,
+        items: [...group.items].sort((a, b) => {
+          if (hasMultipleAddresses) {
+            const aNum = a.index_number ?? 0;
+            const bNum = b.index_number ?? 0;
+            if (aNum !== bNum) return aNum - bNum;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          }
 
-        const aNum = a.elevator_number ?? a.index_number ?? 0;
-        const bNum = b.elevator_number ?? b.index_number ?? 0;
-        if (aNum !== bNum) return aNum - bNum;
+          const aNum = a.elevator_number ?? a.index_number ?? 0;
+          const bNum = b.elevator_number ?? b.index_number ?? 0;
+          if (aNum !== bNum) return aNum - bNum;
 
-        return compareTowerNames(clean(a.tower_name), clean(b.tower_name));
-      }),
-    }));
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        }),
+      }));
   }, [detailElevators, detailClient]);
 
   return (
@@ -862,7 +883,7 @@ export function ClientsView() {
                         Array.from(new Set(detailElevators.map((e) => clean(e.address_asc)).filter(Boolean))).length > 1;
 
                       return (
-                        <div key={`${group.addressLabel}-${group.towerLabel}`} className="rounded-xl border border-slate-200 overflow-hidden">
+                        <div key={group.key} className="rounded-xl border border-slate-200 overflow-hidden">
                           <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
                             <div>
                               <div className="font-semibold text-slate-900">{group.groupName}</div>
@@ -926,6 +947,8 @@ export function ClientsView() {
                         </div>
                       );
                     })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
