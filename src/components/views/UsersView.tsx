@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Users, UserPlus, Edit, Trash2, Search, Filter, CheckCircle, XCircle } from 'lucide-react';
+import { Users, UserPlus, Edit, Trash2, Search, CheckCircle, XCircle } from 'lucide-react';
 import AdminForm from '../forms/AdminForm';
 import TechnicianForm from '../forms/TechnicianForm';
 import { ClientForm } from '../forms/ClientForm';
@@ -16,8 +16,25 @@ interface Profile {
   created_at: string;
 }
 
-type ViewMode = 'list' | 'create-admin' | 'create-technician' | 'edit-admin' | 'edit-technician';
+type ViewMode =
+  | 'list'
+  | 'create-admin'
+  | 'create-technician'
+  | 'edit-admin'
+  | 'edit-technician'
+  | 'edit-client';
 type RoleFilter = 'all' | 'admin' | 'technician' | 'client' | 'developer';
+
+function mapProfileToClientForm(profile: Profile) {
+  return {
+    id: profile.id,
+    company_name: profile.full_name || '',
+    contact_name: profile.full_name || '',
+    contact_person: profile.full_name || '',
+    contact_email: profile.email || '',
+    contact_phone: profile.phone || '',
+  };
+}
 
 export function UsersView() {
   const { profile: currentUserProfile } = useAuth();
@@ -46,14 +63,11 @@ export function UsersView() {
   useEffect(() => {
     filterProfiles();
     calculateStats();
-  }, [profiles, searchTerm, roleFilter]);
+  }, [profiles, searchTerm, roleFilter, currentUserProfile]);
 
   const loadProfiles = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
 
       if (error) throw error;
       setProfiles(data || []);
@@ -104,12 +118,14 @@ export function UsersView() {
     });
   };
 
+  const resetToList = () => {
+    setViewMode('list');
+    setEditingProfile(null);
+  };
+
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ is_active: !currentStatus })
-        .eq('id', userId);
+      const { error } = await supabase.from('profiles').update({ is_active: !currentStatus }).eq('id', userId);
 
       if (error) throw error;
       loadProfiles();
@@ -121,10 +137,19 @@ export function UsersView() {
 
   const handleEditUser = (profile: Profile) => {
     setEditingProfile(profile);
+
     if (profile.role === 'admin') {
       setViewMode('edit-admin');
-    } else if (profile.role === 'technician') {
+      return;
+    }
+
+    if (profile.role === 'technician') {
       setViewMode('edit-technician');
+      return;
+    }
+
+    if (profile.role === 'client') {
+      setViewMode('edit-client');
     }
   };
 
@@ -134,10 +159,7 @@ export function UsersView() {
     }
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', userId);
+      const { error } = await supabase.from('profiles').delete().eq('id', userId);
 
       if (error) throw error;
       alert('Usuario eliminado exitosamente');
@@ -183,14 +205,10 @@ export function UsersView() {
       <AdminForm
         existingProfile={viewMode === 'edit-admin' ? editingProfile : undefined}
         onSuccess={() => {
-          setViewMode('list');
-          setEditingProfile(null);
+          resetToList();
           loadProfiles();
         }}
-        onCancel={() => {
-          setViewMode('list');
-          setEditingProfile(null);
-        }}
+        onCancel={resetToList}
       />
     );
   }
@@ -200,15 +218,32 @@ export function UsersView() {
       <TechnicianForm
         existingProfile={viewMode === 'edit-technician' ? editingProfile : undefined}
         onSuccess={() => {
-          setViewMode('list');
-          setEditingProfile(null);
+          resetToList();
           loadProfiles();
         }}
-        onCancel={() => {
-          setViewMode('list');
-          setEditingProfile(null);
-        }}
+        onCancel={resetToList}
       />
+    );
+  }
+
+  if (viewMode === 'edit-client' && editingProfile) {
+    return (
+      <ClientForm
+        client={mapProfileToClientForm(editingProfile)}
+        onSuccess={() => {
+          resetToList();
+          loadProfiles();
+        }}
+        onCancel={resetToList}
+      />
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
+      </div>
     );
   }
 
@@ -286,149 +321,113 @@ export function UsersView() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <div className="flex flex-col md:flex-row gap-4 mb-6">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+        <div className="flex flex-col md:flex-row gap-4 md:items-center md:justify-between mb-6">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar por nombre o email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar por nombre o email..."
               className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
-          <div className="flex gap-2">
-            <Filter className="w-5 h-5 text-slate-600 self-center" />
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
-              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">Todos los Roles</option>
-              {currentUserProfile?.role === 'developer' && (
-                <option value="developer">Desarrolladores</option>
-              )}
-              <option value="admin">Administradores</option>
-              <option value="technician">Técnicos</option>
-              <option value="client">Clientes</option>
-            </select>
-          </div>
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="all">Todos los roles</option>
+            <option value="admin">Administradores</option>
+            <option value="technician">Técnicos</option>
+            <option value="client">Clientes</option>
+            {currentUserProfile?.role === 'developer' && <option value="developer">Desarrolladores</option>}
+          </select>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        ) : filteredProfiles.length === 0 ? (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className="text-left py-3 px-4 font-semibold text-slate-700">Usuario</th>
+                <th className="text-left py-3 px-4 font-semibold text-slate-700">Contacto</th>
+                <th className="text-left py-3 px-4 font-semibold text-slate-700">Rol</th>
+                <th className="text-left py-3 px-4 font-semibold text-slate-700">Estado</th>
+                <th className="text-left py-3 px-4 font-semibold text-slate-700">Creado</th>
+                <th className="text-right py-3 px-4 font-semibold text-slate-700">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProfiles.map((profile) => (
+                <tr key={profile.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="py-4 px-4">
+                    <div>
+                      <p className="font-medium text-slate-900">{profile.full_name}</p>
+                      <p className="text-sm text-slate-500">ID: {profile.id.slice(0, 8)}...</p>
+                    </div>
+                  </td>
+                  <td className="py-4 px-4">
+                    <div>
+                      <p className="text-sm text-slate-700">{profile.email}</p>
+                      <p className="text-sm text-slate-500">{profile.phone || 'Sin teléfono'}</p>
+                    </div>
+                  </td>
+                  <td className="py-4 px-4">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleColor(profile.role)}`}>
+                      {getRoleLabel(profile.role)}
+                    </span>
+                  </td>
+                  <td className="py-4 px-4">
+                    <button
+                      onClick={() => toggleUserStatus(profile.id, profile.is_active)}
+                      className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${
+                        profile.is_active
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                          : 'bg-red-100 text-red-700 hover:bg-red-200'
+                      }`}
+                    >
+                      {profile.is_active ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                      {profile.is_active ? 'Activo' : 'Inactivo'}
+                    </button>
+                  </td>
+                  <td className="py-4 px-4 text-sm text-slate-600">
+                    {new Date(profile.created_at).toLocaleDateString('es-CL')}
+                  </td>
+                  <td className="py-4 px-4">
+                    <div className="flex items-center justify-end gap-2">
+                      {(profile.role === 'admin' || profile.role === 'technician' || profile.role === 'client') && (
+                        <button
+                          onClick={() => handleEditUser(profile)}
+                          className="p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                          title="Editar usuario"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {profile.id !== currentUserProfile?.id && profile.role !== 'developer' && (
+                        <button
+                          onClick={() => handleDeleteUser(profile.id, profile.full_name)}
+                          className="p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="Eliminar usuario"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {filteredProfiles.length === 0 && (
           <div className="text-center py-12">
             <Users className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-600 font-medium">No se encontraron usuarios</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">
-                    Usuario
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">
-                    Email
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">
-                    Teléfono
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">
-                    Rol
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">
-                    Estado
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">
-                    Fecha Creación
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProfiles.map((profile) => (
-                  <tr key={profile.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="py-3 px-4">
-                      <p className="font-medium text-slate-900">{profile.full_name}</p>
-                    </td>
-                    <td className="py-3 px-4">
-                      <p className="text-sm text-slate-600">{profile.email}</p>
-                    </td>
-                    <td className="py-3 px-4">
-                      <p className="text-sm text-slate-600">{profile.phone || 'N/A'}</p>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getRoleColor(
-                          profile.role
-                        )}`}
-                      >
-                        {getRoleLabel(profile.role)}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      {profile.is_active ? (
-                        <span className="flex items-center gap-1 text-sm text-green-600 font-medium">
-                          <CheckCircle className="w-4 h-4" />
-                          Activo
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-sm text-red-600 font-medium">
-                          <XCircle className="w-4 h-4" />
-                          Inactivo
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4">
-                      <p className="text-sm text-slate-600">
-                        {new Date(profile.created_at).toLocaleDateString('es-ES')}
-                      </p>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        {(profile.role === 'admin' || profile.role === 'technician') && (
-                          <button
-                            onClick={() => handleEditUser(profile)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                            title="Editar usuario"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => toggleUserStatus(profile.id, profile.is_active)}
-                          className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
-                            profile.is_active
-                              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                              : 'bg-green-100 text-green-700 hover:bg-green-200'
-                          }`}
-                          title={profile.is_active ? 'Desactivar usuario' : 'Activar usuario'}
-                        >
-                          {profile.is_active ? 'Desactivar' : 'Activar'}
-                        </button>
-                        {profile.role !== 'developer' && profile.id !== currentUserProfile?.id && (
-                          <button
-                            onClick={() => handleDeleteUser(profile.id, profile.full_name)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                            title="Eliminar usuario"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">No se encontraron usuarios</h3>
+            <p className="text-slate-500">Intenta ajustar los filtros de búsqueda.</p>
           </div>
         )}
       </div>
