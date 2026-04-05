@@ -141,7 +141,6 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
       }),
     }))
     .filter((section) => section.items.length > 0);
-  };
 
   const handleNavigation = (path: string) => {
     setSidebarOpen(false);
@@ -177,14 +176,12 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
               <p className="text-xs text-gray-600">Ascensores</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition"
-            >
-              {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
-          </div>
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition"
+          >
+            {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
         </div>
       </div>
 
@@ -195,7 +192,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
       >
         <div className="h-full flex flex-col">
           <div className="p-6 border-b border-gray-200 hidden lg:block">
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-3">
                 <img
                   src="/logo-circular (2).png"
@@ -206,7 +203,8 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
                   <h1 className="text-xl font-bold text-gray-900">MIREGA</h1>
                   <p className="text-sm text-gray-600">Ascensores</p>
                 </div>
-              </div>            </div>
+              </div>
+            </div>
           </div>
 
           <div className="p-4 border-b border-gray-200 lg:mt-0 mt-16 space-y-3">
