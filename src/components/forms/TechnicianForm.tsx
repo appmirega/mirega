@@ -27,6 +27,16 @@ const normalizeName = (value: string) =>
     .trimStart()
     .toUpperCase();
 
+
+const normalizeCompanyName = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trimStart()
+    .toUpperCase();
+
 const normalizeChilePhone = (value: string) => {
   const digits = value.replace(/\D/g, '');
   const withoutCountry = digits.startsWith('56') ? digits.slice(2) : digits;
@@ -79,6 +89,10 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
       nextValue = normalizeChilePhone(String(value));
     }
 
+    if (key === 'company_name') {
+      nextValue = normalizeCompanyName(String(value));
+    }
+
     setFormData((prev) => ({ ...prev, [key]: nextValue }));
   };
 
@@ -121,7 +135,7 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
             full_name: normalizedName,
             phone: normalizedPhone ? formatChilePhone(normalizedPhone) : null,
             person_type: formData.person_type,
-            company_name: isExternal ? formData.company_name.trim() : null,
+            company_name: isExternal ? normalizeCompanyName(formData.company_name).trim() : null,
           })
           .eq('id', existingProfile.id);
 
@@ -139,7 +153,7 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
         phone: normalizedPhone ? formatChilePhone(normalizedPhone) : null,
         role: 'technician',
         person_type: formData.person_type,
-        company_name: isExternal ? formData.company_name.trim() : null,
+        company_name: isExternal ? normalizeCompanyName(formData.company_name).trim() : null,
         grant_access: formData.grant_access,
       };
 
@@ -278,7 +292,7 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
               value={formData.company_name}
               onChange={(e) => handleChange('company_name', e.target.value)}
               className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="Ascensores Ltda"
+              placeholder="Ej: ASCENSORES LIMITADA"
               required
             />
           </div>
