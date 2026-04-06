@@ -27,7 +27,6 @@ const normalizeName = (value: string) =>
     .trimStart()
     .toUpperCase();
 
-
 const normalizeCompanyName = (value: string) =>
   value
     .normalize('NFD')
@@ -51,6 +50,11 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  const defaultPassword = useMemo(() => {
+    const year = new Date().getFullYear();
+    return `Mirega${year}@@`;
+  }, []);
+
   const [formData, setFormData] = useState({
     full_name: existingProfile?.full_name ?? '',
     email: existingProfile?.email ?? '',
@@ -58,8 +62,6 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
     person_type: (existingProfile?.person_type as PersonType) || 'internal',
     company_name: existingProfile?.company_name ?? '',
     grant_access: true,
-    password: '',
-    confirmPassword: '',
   });
 
   const isExternal = formData.person_type === 'external';
@@ -67,16 +69,9 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
   const canSubmit = useMemo(() => {
     if (!formData.full_name.trim()) return false;
     if (!formData.email.trim()) return false;
-
     if (isExternal && !formData.company_name.trim()) return false;
-
-    if (!isEditMode && formData.grant_access) {
-      if (formData.password.length < 8) return false;
-      if (formData.password !== formData.confirmPassword) return false;
-    }
-
     return true;
-  }, [formData, isExternal, isEditMode]);
+  }, [formData, isExternal]);
 
   const handleChange = (key: keyof typeof formData, value: any) => {
     let nextValue = value;
@@ -102,11 +97,6 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
 
     if (isExternal && !formData.company_name.trim()) {
       return 'Para técnico externo debes indicar la empresa.';
-    }
-
-    if (!isEditMode && formData.grant_access) {
-      if (formData.password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
-      if (formData.password !== formData.confirmPassword) return 'Las contraseñas no coinciden.';
     }
 
     return null;
@@ -148,7 +138,7 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
 
       const payload = {
         email: formData.email.trim(),
-        password: formData.grant_access ? formData.password : null,
+        password: formData.grant_access ? defaultPassword : null,
         full_name: normalizedName,
         phone: normalizedPhone ? formatChilePhone(normalizedPhone) : null,
         role: 'technician',
@@ -170,7 +160,7 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
       }
 
       if (formData.grant_access) {
-        setSuccess('✅ Técnico creado con acceso a la plataforma.');
+        setSuccess(`✅ Técnico creado con acceso. Clave inicial: ${defaultPassword}`);
       } else {
         setSuccess('✅ Técnico creado sin acceso (registrado para asignaciones).');
       }
@@ -182,8 +172,6 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
         person_type: 'internal',
         company_name: '',
         grant_access: true,
-        password: '',
-        confirmPassword: '',
       });
 
       onSuccess?.();
@@ -313,29 +301,8 @@ export default function TechnicianForm({ existingProfile, onSuccess, onCancel }:
             </p>
 
             {formData.grant_access && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Contraseña *</label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => handleChange('password', e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    placeholder="Mínimo 8 caracteres"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Confirmar contraseña *</label>
-                  <input
-                    type="password"
-                    value={formData.confirmPassword}
-                    onChange={(e) => handleChange('confirmPassword', e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    placeholder="Repite la contraseña"
-                    required
-                  />
-                </div>
+              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                La contraseña inicial se generará automáticamente como <strong>{defaultPassword}</strong>.
               </div>
             )}
           </div>
