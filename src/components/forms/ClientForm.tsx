@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from "@/integrations/supabase/client";
 
 interface Props {
   client?: any;
@@ -21,14 +21,10 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
 
   const [groups, setGroups] = useState<any[]>([]);
 
-  // =============================
-  // 🔥 CARGAR CLIENTE + ASCENSORES
-  // =============================
   useEffect(() => {
     const loadClientData = async () => {
       if (!isEditMode || !client) return;
 
-      // Datos comerciales
       setFormData({
         name: client.name || '',
         rut: client.rut || '',
@@ -40,7 +36,6 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
         contact_email: client.contact_email || ''
       });
 
-      // Ascensores
       const { data: elevators, error } = await supabase
         .from('elevators')
         .select('*')
@@ -48,7 +43,7 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
         .order('elevator_number', { ascending: true });
 
       if (error) {
-        console.error('Error cargando ascensores:', error);
+        console.error(error);
         return;
       }
 
@@ -84,19 +79,14 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
     loadClientData();
   }, [isEditMode, client]);
 
-  // =============================
-  // 💾 GUARDAR
-  // =============================
   const handleSubmit = async () => {
     try {
       if (isEditMode && client) {
-        // 1. Update cliente
         await supabase
           .from('clients')
           .update(formData)
           .eq('id', client.id);
 
-        // 2. Obtener existentes
         const { data: existing } = await supabase
           .from('elevators')
           .select('id')
@@ -105,7 +95,6 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
         const existingIds = existing?.map((e: any) => e.id) || [];
         const formIds: string[] = [];
 
-        // 3. Insert / Update
         for (const group of groups) {
           for (const el of group.elevators) {
             const payload = {
@@ -130,18 +119,17 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
                 .update(payload)
                 .eq('id', el.id);
             } else {
-              const { data: inserted } = await supabase
+              const { data } = await supabase
                 .from('elevators')
                 .insert(payload)
                 .select()
                 .single();
 
-              if (inserted) formIds.push(inserted.id);
+              if (data) formIds.push(data.id);
             }
           }
         }
 
-        // 4. Delete
         const toDelete = existingIds.filter(id => !formIds.includes(id));
 
         if (toDelete.length > 0) {
@@ -155,7 +143,7 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
       onSuccess?.();
 
     } catch (error) {
-      console.error('Error guardando cliente:', error);
+      console.error(error);
     }
   };
 
