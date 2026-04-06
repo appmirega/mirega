@@ -12,6 +12,10 @@ function json(res: VercelResponse, status: number, body: any) {
 
 type PersonType = 'internal' | 'external'
 
+function getAutomaticPassword() {
+  return `Mirega${new Date().getFullYear()}@@`
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return json(res, 405, { ok: false, error: 'Method not allowed' })
@@ -65,10 +69,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return json(res, 400, { ok: false, error: 'Para técnico externo falta company_name.' })
   }
 
-  const effectivePassword =
-    grant_access && password
-      ? password
-      : `${crypto.randomUUID()}Aa1!`
+  const normalizedPassword = typeof password === 'string' ? password.trim() : ''
+
+  const effectivePassword = grant_access
+    ? normalizedPassword || getAutomaticPassword()
+    : `${crypto.randomUUID()}Aa1!`
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
