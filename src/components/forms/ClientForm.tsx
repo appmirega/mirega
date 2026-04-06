@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../../../lib/supabase';
 
 interface Props {
   client?: any;
@@ -28,6 +28,7 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
     const loadClientData = async () => {
       if (!isEditMode || !client) return;
 
+      // Datos comerciales
       setFormData({
         name: client.name || '',
         rut: client.rut || '',
@@ -39,6 +40,7 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
         contact_email: client.contact_email || ''
       });
 
+      // Ascensores
       const { data: elevators, error } = await supabase
         .from('elevators')
         .select('*')
@@ -88,13 +90,13 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
   const handleSubmit = async () => {
     try {
       if (isEditMode && client) {
-        // 1. UPDATE CLIENT
+        // 1. Update cliente
         await supabase
           .from('clients')
           .update(formData)
           .eq('id', client.id);
 
-        // 2. GET EXISTING
+        // 2. Obtener existentes
         const { data: existing } = await supabase
           .from('elevators')
           .select('id')
@@ -103,7 +105,7 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
         const existingIds = existing?.map((e: any) => e.id) || [];
         const formIds: string[] = [];
 
-        // 3. UPDATE / INSERT
+        // 3. Insert / Update
         for (const group of groups) {
           for (const el of group.elevators) {
             const payload = {
@@ -139,7 +141,7 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
           }
         }
 
-        // 4. DELETE
+        // 4. Delete
         const toDelete = existingIds.filter(id => !formIds.includes(id));
 
         if (toDelete.length > 0) {
@@ -151,6 +153,7 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
       }
 
       onSuccess?.();
+
     } catch (error) {
       console.error('Error guardando cliente:', error);
     }
