@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { supabase } from "@/integrations/supabase/client";
 
 interface Props {
   client?: any;
@@ -7,7 +6,14 @@ interface Props {
   onSuccess?: () => void;
 }
 
-export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
+declare global {
+  interface Window {
+    supabase: any;
+  }
+}
+
+// 🔥 EXPORT NOMBRADO (IMPORTANTE)
+export function ClientForm({ client, isEditMode, onSuccess }: Props) {
   const [formData, setFormData] = useState<any>({
     name: '',
     rut: '',
@@ -20,11 +26,20 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
   });
 
   const [groups, setGroups] = useState<any[]>([]);
+  const [supabase, setSupabase] = useState<any>(null);
 
   useEffect(() => {
-    const loadClientData = async () => {
-      if (!isEditMode || !client) return;
+    if (window.supabase) {
+      setSupabase(window.supabase);
+    } else {
+      console.error('Supabase no disponible');
+    }
+  }, []);
 
+  useEffect(() => {
+    if (!supabase || !isEditMode || !client) return;
+
+    const loadClientData = async () => {
       setFormData({
         name: client.name || '',
         rut: client.rut || '',
@@ -36,21 +51,17 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
         contact_email: client.contact_email || ''
       });
 
-      const { data: elevators, error } = await supabase
+      const { data: elevators } = await supabase
         .from('elevators')
         .select('*')
-        .eq('client_id', client.id)
-        .order('elevator_number', { ascending: true });
+        .eq('client_id', client.id);
 
-      if (error) {
-        console.error(error);
-        return;
-      }
+      if (!elevators) return;
 
-      const groupsMap: Record<string, any> = {};
+      const groupsMap: any = {};
 
-      elevators?.forEach((elevator: any) => {
-        const tower = elevator.tower_name || 'default';
+      elevators.forEach((e: any) => {
+        const tower = e.tower_name || 'default';
 
         if (!groupsMap[tower]) {
           groupsMap[tower] = {
@@ -59,101 +70,85 @@ export default function ClientForm({ client, isEditMode, onSuccess }: Props) {
           };
         }
 
-        groupsMap[tower].elevators.push({
-          id: elevator.id,
-          index_number: elevator.index_number,
-          elevator_number: elevator.elevator_number,
-          floors: elevator.floors || '',
-          capacity_kg: elevator.capacity_kg || '',
-          capacity_persons: elevator.capacity_persons || '',
-          brand: elevator.brand || '',
-          model: elevator.model || '',
-          serial_number: elevator.serial_number || '',
-          installation_year: elevator.installation_year || ''
-        });
+        groupsMap[tower].elevators.push(e);
       });
 
       setGroups(Object.values(groupsMap));
     };
 
     loadClientData();
-  }, [isEditMode, client]);
+  }, [supabase, isEditMode, client]);
 
   const handleSubmit = async () => {
+    if (!supabase || !client) return;
+
     try {
-      if (isEditMode && client) {
-        await supabase
-          .from('clients')
-          .update(formData)
-          .eq('id', client.id);
+      await supabase
+        .from('clients')
+        .update(formData)
+        .eq('id', client.id);
 
-        const { data: existing } = await supabase
-          .from('elevators')
-          .select('id')
-          .eq('client_id', client.id);
+      const { data: existing } = await supabase
+        .from('elevators')
+        .select('id')
+        .eq('client_id', client.id);
 
-        const existingIds = existing?.map((e: any) => e.id) || [];
-        const formIds: string[] = [];
+      const existingIds = existing?.map((e: any) => e.id) || [];
+      const formIds: string[] = [];
 
-        for (const group of groups) {
-          for (const el of group.elevators) {
-            const payload = {
-              client_id: client.id,
-              tower_name: group.tower_name || null,
-              index_number: el.index_number,
-              elevator_number: el.elevator_number,
-              floors: el.floors,
-              capacity_kg: el.capacity_kg,
-              capacity_persons: el.capacity_persons,
-              brand: el.brand,
-              model: el.model,
-              serial_number: el.serial_number,
-              installation_year: el.installation_year
-            };
+      for (const group of groups) {
+        for (const el of group.elevators) {
+          const payload = {
+            client_id: client.id,
+            tower_name: group.tower_name || null,
+            index_number: el.index_number,
+            elevator_number: el.elevator_number,
+            floors: el.floors,
+            capacity_kg: el.capacity_kg,
+            capacity_persons: el.capacity_persons,
+            brand: el.brand,
+            model: el.model
+          };
 
-            if (el.id) {
-              formIds.push(el.id);
+          if (el.id) {
+            formIds.push(el.id);
 
-              await supabase
-                .from('elevators')
-                .update(payload)
-                .eq('id', el.id);
-            } else {
-              const { data } = await supabase
-                .from('elevators')
-                .insert(payload)
-                .select()
-                .single();
+            await supabase
+              .from('elevators')
+              .update(payload)
+              .eq('id', el.id);
+          } else {
+            const { data } = await supabase
+              .from('elevators')
+              .insert(payload)
+              .select()
+              .single();
 
-              if (data) formIds.push(data.id);
-            }
+            if (data) formIds.push(data.id);
           }
         }
+      }
 
-        const toDelete = existingIds.filter(id => !formIds.includes(id));
+      const toDelete = existingIds.filter(id => !formIds.includes(id));
 
-        if (toDelete.length > 0) {
-          await supabase
-            .from('elevators')
-            .delete()
-            .in('id', toDelete);
-        }
+      if (toDelete.length) {
+        await supabase
+          .from('elevators')
+          .delete()
+          .in('id', toDelete);
       }
 
       onSuccess?.();
 
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
     }
   };
 
   return (
     <div>
-      <h2>{isEditMode ? 'Editar Cliente' : 'Nuevo Cliente'}</h2>
-
-      <button onClick={handleSubmit}>
-        Guardar
-      </button>
+      <h2>Editar Cliente</h2>
+      <button onClick={handleSubmit}>Guardar</button>
     </div>
   );
 }
