@@ -1,6 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Check, X, Minus, ChevronDown, ChevronUp, AlertCircle, Save } from 'lucide-react';
+import {
+  AlertCircle,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Minus,
+  Save,
+  X,
+} from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
 
 interface Question {
@@ -18,6 +26,8 @@ interface Answer {
   observations: string;
   photo_1_url: string | null;
   photo_2_url: string | null;
+  photo_3_url: string | null;
+  photo_4_url: string | null;
 }
 
 interface DynamicChecklistFormProps {
@@ -25,13 +35,40 @@ interface DynamicChecklistFormProps {
   elevatorId: string;
   isHydraulic: boolean;
   month: number;
-  onComplete: () => void;
+  onComplete: () => void | Promise<void>;
   onSave: () => void;
+}
+
+const EXCLUDED_PHOTO_PATTERNS = [
+  'cable de suspensión',
+  'cables de suspensión',
+  'suspensión',
+  'prueba de freno',
+  'funcionamiento de freno',
+  'freno',
+  'pruebas de limitador',
+  'prueba de limitador',
+  'limitador',
+  'cuñas',
+  'cuña',
+];
+
+function normalizeText(text: string) {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function questionRequiresPhotos(question: Question) {
+  const q = normalizeText(question.question_text);
+  return !EXCLUDED_PHOTO_PATTERNS.some((pattern) => q.includes(normalizeText(pattern)));
 }
 
 export function DynamicChecklistForm({
   checklistId,
-  elevatorId, // reservado para futuros usos
+  elevatorId,
   isHydraulic,
   month,
   onComplete,
@@ -45,7 +82,6 @@ export function DynamicChecklistForm({
   const [changeCount, setChangeCount] = useState(0);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
-  // Cargar preguntas y respuestas
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -62,6 +98,7 @@ export function DynamicChecklistForm({
           month,
           isHydraulic
         );
+
         setQuestions(filteredQuestions);
 
         const { data: answersData, error: answersError } = await supabase
@@ -79,6 +116,8 @@ export function DynamicChecklistForm({
             observations: answer.observations || '',
             photo_1_url: answer.photo_1_url,
             photo_2_url: answer.photo_2_url,
+            photo_3_url: answer.photo_3_url || null,
+            photo_4_url: answer.photo_4_url || null,
           });
         });
 
@@ -95,10 +134,9 @@ export function DynamicChecklistForm({
       }
     };
 
-    loadData();
+    void loadData();
   }, [checklistId, month, isHydraulic]);
 
-  // Filtrar preguntas por frecuencia y tipo de ascensor
   const filterQuestionsByFrequency = (
     allQuestions: Question[],
     currentMonth: number,
@@ -117,11 +155,7 @@ export function DynamicChecklistForm({
       semestralQuestions = allQuestions.filter((q) => q.frequency === 'S');
     }
 
-    let filtered = [
-      ...monthlyQuestions,
-      ...trimestralQuestions,
-      ...semestralQuestions,
-    ];
+    let filtered = [...monthlyQuestions, ...trimestralQuestions, ...semestralQuestions];
 
     if (!isHydraulicElevator) {
       filtered = filtered.filter((q) => !q.is_hydraulic_only);
@@ -130,25 +164,25 @@ export function DynamicChecklistForm({
     return filtered;
   };
 
-  const getAnswer = (questionId: string): Answer | undefined => {
-    return answers.get(questionId);
-  };
+  const getAnswer = (questionId: string): Answer | undefined => answers.get(questionId);
+
+  const createDefaultAnswer = (questionId: string): Answer => ({
+    question_id: questionId,
+    status: 'pending',
+    observations: '',
+    photo_1_url: null,
+    photo_2_url: null,
+    photo_3_url: null,
+    photo_4_url: null,
+  });
 
   const handleAnswerChange = (questionId: string, status: Answer['status']) => {
-    const currentAnswer = answers.get(questionId) || {
-      question_id: questionId,
-      status: 'pending' as Answer['status'],
-      observations: '',
-      photo_1_url: null,
-      photo_2_url: null,
-    };
+    const currentAnswer = answers.get(questionId) || createDefaultAnswer(questionId);
 
     const newAnswer: Answer = {
       ...currentAnswer,
       status,
       observations: status === 'approved' ? '' : currentAnswer.observations,
-      photo_1_url: status === 'approved' ? null : currentAnswer.photo_1_url,
-      photo_2_url: status === 'approved' ? null : currentAnswer.photo_2_url,
     };
 
     const newMap = new Map(answers);
@@ -158,8 +192,7 @@ export function DynamicChecklistForm({
   };
 
   const handleObservationsChange = (questionId: string, observations: string) => {
-    const currentAnswer = answers.get(questionId);
-    if (!currentAnswer) return;
+    const currentAnswer = answers.get(questionId) || createDefaultAnswer(questionId);
 
     const newMap = new Map(answers);
     newMap.set(questionId, { ...currentAnswer, observations });
@@ -170,27 +203,73 @@ export function DynamicChecklistForm({
   const handlePhotosChange = (
     questionId: string,
     photo1Url: string | null,
-    photo2Url: string | null
+    photo2Url: string | null,
+    photo3Url: string | null = null,
+    photo4Url: string | null = null
   ) => {
-    const currentAnswer = answers.get(questionId);
-    if (!currentAnswer) return;
+    const currentAnswer = answers.get(questionId) || createDefaultAnswer(questionId);
 
     const newMap = new Map(answers);
-    newMap.set(questionId, { ...currentAnswer, photo_1_url: photo1Url, photo_2_url: photo2Url });
+    newMap.set(questionId, {
+      ...currentAnswer,
+      photo_1_url: photo1Url,
+      photo_2_url: photo2Url,
+      photo_3_url: photo3Url,
+      photo_4_url: photo4Url,
+    });
+
     setAnswers(newMap);
     setChangeCount((prev) => prev + 1);
   };
 
-  const handleAutoSave = async () => {
-    await saveAnswers(true);
+  const countPhotos = (answer?: Answer) => {
+    if (!answer) return 0;
+    return [
+      answer.photo_1_url,
+      answer.photo_2_url,
+      answer.photo_3_url,
+      answer.photo_4_url,
+    ].filter(Boolean).length;
   };
 
-  const handleManualSave = async () => {
-    await saveAnswers(false);
+  const getProgress = () => {
+    const total = questions.length;
+    let answered = 0;
+
+    questions.forEach((q) => {
+      const answer = answers.get(q.id);
+      if (answer && answer.status !== 'pending') {
+        answered++;
+      }
+    });
+
+    return {
+      answered,
+      total,
+      percentage: total > 0 ? Math.round((answered / total) * 100) : 0,
+    };
   };
 
-  const saveAnswers = async (isAutoSave: boolean = false) => {
+  const canComplete = () => {
+    return questions.every((q) => {
+      const answer = answers.get(q.id);
+      if (!answer || answer.status === 'pending') return false;
+      if (answer.status === 'not_applicable') return true;
+
+      const requiresPhotos = questionRequiresPhotos(q);
+      const enoughPhotos = !requiresPhotos || countPhotos(answer) >= 2;
+
+      if (answer.status === 'rejected') {
+        return answer.observations.trim() !== '' && enoughPhotos;
+      }
+
+      return enoughPhotos;
+    });
+  };
+
+  const saveAnswers = async (isAutoSave = false) => {
     setSaving(true);
+
     try {
       const answersToSave = Array.from(answers.values()).map((answer) => ({
         checklist_id: checklistId,
@@ -199,6 +278,8 @@ export function DynamicChecklistForm({
         observations: answer.observations,
         photo_1_url: answer.photo_1_url,
         photo_2_url: answer.photo_2_url,
+        photo_3_url: answer.photo_3_url,
+        photo_4_url: answer.photo_4_url,
       }));
 
       for (const answer of answersToSave) {
@@ -211,7 +292,6 @@ export function DynamicChecklistForm({
         if (error) throw error;
       }
 
-      // Auto-guardado: marcamos que el checklist se actualizó
       if (isAutoSave) {
         const { error: updateError } = await supabase
           .from('mnt_checklists')
@@ -237,6 +317,40 @@ export function DynamicChecklistForm({
     }
   };
 
+  const handleAutoSave = async () => {
+    await saveAnswers(true);
+  };
+
+  const handleManualSave = async () => {
+    await saveAnswers(false);
+  };
+
+  const handleCompleteClick = async () => {
+    if (!canComplete()) {
+      alert(
+        'Aún hay preguntas sin responder o sin evidencia mínima. Las preguntas válidas requieren al menos 2 fotos, y las rechazadas además requieren observación.'
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await saveAnswers(true);
+      await onComplete();
+    } catch (error) {
+      console.error('Error al completar checklist:', error);
+      alert('Error al completar el checklist. Por favor intenta de nuevo.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (changeCount >= 5) {
+      void handleAutoSave();
+    }
+  }, [changeCount]);
+
   const toggleSection = (section: string) => {
     const newExpanded = new Set(expandedSections);
     if (newExpanded.has(section)) {
@@ -247,158 +361,52 @@ export function DynamicChecklistForm({
     setExpandedSections(newExpanded);
   };
 
-  const getProgress = () => {
-    const total = questions.length;
-    let answered = 0;
-
-    questions.forEach((q) => {
-      const answer = answers.get(q.id);
-      if (answer && answer.status !== 'pending') {
-        answered++;
+  const groupedQuestions = useMemo(() => {
+    return questions.reduce((groups, question) => {
+      if (!groups[question.section]) {
+        groups[question.section] = [];
       }
-    });
-
-    return {
-      answered,
-      total,
-      percentage: total > 0 ? Math.round((answered / total) * 100) : 0,
-    };
-  };
-
-  // Todas las rechazadas deben tener observación + al menos 1 foto
-  const canComplete = () => {
-    const allAnswered = questions.every((q) => {
-      const answer = answers.get(q.id);
-      if (!answer || answer.status === 'pending') return false;
-
-      if (answer.status === 'rejected') {
-        return (
-          answer.observations.trim() !== '' &&
-          !!answer.photo_1_url
-        );
-      }
-
-      return true;
-    });
-
-    return allAnswered;
-  };
-
-  const handleCompleteClick = async () => {
-    console.log('🔴 handleCompleteClick INICIADO');
-    console.log('canComplete():', canComplete());
-    
-    if (!canComplete()) {
-      alert('Aún hay preguntas sin responder o sin observaciones/fotos donde corresponde.');
-      return;
-    }
-
-    console.log('typeof onComplete:', typeof onComplete);
-    if (typeof onComplete !== 'function') {
-      console.error('onComplete no es una función válida');
-      alert('Error: La función onComplete no está disponible');
-      return;
-    }
-
-    try {
-      setSaving(true);
-      console.log('Guardando respuestas...');
-      
-      // Guardar respuestas directamente sin llamar a onSave
-      const answersToSave = Array.from(answers.values()).map((answer) => ({
-        checklist_id: checklistId,
-        question_id: answer.question_id,
-        status: answer.status,
-        observations: answer.observations,
-        photo_1_url: answer.photo_1_url,
-        photo_2_url: answer.photo_2_url,
-      }));
-
-      console.log('Guardando', answersToSave.length, 'respuestas...');
-
-      for (const answer of answersToSave) {
-        const { error } = await supabase
-          .from('mnt_checklist_answers')
-          .upsert(answer, {
-            onConflict: 'checklist_id,question_id',
-          });
-
-        if (error) {
-          console.log('❌ Error guardando respuesta:', error);
-          throw error;
-        }
-      }
-      
-      console.log('✅ Todas las respuestas guardadas');
-      console.log('🟢 Llamando a onComplete()...');
-      
-      // Llamar a onComplete para cerrar y volver a selección de ascensores
-      await onComplete();
-      
-      console.log('✅ onComplete() ejecutado, finalizando...');
-      
-      // Forzar re-render limpiando estado local
-      setSaving(false);
-      
-    } catch (error) {
-      console.error('Error al completar checklist:', error);
-      alert('Error al completar el checklist. Por favor intenta de nuevo.');
-      setSaving(false);
-    }
-  };
-
-  useEffect(() => {
-    if (changeCount >= 5) {
-      handleAutoSave();
-    }
-  }, [changeCount]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-10">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
-      </div>
-    );
-  }
+      groups[question.section].push(question);
+      return groups;
+    }, {} as Record<string, Question[]>);
+  }, [questions]);
 
   const progress = getProgress();
 
-  const groupedQuestions = questions.reduce((groups, question) => {
-    if (!groups[question.section]) {
-      groups[question.section] = [];
-    }
-    groups[question.section].push(question);
-    return groups;
-  }, {} as Record<string, Question[]>);
-
-  const formatDateTime = (date: Date) => {
-    return date.toLocaleString('es-CL', {
+  const formatDateTime = (date: Date) =>
+    date.toLocaleString('es-CL', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-10">
+        <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header de Progreso */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold text-slate-900">
             Checklist de Mantenimiento
           </h2>
           <p className="text-sm text-slate-600">
-            Responde todas las preguntas. Las respuestas rechazadas requieren observaciones y al menos 1 foto.
+            Cada pregunta válida requiere entre 2 y 4 fotografías. Las preguntas rechazadas requieren observación y evidencia fotográfica.
           </p>
         </div>
 
-        <div className="flex flex-col items-start md:items-end gap-2">
+        <div className="flex flex-col items-start gap-2 md:items-end">
           <div className="flex items-center gap-3">
-            <div className="w-40 bg-slate-100 rounded-full h-2.5 overflow-hidden">
+            <div className="h-2.5 w-40 overflow-hidden rounded-full bg-slate-100">
               <div
-                className="h-full bg-blue-600 rounded-full transition-all"
+                className="h-full rounded-full bg-blue-600 transition-all"
                 style={{ width: `${progress.percentage}%` }}
               />
             </div>
@@ -415,7 +423,7 @@ export function DynamicChecklistForm({
             )}
             {changeCount > 0 && (
               <span className="flex items-center gap-1 text-amber-600">
-                <AlertCircle className="w-4 h-4" />
+                <AlertCircle className="h-4 w-4" />
                 Cambios sin guardar: {changeCount}
               </span>
             )}
@@ -423,33 +431,34 @@ export function DynamicChecklistForm({
         </div>
       </div>
 
-      {/* Mensaje de validación si falta algo */}
       {!canComplete() && progress.answered > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
           <div>
-            <p className="font-semibold text-amber-900">Checklist Incompleto</p>
+            <p className="font-semibold text-amber-900">Checklist incompleto</p>
             <p className="text-sm text-amber-800">
-              Todas las preguntas rechazadas deben incluir observaciones y al menos 1 fotografía.
+              Debes responder todas las preguntas. Las preguntas válidas requieren al menos 2 fotos. Si la respuesta es rechazada, además debes ingresar observación.
             </p>
           </div>
         </div>
       )}
 
-      {/* Secciones del checklist */}
       <div className="space-y-4 pb-32">
         {Object.entries(groupedQuestions).map(([section, sectionQuestions]) => (
-          <div key={section} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div
+            key={section}
+            className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+          >
             <button
               type="button"
               onClick={() => toggleSection(section)}
-              className="w-full px-4 py-3 flex items-center justify-between bg-slate-50 hover:bg-slate-100"
+              className="flex w-full items-center justify-between bg-slate-50 px-4 py-3 hover:bg-slate-100"
             >
               <span className="font-semibold text-slate-800">{section}</span>
               {expandedSections.has(section) ? (
-                <ChevronUp className="w-5 h-5 text-slate-500" />
+                <ChevronUp className="h-5 w-5 text-slate-500" />
               ) : (
-                <ChevronDown className="w-5 h-5 text-slate-500" />
+                <ChevronDown className="h-5 w-5 text-slate-500" />
               )}
             </button>
 
@@ -458,107 +467,157 @@ export function DynamicChecklistForm({
                 {sectionQuestions.map((question) => {
                   const answer = getAnswer(question.id);
                   const status = answer?.status ?? 'pending';
+                  const requiresPhotos = questionRequiresPhotos(question);
+                  const photoCount = countPhotos(answer);
 
                   return (
-                    <div key={question.id} className="p-4 hover:bg-slate-50 transition">
+                    <div key={question.id} className="p-4 transition hover:bg-slate-50">
                       <div className="space-y-2">
-                        {/* Número + Pregunta en la misma línea */}
                         <div className="flex items-start gap-3">
-                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white text-sm font-bold flex-shrink-0 mt-0.5">
+                          <span className="mt-0.5 inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">
                             {question.question_number}
                           </span>
-                          <p className="font-medium text-slate-900 flex-1">
+                          <p className="flex-1 font-medium text-slate-900">
                             {question.question_text}
                           </p>
                         </div>
 
-                        {/* Frecuencia debajo */}
-                        <p className="text-xs text-slate-500 ml-8">
-                          Frecuencia:{' '}
-                          {question.frequency === 'M'
-                            ? 'Mensual'
-                            : question.frequency === 'T'
-                            ? 'Trimestral'
-                            : 'Semestral'}
-                          {question.is_hydraulic_only && ' • Solo ascensores hidráulicos'}
-                        </p>
+                        <div className="ml-8 flex flex-wrap gap-2 text-xs text-slate-500">
+                          <span>
+                            Frecuencia:{' '}
+                            {question.frequency === 'M'
+                              ? 'Mensual'
+                              : question.frequency === 'T'
+                              ? 'Trimestral'
+                              : 'Semestral'}
+                          </span>
+                          {question.is_hydraulic_only && (
+                            <span>• Solo ascensores hidráulicos</span>
+                          )}
+                          {!requiresPhotos && (
+                            <span className="font-medium text-slate-600">
+                              • Excluida del registro fotográfico
+                            </span>
+                          )}
+                        </div>
 
-                        {/* Botones de respuesta debajo - más pequeños */}
-                        <div className="flex gap-2 ml-8">
+                        <div className="ml-8 flex gap-2">
                           <button
+                            type="button"
                             onClick={() => handleAnswerChange(question.id, 'approved')}
-                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
+                            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
                               status === 'approved'
                                 ? 'bg-green-600 text-white'
-                                : 'bg-white border border-slate-300 text-slate-700 hover:border-green-500'
+                                : 'border border-slate-300 bg-white text-slate-700 hover:border-green-500'
                             }`}
                             title="Aprobar"
                           >
-                            <Check className="w-4 h-4" />
+                            <Check className="h-4 w-4" />
                           </button>
 
                           <button
+                            type="button"
                             onClick={() => handleAnswerChange(question.id, 'not_applicable')}
-                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
+                            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
                               status === 'not_applicable'
                                 ? 'bg-gray-500 text-white'
-                                : 'bg-white border border-slate-300 text-slate-700 hover:border-gray-500'
+                                : 'border border-slate-300 bg-white text-slate-700 hover:border-gray-500'
                             }`}
-                            title="No Aplica (Manual)"
+                            title="No Aplica"
                           >
-                            <Minus className="w-4 h-4" />
+                            <Minus className="h-4 w-4" />
                           </button>
 
                           <button
+                            type="button"
                             onClick={() => handleAnswerChange(question.id, 'rejected')}
-                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
+                            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
                               status === 'rejected'
                                 ? 'bg-red-600 text-white'
-                                : 'bg-white border border-slate-300 text-slate-700 hover:border-red-500'
+                                : 'border border-slate-300 bg-white text-slate-700 hover:border-red-500'
                             }`}
                             title="Rechazar"
                           >
-                            <X className="w-4 h-4" />
+                            <X className="h-4 w-4" />
                           </button>
                         </div>
 
-                        {/* Observaciones y fotos para respuestas rechazadas */}
-                        {status === 'rejected' && (
-                          <div className="ml-8 space-y-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                            <div>
-                              <label className="block text-sm font-semibold text-red-900 mb-2">
-                                Observaciones (Obligatorias)
-                              </label>
-                              <textarea
-                                value={answer?.observations || ''}
-                                onChange={(e) =>
-                                  handleObservationsChange(question.id, e.target.value)
-                                }
-                                placeholder="Describe el problema encontrado..."
-                                rows={3}
-                                className="w-full px-4 py-2 border border-red-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                              />
-                            </div>
+                        {status !== 'pending' && status !== 'not_applicable' && (
+                          <div
+                            className={`ml-8 space-y-4 rounded-lg border p-4 ${
+                              status === 'rejected'
+                                ? 'border-red-200 bg-red-50'
+                                : 'border-blue-200 bg-blue-50'
+                            }`}
+                          >
+                            {status === 'rejected' && (
+                              <div>
+                                <label className="mb-2 block text-sm font-semibold text-red-900">
+                                  Observaciones (obligatorias)
+                                </label>
+                                <textarea
+                                  value={answer?.observations || ''}
+                                  onChange={(e) =>
+                                    handleObservationsChange(question.id, e.target.value)
+                                  }
+                                  placeholder="Describe el problema encontrado..."
+                                  rows={3}
+                                  className="w-full rounded-lg border border-red-200 px-4 py-2 focus:border-red-500 focus:ring-2 focus:ring-red-500"
+                                />
+                              </div>
+                            )}
 
-                            <div>
-                              <label className="block text-sm font-semibold text-red-900 mb-2">
-                                Evidencia Fotográfica (mínimo 1 foto)
-                              </label>
-                              <PhotoCapture
-                                questionId={question.id}
-                                checklistId={checklistId}
-                                existingPhotos={{
-                                  photo1: answer?.photo_1_url || undefined,
-                                  photo2: answer?.photo_2_url || undefined,
-                                }}
-                                onPhotosChange={(photo1Url, photo2Url) =>
-                                  handlePhotosChange(question.id, photo1Url, photo2Url)
-                                }
-                              />
-                              <p className="mt-2 text-xs text-red-700">
-                                • Foto 1 es obligatoria cuando la respuesta es Rechazado. Foto 2 es opcional.
-                              </p>
-                            </div>
+                            {requiresPhotos ? (
+                              <div>
+                                <label
+                                  className={`mb-2 block text-sm font-semibold ${
+                                    status === 'rejected'
+                                      ? 'text-red-900'
+                                      : 'text-blue-900'
+                                  }`}
+                                >
+                                  Evidencia fotográfica (mínimo 2 / máximo 4)
+                                </label>
+
+                                <PhotoCapture
+                                  questionId={question.id}
+                                  checklistId={checklistId}
+                                  existingPhotos={{
+                                    photo1: answer?.photo_1_url || undefined,
+                                    photo2: answer?.photo_2_url || undefined,
+                                    photo3: answer?.photo_3_url || undefined,
+                                    photo4: answer?.photo_4_url || undefined,
+                                  }}
+                                  minRequired={2}
+                                  maxPhotos={4}
+                                  onPhotosChange={(photo1Url, photo2Url, photo3Url, photo4Url) =>
+                                    handlePhotosChange(
+                                      question.id,
+                                      photo1Url,
+                                      photo2Url,
+                                      photo3Url,
+                                      photo4Url
+                                    )
+                                  }
+                                />
+
+                                <p
+                                  className={`mt-2 text-xs ${
+                                    photoCount >= 2
+                                      ? 'text-green-700'
+                                      : status === 'rejected'
+                                      ? 'text-red-700'
+                                      : 'text-blue-700'
+                                  }`}
+                                >
+                                  Fotos cargadas: {photoCount} / 4
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+                                Esta pregunta no requiere registro fotográfico en esta etapa.
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -571,38 +630,35 @@ export function DynamicChecklistForm({
         ))}
       </div>
 
-      {/* Botón flotante para guardar y completar checklist */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-200 shadow-2xl p-4 z-40">
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row gap-3">
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t-2 border-slate-200 bg-white p-4 shadow-2xl">
+        <div className="mx-auto flex max-w-4xl flex-col gap-3 sm:flex-row">
           <button
+            type="button"
             onClick={handleManualSave}
             disabled={saving || changeCount === 0}
-            className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-lg text-lg font-bold
-                       border-2 border-blue-600 bg-white hover:bg-blue-50 text-blue-600
-                       disabled:opacity-50 disabled:cursor-not-allowed transition transform hover:scale-[1.02] active:scale-[0.98]"
+            className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border-2 border-blue-600 bg-white px-6 py-4 text-lg font-bold text-blue-600 transition hover:scale-[1.02] hover:bg-blue-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Save className="w-6 h-6" />
+            <Save className="h-6 w-6" />
             {saving ? 'Guardando...' : 'Guardar Progreso'}
           </button>
 
           <button
+            type="button"
             onClick={handleCompleteClick}
             disabled={!canComplete() || saving}
-            className={`flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-lg text-lg font-bold
-                       text-white shadow-lg transition transform ${
-                         canComplete() && !saving
-                           ? 'bg-green-600 hover:bg-green-700 hover:scale-[1.02] active:scale-[0.98]'
-                           : 'bg-slate-400 cursor-not-allowed opacity-60'
-                       }`}
+            className={`flex-1 inline-flex items-center justify-center gap-2 rounded-lg px-6 py-4 text-lg font-bold text-white shadow-lg transition ${
+              canComplete() && !saving
+                ? 'bg-green-600 hover:scale-[1.02] hover:bg-green-700 active:scale-[0.98]'
+                : 'cursor-not-allowed bg-slate-400 opacity-60'
+            }`}
           >
-            <Check className="w-6 h-6" />
+            <Check className="h-6 w-6" />
             {saving ? 'Guardando...' : 'Completar y Firmar'}
           </button>
         </div>
       </div>
 
-      {/* Espaciador para evitar que el contenido quede oculto bajo la barra flotante */}
-      <div className="h-24"></div>
+      <div className="h-24" />
     </div>
   );
 }
