@@ -6,7 +6,9 @@ import {
   ChevronDown,
   ChevronUp,
   Minus,
+  Plus,
   Save,
+  Trash2,
   X,
 } from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
@@ -28,6 +30,12 @@ interface Answer {
   photo_2_url: string | null;
   photo_3_url: string | null;
   photo_4_url: string | null;
+}
+
+interface AdditionalObservation {
+  id: string;
+  observation_text: string;
+  observation_order: number;
 }
 
 interface DynamicChecklistFormProps {
@@ -66,6 +74,14 @@ function questionRequiresPhotos(question: Question) {
   return !EXCLUDED_PHOTO_PATTERNS.some((pattern) => q.includes(normalizeText(pattern)));
 }
 
+function createEmptyAdditionalObservation(order: number): AdditionalObservation {
+  return {
+    id: crypto.randomUUID(),
+    observation_text: '',
+    observation_order: order,
+  };
+}
+
 export function DynamicChecklistForm({
   checklistId,
   elevatorId,
@@ -81,6 +97,8 @@ export function DynamicChecklistForm({
   const [saving, setSaving] = useState(false);
   const [changeCount, setChangeCount] = useState(0);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [additionalObservationsEnabled, setAdditionalObservationsEnabled] = useState(false);
+  const [additionalObservations, setAdditionalObservations] = useState<AdditionalObservation[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -122,6 +140,23 @@ export function DynamicChecklistForm({
         });
 
         setAnswers(answersMap);
+
+        const { data: extraObs, error: extraObsError } = await supabase
+          .from('mnt_additional_observations')
+          .select('id, observation_text, observation_order')
+          .eq('maintenance_id', checklistId)
+          .order('observation_order', { ascending: true });
+
+        if (extraObsError) throw extraObsError;
+
+        const loadedAdditional = (extraObs || []).map((row: any) => ({
+          id: row.id,
+          observation_text: row.observation_text || '',
+          observation_order: row.observation_order || 1,
+        }));
+
+        setAdditionalObservations(loadedAdditional);
+        setAdditionalObservationsEnabled(loadedAdditional.length > 0);
 
         const sections = new Set<string>();
         filteredQuestions.forEach((q) => sections.add(q.section));
@@ -222,6 +257,41 @@ export function DynamicChecklistForm({
     setChangeCount((prev) => prev + 1);
   };
 
+  const addAdditionalObservation = () => {
+    setAdditionalObservationsEnabled(true);
+    setAdditionalObservations((prev) => [
+      ...prev,
+      createEmptyAdditionalObservation(prev.length + 1),
+    ]);
+    setChangeCount((prev) => prev + 1);
+  };
+
+  const updateAdditionalObservation = (id: string, value: string) => {
+    setAdditionalObservations((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, observation_text: value } : item))
+    );
+    setChangeCount((prev) => prev + 1);
+  };
+
+  const removeAdditionalObservation = (id: string) => {
+    setAdditionalObservations((prev) =>
+      prev
+        .filter((item) => item.id !== id)
+        .map((item, index) => ({ ...item, observation_order: index + 1 }))
+    );
+    setChangeCount((prev) => prev + 1);
+  };
+
+  const toggleAdditionalObservations = (enabled: boolean) => {
+    setAdditionalObservationsEnabled(enabled);
+    if (!enabled) {
+      setAdditionalObservations([]);
+    } else if (additionalObservations.length === 0) {
+      setAdditionalObservations([createEmptyAdditionalObservation(1)]);
+    }
+    setChangeCount((prev) => prev + 1);
+  };
+
   const countPhotos = (answer?: Answer) => {
     if (!answer) return 0;
     return [
@@ -290,6 +360,29 @@ export function DynamicChecklistForm({
           });
 
         if (error) throw error;
+      }
+
+      await supabase
+        .from('mnt_additional_observations')
+        .delete()
+        .eq('maintenance_id', checklistId);
+
+      if (additionalObservationsEnabled) {
+        const cleanAdditional = additionalObservations
+          .map((item, index) => ({
+            maintenance_id: checklistId,
+            observation_text: item.observation_text.trim(),
+            observation_order: index + 1,
+          }))
+          .filter((item) => item.observation_text !== '');
+
+        if (cleanAdditional.length > 0) {
+          const { error: extraError } = await supabase
+            .from('mnt_additional_observations')
+            .insert(cleanAdditional);
+
+          if (extraError) throw extraError;
+        }
       }
 
       if (isAutoSave) {
@@ -398,7 +491,7 @@ export function DynamicChecklistForm({
             Checklist de Mantenimiento
           </h2>
           <p className="text-sm text-slate-600">
-            Cada pregunta válida requiere entre 2 y 4 fotografías. Las preguntas rechazadas requieren observación y evidencia fotográfica.
+            Cada pregunta válida requiere entre 2 y 4 fotografías. Las respuestas rechazadas requieren observación y evidencia fotográfica.
           </p>
         </div>
 
@@ -443,7 +536,7 @@ export function DynamicChecklistForm({
         </div>
       )}
 
-      <div className="space-y-4 pb-32">
+      <div className="space-y-4">
         {Object.entries(groupedQuestions).map(([section, sectionQuestions]) => (
           <div
             key={section}
@@ -630,13 +723,89 @@ export function DynamicChecklistForm({
         ))}
       </div>
 
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Observaciones adicionales</h3>
+            <p className="text-sm text-slate-600">
+              Registra observaciones generales que no correspondan al detalle de una pregunta puntual.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-slate-700">¿Existen observaciones adicionales?</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => toggleAdditionalObservations(true)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  additionalObservationsEnabled
+                    ? 'bg-green-600 text-white'
+                    : 'border border-slate-300 bg-white text-slate-700'
+                }`}
+              >
+                Sí
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleAdditionalObservations(false)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  !additionalObservationsEnabled
+                    ? 'bg-slate-700 text-white'
+                    : 'border border-slate-300 bg-white text-slate-700'
+                }`}
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {additionalObservationsEnabled && (
+          <div className="space-y-4">
+            {additionalObservations.map((item, index) => (
+              <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="font-semibold text-slate-900">Observación {index + 1}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAdditionalObservation(item.id)}
+                    className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Eliminar
+                  </button>
+                </div>
+
+                <textarea
+                  value={item.observation_text}
+                  onChange={(e) => updateAdditionalObservation(item.id, e.target.value)}
+                  rows={3}
+                  placeholder="Ej: Cables de suspensión requieren adelantar inspección visual."
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={addAdditionalObservation}
+              className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              <Plus className="h-4 w-4" />
+              Agregar otra observación
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="fixed bottom-0 left-0 right-0 z-40 border-t-2 border-slate-200 bg-white p-4 shadow-2xl">
         <div className="mx-auto flex max-w-4xl flex-col gap-3 sm:flex-row">
           <button
             type="button"
             onClick={handleManualSave}
             disabled={saving || changeCount === 0}
-            className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border-2 border-blue-600 bg-white px-6 py-4 text-lg font-bold text-blue-600 transition hover:scale-[1.02] hover:bg-blue-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border-2 border-blue-600 bg-white px-6 py-4 text-lg font-bold text-blue-600 transition hover:scale-[1.02] hover:bg-blue-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Save className="h-6 w-6" />
             {saving ? 'Guardando...' : 'Guardar Progreso'}
@@ -646,7 +815,7 @@ export function DynamicChecklistForm({
             type="button"
             onClick={handleCompleteClick}
             disabled={!canComplete() || saving}
-            className={`flex-1 inline-flex items-center justify-center gap-2 rounded-lg px-6 py-4 text-lg font-bold text-white shadow-lg transition ${
+            className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-6 py-4 text-lg font-bold text-white shadow-lg transition ${
               canComplete() && !saving
                 ? 'bg-green-600 hover:scale-[1.02] hover:bg-green-700 active:scale-[0.98]'
                 : 'cursor-not-allowed bg-slate-400 opacity-60'
