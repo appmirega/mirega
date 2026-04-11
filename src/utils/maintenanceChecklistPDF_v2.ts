@@ -1,5 +1,4 @@
 import jsPDF from 'jspdf';
-import { supabase } from '../lib/supabase';
 
 export type CertificationStatus = 'sin_info' | 'vigente' | 'vencida' | 'por_vencer' | 'no_legible';
 export type MaintenanceQuestionStatus = 'approved' | 'rejected' | 'not_applicable' | 'out_of_period';
@@ -51,7 +50,6 @@ const COLORS = {
   blue: '#273a8f',
   green: '#44ac4c',
   red: '#e1162b',
-  black: '#1d1d1b',
   gray: '#d1d5db',
   lightGray: '#f3f4f6',
   cyan: '#7dd3fc',
@@ -134,59 +132,20 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-function extractMaintenancePhotoPath(src: string): string | null {
-  if (!src) return null;
-  try {
-    const url = new URL(src);
-    const marker = '/maintenance-photos/';
-    const idx = url.pathname.indexOf(marker);
-    if (idx === -1) return null;
-    return decodeURIComponent(url.pathname.slice(idx + marker.length));
-  } catch {
-    return null;
-  }
-}
-
 async function fetchImageAsDataUrl(src: string): Promise<string | null> {
-  if (!src) return null;
-
-  if (src.startsWith('data:image/')) {
-    return src;
-  }
-
-  const storagePath = extractMaintenancePhotoPath(src);
-
-  if (storagePath) {
-    try {
-      const { data, error } = await supabase.storage
-        .from('maintenance-photos')
-        .download(storagePath);
-
-      if (!error && data) {
-        if (!data.type.startsWith('image/')) {
-          console.error('Storage devolvió un recurso no imagen:', storagePath, data.type);
-        } else {
-          return await blobToDataUrl(data);
-        }
-      } else if (error) {
-        console.error('Error descargando imagen desde storage:', storagePath, error.message);
-      }
-    } catch (error) {
-      console.error('Fallo descarga autenticada desde storage:', storagePath, error);
-    }
-  }
-
   try {
     const response = await fetch(src, { mode: 'cors' });
     if (!response.ok) {
-      console.error('No se pudo descargar imagen por fetch:', src, response.status);
+      console.error('No se pudo descargar imagen:', src, response.status);
       return null;
     }
+
     const blob = await response.blob();
     if (!blob.type.startsWith('image/')) {
       console.error('El recurso no es imagen:', src, blob.type);
       return null;
     }
+
     return await blobToDataUrl(blob);
   } catch (error) {
     console.error('Error cargando imagen remota:', src, error);
@@ -345,15 +304,20 @@ function drawLegend(doc: jsPDF, y: number) {
 function drawChecklist(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: number) {
   let y = drawSectionTitle(doc, 'CHECKLIST MANTENIMIENTO', startY);
 
-  const grouped = data.questions.reduce((acc, q) => {
+  const orderedQuestions = [...data.questions].sort((a, b) => a.number - b.number);
+  const grouped = orderedQuestions.reduce((acc, q) => {
     if (!acc[q.section]) acc[q.section] = [];
     acc[q.section].push(q);
     return acc;
   }, {} as Record<string, MaintenanceChecklistQuestion[]>);
 
-  const sections = Object.keys(grouped);
-  const leftSections = sections.filter((_, i) => i % 2 === 0);
-  const rightSections = sections.filter((_, i) => i % 2 !== 0);
+  const orderedSections: string[] = [];
+  orderedQuestions.forEach((q) => {
+    if (!orderedSections.includes(q.section)) orderedSections.push(q.section);
+  });
+
+  const leftSections = orderedSections.filter((_, i) => i % 2 === 0);
+  const rightSections = orderedSections.filter((_, i) => i % 2 !== 0);
 
   const colWidth = 90;
   const leftX = MARGIN;
@@ -439,18 +403,14 @@ function drawFooter(doc: jsPDF, pageNumber: number, totalPages: number) {
   doc.text(`Página ${pageNumber} de ${totalPages}`, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 8, { align: 'right' });
 }
 
-function drawObservationsSummaryPage(
-  doc: jsPDF,
-  data: MaintenanceChecklistPDFData,
-  logoDataUrl: string | null
-) {
+function drawObservationsSummaryPage(doc: jsPDF, data: MaintenanceChecklistPDFData, logoDataUrl: string | null) {
   doc.addPage();
   let y = addHeader(doc, logoDataUrl);
   y = drawSectionTitle(doc, 'OBSERVACIONES Y RESUMEN', y);
 
-  const rejectedQuestions = data.questions.filter(
-    (q) => q.status === 'rejected' && q.observations?.trim()
-  );
+  const rejectedQuestions = [...data.questions]
+    .filter((q) => q.status === 'rejected' && q.observations?.trim())
+    .sort((a, b) => a.number - b.number);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
@@ -460,27 +420,28 @@ function drawObservationsSummaryPage(
     doc.text('No se registraron observaciones negativas en el checklist.', MARGIN, y);
     y += 8;
   } else {
-    rejectedQuestions.forEach((q) => {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Observaciones levantadas en el checklist', MARGIN, y);
+    y += 6;
+
+    rejectedQuestions.forEach((q, index) => {
       if (y > PAGE_HEIGHT - 25) {
         doc.addPage();
         y = addHeader(doc, logoDataUrl);
         y = drawSectionTitle(doc, 'OBSERVACIONES Y RESUMEN', y);
       }
 
-      doc.setFillColor(...hexToRgb(COLORS.red));
-      doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 6, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.setTextColor(255, 255, 255);
-      doc.text(`PREGUNTA ${q.number}: ${q.text}`, MARGIN + 2, y + 4.2);
-      y += 8;
-
-      doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
+      const title = `${index + 1}. [Pregunta ${q.number}] ${q.text}`;
+      const titleLines = doc.splitTextToSize(title, PAGE_WIDTH - 2 * MARGIN);
+      doc.text(titleLines, MARGIN, y);
+      y += titleLines.length * 4;
 
-      const obsLines = doc.splitTextToSize(q.observations || '', PAGE_WIDTH - 2 * MARGIN - 4);
-      doc.text(obsLines, MARGIN + 2, y);
+      doc.setFont('helvetica', 'normal');
+      const obsLines = doc.splitTextToSize(q.observations || '', PAGE_WIDTH - 2 * MARGIN);
+      doc.text(obsLines, MARGIN + 2, y + 1);
       y += obsLines.length * 4 + 5;
     });
   }
@@ -517,33 +478,30 @@ async function drawPhotoGrid(doc: jsPDF, photos: string[], y: number) {
   const photoW = (PAGE_WIDTH - 2 * MARGIN - gap * 3) / 4;
   const photoH = 32;
 
+  const slots = [photos[0] || '', photos[1] || '', photos[2] || '', photos[3] || ''];
+  const loadedImages = await Promise.all(
+    slots.map(async (url) => {
+      if (!url) return null;
+      return await fetchImageAsDataUrl(url);
+    })
+  );
+
   for (let i = 0; i < 4; i++) {
     const x = startX + i * (photoW + gap);
-
     doc.setDrawColor(210, 210, 210);
     doc.setFillColor(248, 250, 252);
     doc.rect(x, y, photoW, photoH, 'FD');
 
-    const src = photos[i];
-
-    if (src) {
-      const dataUrl = await fetchImageAsDataUrl(src);
-
-      if (dataUrl) {
-        try {
-          doc.addImage(dataUrl, inferImageFormat(dataUrl), x, y, photoW, photoH);
-        } catch (e) {
-          console.error('Error addImage:', e, src);
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(7);
-          doc.setTextColor(180, 0, 0);
-          doc.text('ERROR IMG', x + photoW / 2, y + photoH / 2, { align: 'center' });
-        }
-      } else {
+    const dataUrl = loadedImages[i];
+    if (dataUrl) {
+      try {
+        doc.addImage(dataUrl, inferImageFormat(dataUrl), x, y, photoW, photoH);
+      } catch (e) {
+        console.error('Error insertando imagen en PDF:', e);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7);
         doc.setTextColor(180, 0, 0);
-        doc.text('SIN CARGA', x + photoW / 2, y + photoH / 2, { align: 'center' });
+        doc.text('ERROR IMG', x + photoW / 2, y + photoH / 2, { align: 'center' });
       }
     } else {
       doc.setFont('helvetica', 'bold');
@@ -555,19 +513,17 @@ async function drawPhotoGrid(doc: jsPDF, photos: string[], y: number) {
 }
 
 function getPhotoQuestions(data: MaintenanceChecklistPDFData) {
-  return data.questions.filter(
-    (q) =>
-      q.status !== 'not_applicable' &&
-      q.status !== 'out_of_period' &&
-      questionRequiresPhotos(q)
-  );
+  return [...data.questions]
+    .filter(
+      (q) =>
+        q.status !== 'not_applicable' &&
+        q.status !== 'out_of_period' &&
+        questionRequiresPhotos(q)
+    )
+    .sort((a, b) => a.number - b.number);
 }
 
-async function drawPhotographicRecord(
-  doc: jsPDF,
-  data: MaintenanceChecklistPDFData,
-  logoDataUrl: string | null
-) {
+async function drawPhotographicRecord(doc: jsPDF, data: MaintenanceChecklistPDFData, logoDataUrl: string | null) {
   const questions = getPhotoQuestions(data);
   if (questions.length === 0) return;
 
@@ -634,9 +590,7 @@ function addPageNumbers(doc: jsPDF) {
   }
 }
 
-export async function generateMaintenanceChecklistPDF(
-  data: MaintenanceChecklistPDFData
-): Promise<Blob> {
+export async function generateMaintenanceChecklistPDF(data: MaintenanceChecklistPDFData): Promise<Blob> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
   const logoDataUrl = await loadLogoDataUrl('/logo_color.png');
 
