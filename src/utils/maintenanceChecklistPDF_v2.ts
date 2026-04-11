@@ -1,5 +1,5 @@
-
 import jsPDF from 'jspdf';
+import { supabase } from '../lib/supabase';
 
 export type CertificationStatus = 'sin_info' | 'vigente' | 'vencida' | 'por_vencer' | 'no_legible';
 export type MaintenanceQuestionStatus = 'approved' | 'rejected' | 'not_applicable' | 'out_of_period';
@@ -82,7 +82,7 @@ function hexToRgb(hex: string): [number, number, number] {
   return [
     parseInt(result[1], 16),
     parseInt(result[2], 16),
-    parseInt(result[3], 16)
+    parseInt(result[3], 16),
   ];
 }
 
@@ -116,28 +116,103 @@ function getCertificationStatusText(status?: CertificationStatus): string {
   }
 }
 
-function getImageFormat(src: string): 'PNG' | 'JPEG' {
-  return src.toLowerCase().includes('png') ? 'PNG' : 'JPEG';
+function inferImageFormat(dataUrlOrMime: string): 'PNG' | 'JPEG' {
+  const v = dataUrlOrMime.toLowerCase();
+  if (v.includes('image/png') || v.includes('.png')) return 'PNG';
+  return 'JPEG';
 }
 
-function loadImage(src: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = src;
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') resolve(reader.result);
+      else reject(new Error('No se pudo convertir blob a data URL'));
+    };
+    reader.onerror = () => reject(new Error('Error leyendo imagen'));
+    reader.readAsDataURL(blob);
   });
 }
 
-function addHeader(doc: jsPDF, logoImg: HTMLImageElement | null) {
+function extractMaintenancePhotoPath(src: string): string | null {
+  if (!src) return null;
+  try {
+    const url = new URL(src);
+    const marker = '/maintenance-photos/';
+    const idx = url.pathname.indexOf(marker);
+    if (idx === -1) return null;
+    return decodeURIComponent(url.pathname.slice(idx + marker.length));
+  } catch {
+    return null;
+  }
+}
+
+async function fetchImageAsDataUrl(src: string): Promise<string | null> {
+  if (!src) return null;
+
+  if (src.startsWith('data:image/')) {
+    return src;
+  }
+
+  const storagePath = extractMaintenancePhotoPath(src);
+
+  if (storagePath) {
+    try {
+      const { data, error } = await supabase.storage
+        .from('maintenance-photos')
+        .download(storagePath);
+
+      if (!error && data) {
+        if (!data.type.startsWith('image/')) {
+          console.error('Storage devolvió un recurso no imagen:', storagePath, data.type);
+        } else {
+          return await blobToDataUrl(data);
+        }
+      } else if (error) {
+        console.error('Error descargando imagen desde storage:', storagePath, error.message);
+      }
+    } catch (error) {
+      console.error('Fallo descarga autenticada desde storage:', storagePath, error);
+    }
+  }
+
+  try {
+    const response = await fetch(src, { mode: 'cors' });
+    if (!response.ok) {
+      console.error('No se pudo descargar imagen por fetch:', src, response.status);
+      return null;
+    }
+    const blob = await response.blob();
+    if (!blob.type.startsWith('image/')) {
+      console.error('El recurso no es imagen:', src, blob.type);
+      return null;
+    }
+    return await blobToDataUrl(blob);
+  } catch (error) {
+    console.error('Error cargando imagen remota:', src, error);
+    return null;
+  }
+}
+
+async function loadLogoDataUrl(src: string): Promise<string | null> {
+  try {
+    const response = await fetch(src);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return await blobToDataUrl(blob);
+  } catch {
+    return null;
+  }
+}
+
+function addHeader(doc: jsPDF, logoDataUrl: string | null) {
   const darkBlue = hexToRgb(COLORS.blue);
   const centerX = PAGE_WIDTH / 2;
   const y = MARGIN;
 
-  if (logoImg) {
+  if (logoDataUrl) {
     try {
-      doc.addImage(logoImg, 'PNG', MARGIN, y + 2, 24, 18);
+      doc.addImage(logoDataUrl, inferImageFormat(logoDataUrl), MARGIN, y + 2, 24, 18);
     } catch (e) {
       console.error('Error logo:', e);
     }
@@ -166,7 +241,13 @@ function addHeader(doc: jsPDF, logoImg: HTMLImageElement | null) {
   return y + 30;
 }
 
-function drawSectionTitle(doc: jsPDF, title: string, y: number, fill = COLORS.blue, textColor: [number, number, number] = [255,255,255]) {
+function drawSectionTitle(
+  doc: jsPDF,
+  title: string,
+  y: number,
+  fill = COLORS.blue,
+  textColor: [number, number, number] = [255, 255, 255]
+) {
   doc.setFillColor(...hexToRgb(fill));
   doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
   doc.setFont('helvetica', 'bold');
@@ -186,7 +267,7 @@ function drawGeneralInfo(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: 
   const rightCol = PAGE_WIDTH / 2;
 
   const drawField = (label: string, value: string, x: number, yPos: number, width?: number) => {
-    const fieldWidth = width || ((PAGE_WIDTH / 2) - MARGIN - labelWidth);
+    const fieldWidth = width || (PAGE_WIDTH / 2 - MARGIN - labelWidth);
     doc.setFillColor(...blueRgb);
     doc.setTextColor(255, 255, 255);
     doc.rect(x, yPos, labelWidth, fieldHeight, 'F');
@@ -208,7 +289,12 @@ function drawGeneralInfo(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: 
   y += fieldHeight + 1.5;
 
   drawField('Dirección:', data.clientAddress || '', leftCol, y);
-  drawField('N° Ascensor:', data.elevatorNumber ? `Ascensor ${data.elevatorNumber}` : 'No especificado', rightCol, y);
+  drawField(
+    'N° Ascensor:',
+    data.elevatorNumber ? `Ascensor ${data.elevatorNumber}` : 'No especificado',
+    rightCol,
+    y
+  );
   y += fieldHeight + 1.5;
 
   drawField('Fecha:', formatDate(data.completionDate), leftCol, y);
@@ -233,7 +319,7 @@ function drawLegend(doc: jsPDF, y: number) {
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0,0,0);
+  doc.setTextColor(0, 0, 0);
   doc.text('Simbología del checklist:', MARGIN, y);
 
   doc.setFont('helvetica', 'normal');
@@ -258,94 +344,85 @@ function drawLegend(doc: jsPDF, y: number) {
 
 function drawChecklist(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: number) {
   let y = drawSectionTitle(doc, 'CHECKLIST MANTENIMIENTO', startY);
-  const questions = data.questions;
-  const leftQuestions = questions.slice(0, 25);
-  const rightQuestions = questions.slice(25, 50);
-  const colWidth = (PAGE_WIDTH - 2 * MARGIN - 4) / 2;
+
+  const grouped = data.questions.reduce((acc, q) => {
+    if (!acc[q.section]) acc[q.section] = [];
+    acc[q.section].push(q);
+    return acc;
+  }, {} as Record<string, MaintenanceChecklistQuestion[]>);
+
+  const sections = Object.keys(grouped);
+  const leftSections = sections.filter((_, i) => i % 2 === 0);
+  const rightSections = sections.filter((_, i) => i % 2 !== 0);
+
+  const colWidth = 90;
   const leftX = MARGIN;
-  const rightX = MARGIN + colWidth + 4;
+  const rightX = PAGE_WIDTH / 2 + 5;
+  let leftY = y;
+  let rightY = y;
 
-  const colors = {
-    approved: hexToRgb(COLORS.green),
-    rejected: hexToRgb(COLORS.red),
-    out_of_period: hexToRgb(COLORS.cyan),
-    not_applicable: hexToRgb(COLORS.gray),
+  const drawQuestionStatus = (x: number, yPos: number, status: MaintenanceQuestionStatus) => {
+    let fillColor = COLORS.gray;
+    if (status === 'approved') fillColor = COLORS.green;
+    else if (status === 'rejected') fillColor = COLORS.red;
+    else if (status === 'out_of_period') fillColor = COLORS.cyan;
+
+    doc.setFillColor(...hexToRgb(fillColor));
+    doc.setDrawColor(100, 100, 100);
+    doc.roundedRect(x, yPos - 3.5, 4.5, 4.5, 0.8, 0.8, 'FD');
   };
 
-  const drawColumn = (qs: MaintenanceChecklistQuestion[], x: number, yStart: number) => {
-    let yy = yStart;
-    let lastSection = '';
+  const drawColumn = (sectionNames: string[], startX: number, startYPos: number) => {
+    let currentY = startYPos;
 
-    for (const q of qs) {
-      if (q.section !== lastSection) {
-        if (lastSection) {
-          doc.setDrawColor(220,220,220);
-          doc.line(x, yy - 1, x + colWidth - 1, yy - 1);
-          yy += 2;
-        }
-        doc.setFont('helvetica','bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(...hexToRgb(COLORS.blue));
-        doc.text(q.section.toUpperCase(), x, yy);
-        yy += 5;
-        lastSection = q.section;
-      }
+    sectionNames.forEach((section) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...hexToRgb(COLORS.blue));
+      doc.text(section.toUpperCase(), startX, currentY);
+      currentY += 5;
 
-      const questionText = `${q.number}. ${q.text}`;
-      const lines = doc.splitTextToSize(questionText, colWidth - 10);
-      doc.setFont('helvetica','normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(60,60,60);
-      doc.text(lines, x + 1, yy);
+      grouped[section].forEach((q) => {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.3);
+        doc.setTextColor(0, 0, 0);
+        const text = `${q.number}. ${q.text}`;
+        const lines = doc.splitTextToSize(text, colWidth - 8);
+        doc.text(lines, startX + 1, currentY);
+        drawQuestionStatus(startX + colWidth - 6, currentY + 1.8, q.status);
+        currentY += Math.max(lines.length * 3.5, 5);
+      });
 
-      const boxSize = 5;
-      const innerBoxSize = 3.5;
-      const boxX = x + colWidth - boxSize - 1;
-      const lineHeight = lines.length * 2.8;
-      const boxY = yy - 2 + (lineHeight / 2) - (boxSize / 2);
+      currentY += 3;
+    });
 
-      doc.setDrawColor(0,0,0);
-      doc.setLineWidth(0.3);
-      doc.setFillColor(255,255,255);
-      doc.roundedRect(boxX, boxY, boxSize, boxSize, 0.5, 0.5, 'FD');
-      const innerX = boxX + (boxSize - innerBoxSize) / 2;
-      const innerY = boxY + (boxSize - innerBoxSize) / 2;
-
-      if (q.status in colors) {
-        const c = colors[q.status as keyof typeof colors];
-        doc.setFillColor(...c);
-        doc.roundedRect(innerX, innerY, innerBoxSize, innerBoxSize, 0.3, 0.3, 'F');
-      }
-
-      yy += Math.max(5, lineHeight + 2);
-    }
-    return yy;
+    return currentY;
   };
 
-  const yLeft = drawColumn(leftQuestions, leftX, y);
-  const yRight = drawColumn(rightQuestions, rightX, y);
-  return Math.max(yLeft, yRight) + 4;
+  leftY = drawColumn(leftSections, leftX, leftY);
+  rightY = drawColumn(rightSections, rightX, rightY);
+
+  return Math.max(leftY, rightY) + 4;
 }
 
 function drawSignature(doc: jsPDF, data: MaintenanceChecklistPDFData, y: number) {
-  const boxW = 65;
-  const boxH = 18;
-  const centerX = (PAGE_WIDTH - boxW) / 2;
-  const blueRgb = hexToRgb(COLORS.blue);
+  if (!data.signature) return;
 
-  doc.setFillColor(...blueRgb);
-  doc.rect(centerX, y, boxW, 5, 'F');
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(7);
-  doc.setTextColor(255,255,255);
-  const signerName = data.signature?.signerName?.toUpperCase() || 'SIN FIRMA';
-  doc.text(`RECEPCIONADO POR: ${signerName}`, centerX + 2, y + 3.5);
+  const boxW = 80;
+  const boxH = 24;
+  const centerX = PAGE_WIDTH / 2 - boxW / 2;
 
-  doc.setFillColor(255,255,255);
-  doc.setDrawColor(...blueRgb);
+  doc.setFillColor(...hexToRgb(COLORS.blue));
+  doc.rect(centerX, y, boxW, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(255, 255, 255);
+  doc.text(`RECEPCIONADO POR: ${data.signature.signerName || ''}`, centerX + 2, y + 4);
+
+  doc.setDrawColor(...hexToRgb(COLORS.blue));
   doc.rect(centerX, y + 6, boxW, boxH);
 
-  if (data.signature?.signatureDataUrl) {
+  if (data.signature.signatureDataUrl) {
     try {
       doc.addImage(data.signature.signatureDataUrl, 'PNG', centerX + 10, y + 10, boxW - 20, boxH - 8);
     } catch (e) {
@@ -354,84 +431,79 @@ function drawSignature(doc: jsPDF, data: MaintenanceChecklistPDFData, y: number)
   }
 }
 
-function addPageNumbers(doc: jsPDF) {
-  const totalPages = doc.getNumberOfPages();
-  for (let i = 1; i <= totalPages; i++) {
-    doc.setPage(i);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(120,120,120);
-    doc.text(`Página ${i} de ${totalPages}`, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 5, { align: 'right' });
-    doc.text('Documento generado por MIREGA', MARGIN, PAGE_HEIGHT - 5);
-  }
+function drawFooter(doc: jsPDF, pageNumber: number, totalPages: number) {
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Documento generado por MIREGA', MARGIN, PAGE_HEIGHT - 8);
+  doc.text(`Página ${pageNumber} de ${totalPages}`, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 8, { align: 'right' });
 }
 
-function getQuestionObservations(data: MaintenanceChecklistPDFData) {
-  return data.questions
-    .filter((q) => q.status === 'rejected' && q.observations && q.observations.trim())
-    .sort((a, b) => a.number - b.number);
-}
-
-function drawObservationsSummaryPage(doc: jsPDF, data: MaintenanceChecklistPDFData, logoImg: HTMLImageElement | null) {
+function drawObservationsSummaryPage(
+  doc: jsPDF,
+  data: MaintenanceChecklistPDFData,
+  logoDataUrl: string | null
+) {
   doc.addPage();
-  let y = addHeader(doc, logoImg);
+  let y = addHeader(doc, logoDataUrl);
   y = drawSectionTitle(doc, 'OBSERVACIONES Y RESUMEN', y);
 
-  const rejected = getQuestionObservations(data);
+  const rejectedQuestions = data.questions.filter(
+    (q) => q.status === 'rejected' && q.observations?.trim()
+  );
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.setTextColor(0,0,0);
+  doc.setTextColor(0, 0, 0);
 
-  if (rejected.length === 0) {
+  if (rejectedQuestions.length === 0) {
     doc.text('No se registraron observaciones negativas en el checklist.', MARGIN, y);
     y += 8;
   } else {
-    doc.setFont('helvetica','bold');
-    doc.text('Observaciones levantadas en el checklist', MARGIN, y);
-    y += 6;
-    doc.setFont('helvetica','normal');
-
-    rejected.forEach((q, index) => {
-      const title = `${index + 1}. [Pregunta ${q.number}] ${q.text}`;
-      const titleLines = doc.splitTextToSize(title, PAGE_WIDTH - 2 * MARGIN);
-      const obsLines = doc.splitTextToSize(q.observations || '', PAGE_WIDTH - 2 * MARGIN - 4);
-
-      const blockHeight = titleLines.length * 4 + obsLines.length * 4 + 8;
-      if (y + blockHeight > PAGE_HEIGHT - 20) {
+    rejectedQuestions.forEach((q) => {
+      if (y > PAGE_HEIGHT - 25) {
         doc.addPage();
-        y = addHeader(doc, logoImg);
+        y = addHeader(doc, logoDataUrl);
         y = drawSectionTitle(doc, 'OBSERVACIONES Y RESUMEN', y);
       }
 
-      doc.setFont('helvetica','bold');
-      doc.text(titleLines, MARGIN, y);
-      y += titleLines.length * 4 + 1;
-      doc.setFont('helvetica','normal');
+      doc.setFillColor(...hexToRgb(COLORS.red));
+      doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 6, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`PREGUNTA ${q.number}: ${q.text}`, MARGIN + 2, y + 4.2);
+      y += 8;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(0, 0, 0);
+
+      const obsLines = doc.splitTextToSize(q.observations || '', PAGE_WIDTH - 2 * MARGIN - 4);
       doc.text(obsLines, MARGIN + 2, y);
-      y += obsLines.length * 4 + 4;
+      y += obsLines.length * 4 + 5;
     });
   }
 
-  const additional = (data.additionalObservations || []).filter((o) => o.text?.trim());
-  if (additional.length > 0) {
+  if (data.additionalObservations?.length) {
     if (y > PAGE_HEIGHT - 40) {
       doc.addPage();
-      y = addHeader(doc, logoImg);
-      y = drawSectionTitle(doc, 'OBSERVACIONES Y RESUMEN', y);
+      y = addHeader(doc, logoDataUrl);
     }
 
-    doc.setFont('helvetica','bold');
-    doc.text('Observaciones adicionales', MARGIN, y);
-    y += 6;
-    doc.setFont('helvetica','normal');
+    y = drawSectionTitle(doc, 'OBSERVACIONES ADICIONALES', y);
 
-    additional.forEach((item) => {
-      const text = `Observación ${item.order}: ${item.text}`;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(0, 0, 0);
+
+    data.additionalObservations.forEach((obs) => {
+      const text = `Observación ${obs.order}: ${obs.text}`;
       const lines = doc.splitTextToSize(text, PAGE_WIDTH - 2 * MARGIN);
       if (y + lines.length * 4 + 4 > PAGE_HEIGHT - 20) {
         doc.addPage();
-        y = addHeader(doc, logoImg);
-        y = drawSectionTitle(doc, 'OBSERVACIONES Y RESUMEN', y);
+        y = addHeader(doc, logoDataUrl);
+        y = drawSectionTitle(doc, 'OBSERVACIONES ADICIONALES', y);
       }
       doc.text(lines, MARGIN + 2, y);
       y += lines.length * 4 + 4;
@@ -447,66 +519,86 @@ async function drawPhotoGrid(doc: jsPDF, photos: string[], y: number) {
 
   for (let i = 0; i < 4; i++) {
     const x = startX + i * (photoW + gap);
-    doc.setDrawColor(210,210,210);
-    doc.setFillColor(248,250,252);
+
+    doc.setDrawColor(210, 210, 210);
+    doc.setFillColor(248, 250, 252);
     doc.rect(x, y, photoW, photoH, 'FD');
 
-    if (photos[i]) {
-      const img = await loadImage(photos[i]);
-      if (img) {
+    const src = photos[i];
+
+    if (src) {
+      const dataUrl = await fetchImageAsDataUrl(src);
+
+      if (dataUrl) {
         try {
-          doc.addImage(img, getImageFormat(photos[i]), x, y, photoW, photoH);
+          doc.addImage(dataUrl, inferImageFormat(dataUrl), x, y, photoW, photoH);
         } catch (e) {
-          console.error('Error addImage:', e);
+          console.error('Error addImage:', e, src);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7);
+          doc.setTextColor(180, 0, 0);
+          doc.text('ERROR IMG', x + photoW / 2, y + photoH / 2, { align: 'center' });
         }
+      } else {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(180, 0, 0);
+        doc.text('SIN CARGA', x + photoW / 2, y + photoH / 2, { align: 'center' });
       }
     } else {
-      doc.setFont('helvetica','bold');
+      doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
-      doc.setTextColor(150,150,150);
+      doc.setTextColor(150, 150, 150);
       doc.text(`FOTO ${i + 1}`, x + photoW / 2, y + photoH / 2, { align: 'center' });
     }
   }
 }
 
 function getPhotoQuestions(data: MaintenanceChecklistPDFData) {
-  return data.questions.filter((q) =>
-    q.status !== 'not_applicable' &&
-    q.status !== 'out_of_period' &&
-    questionRequiresPhotos(q)
+  return data.questions.filter(
+    (q) =>
+      q.status !== 'not_applicable' &&
+      q.status !== 'out_of_period' &&
+      questionRequiresPhotos(q)
   );
 }
 
-async function drawPhotographicRecord(doc: jsPDF, data: MaintenanceChecklistPDFData, logoImg: HTMLImageElement | null) {
+async function drawPhotographicRecord(
+  doc: jsPDF,
+  data: MaintenanceChecklistPDFData,
+  logoDataUrl: string | null
+) {
   const questions = getPhotoQuestions(data);
   if (questions.length === 0) return;
 
   doc.addPage();
-  let y = addHeader(doc, logoImg);
+  let y = addHeader(doc, logoDataUrl);
   y = drawSectionTitle(doc, 'REGISTRO FOTOGRÁFICO', y);
 
   let currentSection = '';
 
   for (const q of questions) {
-    const photos = (q.photos || []).slice(0, 4);
-    const blockHeight = 6 + 6 + 34 + 6;
+    const photos = (q.photos || []).filter(Boolean).slice(0, 4);
+    const title = `${q.number}.- ${q.text}`;
+    const titleLines = doc.splitTextToSize(title, PAGE_WIDTH - 2 * MARGIN);
+
+    const blockHeight =
+      (q.section !== currentSection ? 10 : 0) +
+      titleLines.length * 4 +
+      (q.status === 'rejected' ? 8 : 0) +
+      36 + 4;
 
     if (y + blockHeight > PAGE_HEIGHT - 15) {
       doc.addPage();
-      y = addHeader(doc, logoImg);
+      y = addHeader(doc, logoDataUrl);
       y = drawSectionTitle(doc, 'REGISTRO FOTOGRÁFICO', y);
       currentSection = '';
     }
 
     if (q.section !== currentSection) {
-      if (y + 12 > PAGE_HEIGHT - 15) {
-        doc.addPage();
-        y = addHeader(doc, logoImg);
-        y = drawSectionTitle(doc, 'REGISTRO FOTOGRÁFICO', y);
-      }
       doc.setFillColor(...hexToRgb(COLORS.lightGray));
       doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 7, 'F');
-      doc.setFont('helvetica','bold');
+      doc.setFont('helvetica', 'bold');
       doc.setFontSize(10);
       doc.setTextColor(...hexToRgb(COLORS.blue));
       doc.text(q.section.toUpperCase(), MARGIN + 2, y + 4.8);
@@ -514,18 +606,16 @@ async function drawPhotographicRecord(doc: jsPDF, data: MaintenanceChecklistPDFD
       currentSection = q.section;
     }
 
-    doc.setFont('helvetica','bold');
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.setTextColor(0,0,0);
-    const title = `${q.number}.- ${q.text}`;
-    const titleLines = doc.splitTextToSize(title, PAGE_WIDTH - 2 * MARGIN);
+    doc.setTextColor(0, 0, 0);
     doc.text(titleLines, MARGIN, y);
     y += titleLines.length * 4 + 2;
 
     if (q.status === 'rejected') {
       doc.setFillColor(...hexToRgb(COLORS.red));
       doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 6, 'F');
-      doc.setTextColor(255,255,255);
+      doc.setTextColor(255, 255, 255);
       doc.setFontSize(8);
       doc.text('OBSERVACIÓN NEGATIVA', MARGIN + 2, y + 4.2);
       y += 8;
@@ -536,18 +626,28 @@ async function drawPhotographicRecord(doc: jsPDF, data: MaintenanceChecklistPDFD
   }
 }
 
-export async function generateMaintenanceChecklistPDF(data: MaintenanceChecklistPDFData): Promise<Blob> {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-  const logoImg = await loadImage('/logo_color.png');
+function addPageNumbers(doc: jsPDF) {
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    drawFooter(doc, i, totalPages);
+  }
+}
 
-  let y = addHeader(doc, logoImg);
+export async function generateMaintenanceChecklistPDF(
+  data: MaintenanceChecklistPDFData
+): Promise<Blob> {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  const logoDataUrl = await loadLogoDataUrl('/logo_color.png');
+
+  let y = addHeader(doc, logoDataUrl);
   y = drawGeneralInfo(doc, data, y);
   y = drawLegend(doc, y);
   y = drawChecklist(doc, data, y);
   drawSignature(doc, data, PAGE_HEIGHT - 32);
 
-  drawObservationsSummaryPage(doc, data, logoImg);
-  await drawPhotographicRecord(doc, data, logoImg);
+  drawObservationsSummaryPage(doc, data, logoDataUrl);
+  await drawPhotographicRecord(doc, data, logoDataUrl);
   addPageNumbers(doc);
 
   return doc.output('blob');
