@@ -1,12 +1,35 @@
-// 🔥 VERSION ESTABLE HOJA 1 ORDENADA
+import jsPDF from 'jspdf'
 
-function addHeader(doc: jsPDF, logoDataUrl: string | null) {
+export interface MaintenanceChecklistPDFData {
+  clientName: string
+  clientAddress?: string
+  elevatorNumber?: number
+  month: number
+  year: number
+  technicianName: string
+  completionDate?: string
+  folioNumber?: string | number
+  certificationStatus?: string
+  questions: any[]
+  signature?: {
+    signerName: string
+    signatureDataUrl: string
+  }
+}
+
+const PAGE_WIDTH = 210
+const PAGE_HEIGHT = 297
+const MARGIN = 10
+
+const MONTHS = [
+  'Enero','Febrero','Marzo','Abril','Mayo','Junio',
+  'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'
+]
+
+// ================= HEADER =================
+function addHeader(doc: jsPDF) {
   const centerX = PAGE_WIDTH / 2
   const y = MARGIN
-
-  if (logoDataUrl) {
-    doc.addImage(logoDataUrl, 'PNG', MARGIN, y + 2, 22, 16)
-  }
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(15)
@@ -17,7 +40,6 @@ function addHeader(doc: jsPDF, logoDataUrl: string | null) {
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
-  doc.setTextColor(80)
 
   doc.text(
     'MIREGA ASCENSORES LTDA. | Av. Pedro de Valdivia 273 - Of. 1406 Providencia | +56956087972 | contacto@mirega.cl | www.mirega.cl',
@@ -31,16 +53,12 @@ function addHeader(doc: jsPDF, logoDataUrl: string | null) {
   return y + 28
 }
 
-function drawGeneralInfo(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: number) {
-  let y = startY
-
-  const fieldHeight = 6
-  const spacing = 2
-
+// ================= INFO =================
+function drawGeneralInfo(doc: jsPDF, data: MaintenanceChecklistPDFData, y: number) {
   const leftX = MARGIN
   const rightX = PAGE_WIDTH / 2
 
-  const drawField = (label: string, value: string, x: number, yPos: number) => {
+  const draw = (label: string, value: string, x: number, yPos: number) => {
     doc.setFontSize(8)
     doc.setFont('helvetica', 'bold')
     doc.text(label, x, yPos)
@@ -49,94 +67,69 @@ function drawGeneralInfo(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: 
     doc.text(value || '-', x + 35, yPos)
   }
 
-  // 🔥 CAMBIO IMPORTANTE: nombre edificio
-  drawField('Edificio:', data.clientName, leftX, y)
-  drawField('Periodo:', `${MONTHS[data.month - 1]} ${data.year}`, rightX, y)
-  y += fieldHeight
+  draw('Edificio:', data.clientName, leftX, y)
+  draw('Periodo:', `${MONTHS[data.month - 1]} ${data.year}`, rightX, y)
+  y += 6
 
-  drawField('Dirección:', data.clientAddress || '-', leftX, y)
-  drawField('Ascensor:', `#${data.elevatorNumber || '-'}`, rightX, y)
-  y += fieldHeight
+  draw('Dirección:', data.clientAddress || '-', leftX, y)
+  draw('Ascensor:', `#${data.elevatorNumber || '-'}`, rightX, y)
+  y += 6
 
-  drawField('Técnico:', data.technicianName, leftX, y)
-  drawField('Fecha:', formatDate(data.completionDate), rightX, y)
-  y += fieldHeight
+  draw('Técnico:', data.technicianName, leftX, y)
+  draw('Fecha:', data.completionDate || '-', rightX, y)
+  y += 6
 
-  drawField('Certificación:', getCertificationStatusText(data.certificationStatus), leftX, y)
-  drawField('Folio:', data.folioNumber ? String(data.folioNumber) : 'Pendiente', rightX, y)
-
-  return y + 5
-}
-
-function drawLegend(doc: jsPDF, y: number) {
-  doc.setFontSize(8)
-  doc.setFont('helvetica', 'bold')
-  doc.text('Simbología del checklist:', MARGIN, y)
-
-  y += 4
-
-  doc.setFont('helvetica', 'normal')
-
-  const drawItem = (text: string, color: string, x: number) => {
-    doc.setFillColor(...hexToRgb(color))
-    doc.circle(x, y, 2, 'F')
-    doc.text(text, x + 5, y + 1)
-  }
-
-  drawItem('Aprobado', COLORS.green, MARGIN)
-  drawItem('Observación', COLORS.red, MARGIN + 50)
-  drawItem('Fuera periodo', COLORS.cyan, MARGIN + 100)
-  drawItem('No aplica', COLORS.gray, MARGIN + 150)
+  draw('Certificación:', data.certificationStatus || '-', leftX, y)
+  draw('Folio:', String(data.folioNumber || 'Pendiente'), rightX, y)
 
   return y + 6
 }
 
-function drawChecklist(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: number) {
-  let y = startY
-
+// ================= CHECKLIST =================
+function drawChecklist(doc: jsPDF, data: MaintenanceChecklistPDFData, y: number) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
   doc.text('CHECKLIST', MARGIN, y)
 
   y += 5
 
-  const questions = [...data.questions].sort((a, b) => a.number - b.number)
-
   const colWidth = (PAGE_WIDTH - 2 * MARGIN - 10) / 2
 
   let leftY = y
   let rightY = y
 
-  questions.forEach((q, index) => {
-    const col = index % 2 === 0 ? 'left' : 'right'
-    const x = col === 'left' ? MARGIN : MARGIN + colWidth + 10
-    const yPos = col === 'left' ? leftY : rightY
+  data.questions
+    .sort((a, b) => a.number - b.number)
+    .forEach((q, index) => {
+      const col = index % 2 === 0 ? 'left' : 'right'
+      const x = col === 'left' ? MARGIN : MARGIN + colWidth + 10
+      const yPos = col === 'left' ? leftY : rightY
 
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
 
-    const text = `${q.number}. ${q.text}`
-    const lines = doc.splitTextToSize(text, colWidth - 8)
+      const text = `${q.number}. ${q.text}`
+      const lines = doc.splitTextToSize(text, colWidth - 8)
 
-    doc.text(lines, x, yPos)
+      doc.text(lines, x, yPos)
 
-    // estado
-    let color = COLORS.gray
-    if (q.status === 'approved') color = COLORS.green
-    if (q.status === 'rejected') color = COLORS.red
+      let color = [200, 200, 200]
+      if (q.status === 'approved') color = [0, 180, 0]
+      if (q.status === 'rejected') color = [200, 0, 0]
 
-    doc.setFillColor(...hexToRgb(color))
-    doc.circle(x + colWidth - 5, yPos - 1, 2, 'F')
+      doc.setFillColor(...color)
+      doc.circle(x + colWidth - 5, yPos - 1, 2, 'F')
 
-    const height = lines.length * 3.5
+      const height = lines.length * 3.5
 
-    if (col === 'left') leftY += height + 2
-    else rightY += height + 2
-  })
+      if (col === 'left') leftY += height + 2
+      else rightY += height + 2
+    })
 
-  return Math.max(leftY, rightY) + 5
+  return Math.max(leftY, rightY)
 }
 
+// ================= FIRMA =================
 function drawSignature(doc: jsPDF, data: MaintenanceChecklistPDFData) {
   const y = PAGE_HEIGHT - 35
 
@@ -159,4 +152,19 @@ function drawSignature(doc: jsPDF, data: MaintenanceChecklistPDFData) {
 
   doc.setFont('helvetica', 'normal')
   doc.text(data.signature?.signerName || '', PAGE_WIDTH / 2, y + 25, { align: 'center' })
+}
+
+// ================= EXPORT (CLAVE) =================
+export async function generateMaintenanceChecklistPDF(
+  data: MaintenanceChecklistPDFData
+): Promise<Blob> {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+
+  let y = addHeader(doc)
+  y = drawGeneralInfo(doc, data, y)
+  y = drawChecklist(doc, data, y)
+
+  drawSignature(doc, data)
+
+  return doc.output('blob')
 }
