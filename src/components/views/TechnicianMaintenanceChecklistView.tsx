@@ -629,7 +629,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
     // Obtener respuestas del checklist
     const { data: responses, error: responsesError } = await supabase
       .from('mnt_checklist_answers')
-      .select('question_id, status, observations')
+      .select('question_id, status, observations, photo_1_url, photo_2_url, photo_3_url, photo_4_url')
       .eq('checklist_id', checklistId);
 
     if (responsesError) {
@@ -680,14 +680,20 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
         section: q.section,
         text: q.question_text,
         status: finalStatus,
-        observations: response?.observations || null
+        observations: response?.observations || null,
+        photos: [
+          response?.photo_1_url || null,
+          response?.photo_2_url || null,
+          response?.photo_3_url || null,
+          response?.photo_4_url || null,
+        ].filter(Boolean) as string[]
       };
     }).sort((a, b) => a.number - b.number);
 
     const pdfData: MaintenanceChecklistPDFData = {
       checklistId: checklistData.id,
       folioNumber: checklistData.folio,
-      clientName: checklistData.clients?.company_name || checklistData.clients?.building_name || 'Cliente no especificado',
+      clientName: checklistData.clients?.building_name || checklistData.clients?.company_name || 'Cliente no especificado',
       clientAddress: checklistData.clients?.address,
       elevatorNumber: checklistData.elevators?.elevator_number,
       month: checklistData.month,
@@ -777,7 +783,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
       // Obtener respuestas con fotos desde la base de datos
       const { data: answers, error: answersError } = await supabase
         .from('mnt_checklist_answers')
-        .select('question_id, photo_1_url, photo_2_url')
+        .select('question_id, photo_1_url, photo_2_url, photo_3_url, photo_4_url')
         .eq('checklist_id', checklistId);
 
       if (answersError) {
@@ -788,7 +794,15 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
       console.log('🔍 DEBUG - Preguntas rechazadas:', questions.filter(q => q.status === 'rejected'));
 
       const photosMap = new Map(
-        (answers || []).map(a => [a.question_id, { photo1: a.photo_1_url, photo2: a.photo_2_url }])
+        (answers || []).map(a => [
+          a.question_id,
+          {
+            photo1: a.photo_1_url,
+            photo2: a.photo_2_url,
+            photo3: a.photo_3_url,
+            photo4: a.photo_4_url,
+          }
+        ])
       );
 
       console.log('🔍 DEBUG - Mapa de fotos:', Array.from(photosMap.entries()));
@@ -797,7 +811,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
       const rejectedQuestions = questions
         .filter(q => q.status === 'rejected' && q.observations && q.observations.trim() !== '')
         .map(q => {
-          const photos = photosMap.get(q.id) || { photo1: null, photo2: null };
+          const photos = photosMap.get(q.id) || { photo1: null, photo2: null, photo3: null, photo4: null };
           console.log(`🔍 DEBUG - Pregunta ${q.number} (ID: ${q.id}):`, photos);
           return {
             question_number: q.number,
@@ -805,7 +819,9 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
             observations: q.observations,
             is_critical: q.section === 'SALA DE MÁQUINAS' || q.section === 'GRUPO HIDRÁULICO, CILINDRO Y VÁLVULAS',
             observation_photo_1: photos.photo1,
-            observation_photo_2: photos.photo2
+            observation_photo_2: photos.photo2,
+            observation_photo_3: photos.photo3,
+            observation_photo_4: photos.photo4,
           };
         });
       
