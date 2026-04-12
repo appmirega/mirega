@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Check, Loader2, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -77,6 +77,15 @@ async function compressImage(file: File, maxWidth = 1600, quality = 0.78): Promi
   });
 }
 
+function buildPhotosState(existingPhotos?: ExistingPhotos): Record<SlotNumber, string | null> {
+  return {
+    1: existingPhotos?.photo1 || null,
+    2: existingPhotos?.photo2 || null,
+    3: existingPhotos?.photo3 || null,
+    4: existingPhotos?.photo4 || null,
+  };
+}
+
 export default function PhotoCapture({
   questionId,
   checklistId,
@@ -86,13 +95,9 @@ export default function PhotoCapture({
   disabled = false,
   onPhotosChange,
 }: PhotoCaptureProps) {
-  const [photos, setPhotos] = useState<Record<SlotNumber, string | null>>({
-    1: existingPhotos?.photo1 || null,
-    2: existingPhotos?.photo2 || null,
-    3: existingPhotos?.photo3 || null,
-    4: existingPhotos?.photo4 || null,
-  });
-
+  const [photos, setPhotos] = useState<Record<SlotNumber, string | null>>(
+    buildPhotosState(existingPhotos)
+  );
   const [uploading, setUploading] = useState<SlotNumber | null>(null);
 
   const input1Ref = useRef<HTMLInputElement>(null);
@@ -112,6 +117,15 @@ export default function PhotoCapture({
     4: input4Ref,
   };
 
+  useEffect(() => {
+    setPhotos(buildPhotosState(existingPhotos));
+  }, [
+    existingPhotos?.photo1,
+    existingPhotos?.photo2,
+    existingPhotos?.photo3,
+    existingPhotos?.photo4,
+  ]);
+
   const syncPhotos = (nextPhotos: Record<SlotNumber, string | null>) => {
     setPhotos(nextPhotos);
     onPhotosChange(
@@ -129,11 +143,10 @@ export default function PhotoCapture({
       const compressedFile = await compressImage(file, 1600, 0.78);
       const fileExt = getFileExtension(compressedFile);
       const fileName = `${checklistId}_${questionId}_photo${slot}_${Date.now()}.${fileExt}`;
-      const filePath = fileName;
 
       const { error: uploadError } = await supabase.storage
         .from('maintenance-photos')
-        .upload(filePath, compressedFile, {
+        .upload(fileName, compressedFile, {
           cacheControl: '3600',
           upsert: false,
           contentType: compressedFile.type,
@@ -143,10 +156,18 @@ export default function PhotoCapture({
 
       const {
         data: { publicUrl },
-      } = supabase.storage.from('maintenance-photos').getPublicUrl(filePath);
+      } = supabase.storage.from('maintenance-photos').getPublicUrl(fileName);
 
-      const nextPhotos = { ...photos, [slot]: publicUrl };
-      syncPhotos(nextPhotos);
+      setPhotos((prev) => {
+        const nextPhotos = { ...prev, [slot]: publicUrl };
+        onPhotosChange(
+          nextPhotos[1],
+          nextPhotos[2],
+          nextPhotos[3],
+          nextPhotos[4]
+        );
+        return nextPhotos;
+      });
     } catch (error: any) {
       console.error('Error uploading photo:', error);
       alert(`Error al subir la foto: ${error.message || 'desconocido'}`);
@@ -179,8 +200,16 @@ export default function PhotoCapture({
   };
 
   const deletePhoto = (slot: SlotNumber) => {
-    const nextPhotos = { ...photos, [slot]: null };
-    syncPhotos(nextPhotos);
+    setPhotos((prev) => {
+      const nextPhotos = { ...prev, [slot]: null };
+      onPhotosChange(
+        nextPhotos[1],
+        nextPhotos[2],
+        nextPhotos[3],
+        nextPhotos[4]
+      );
+      return nextPhotos;
+    });
   };
 
   const currentCount = visibleSlots.filter((slot) => !!photos[slot]).length;

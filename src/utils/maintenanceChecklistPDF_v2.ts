@@ -14,7 +14,7 @@ export type MaintenanceQuestionStatus =
   | 'out_of_period'
   | 'postponed';
 
-export type ElevatorType = 'hydraulic' | 'electromechanical';
+export type ElevatorPdfType = 'hydraulic' | 'electromechanical';
 
 export interface MaintenanceChecklistQuestion {
   id?: string;
@@ -43,7 +43,7 @@ export interface MaintenanceChecklistPDFData {
   clientName: string;
   clientAddress?: string | null;
   elevatorNumber?: number;
-  elevatorType?: ElevatorType;
+  elevatorType?: ElevatorPdfType;
   month: number;
   year: number;
   completionDate?: string;
@@ -75,8 +75,6 @@ const MONTHS = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
-const SPECIAL_EXTERNAL_QUESTION_NUMBERS = new Set([9, 14, 15, 17, 31, 32, 33]);
-
 const EXCLUDED_PHOTO_PATTERNS = [
   'cable de suspensión',
   'cables de suspensión',
@@ -90,8 +88,6 @@ const EXCLUDED_PHOTO_PATTERNS = [
   'cuñas',
   'cuña',
 ];
-
-const HYDRAULIC_SECTION_NAME = 'GRUPO HIDRÁULICO, CILINDRO Y VÁLVULAS';
 
 function hexToRgb(hex: string): [number, number, number] {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -112,8 +108,6 @@ function normalizeText(text?: string | null) {
 }
 
 function questionRequiresPhotos(question: MaintenanceChecklistQuestion) {
-  if (SPECIAL_EXTERNAL_QUESTION_NUMBERS.has(question.number)) return false;
-
   const q = normalizeText(question.text);
   return !EXCLUDED_PHOTO_PATTERNS.some((pattern) => q.includes(normalizeText(pattern)));
 }
@@ -190,14 +184,16 @@ async function loadLogoDataUrl(src: string): Promise<string | null> {
   }
 }
 
-function getApplicableQuestions(data: MaintenanceChecklistPDFData): MaintenanceChecklistQuestion[] {
-  const ordered = [...data.questions].sort((a, b) => a.number - b.number);
-
-  if (data.elevatorType === 'electromechanical') {
-    return ordered.filter((q) => normalizeText(q.section) !== normalizeText(HYDRAULIC_SECTION_NAME));
+function filterQuestionsForElevatorType(
+  questions: MaintenanceChecklistQuestion[],
+  elevatorType?: ElevatorPdfType
+) {
+  if (elevatorType === 'electromechanical') {
+    return questions.filter(
+      (q) => normalizeText(q.section) !== normalizeText('GRUPO HIDRÁULICO, CILINDRO Y VÁLVULAS')
+    );
   }
-
-  return ordered;
+  return questions;
 }
 
 function drawHeader(doc: jsPDF, logoDataUrl: string | null): number {
@@ -222,73 +218,4 @@ function drawHeader(doc: jsPDF, logoDataUrl: string | null): number {
   y += 25;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setTextColor(60, 60, 60);
-  const contactInfo =
-    'MIREGA ASCENSORES LTDA. | Av. Pedro de Valdivia 273 - Of. 1406 Providencia | +56956087972 | contacto@mirega.cl | www.mirega.cl';
-  doc.text(contactInfo, PAGE_WIDTH / 2, y, { align: 'center' });
-
-  return y + 8;
-}
-
-function drawGeneralInfo(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: number): number {
-  let y = startY;
-  const blueRgb = hexToRgb(COLORS.blue);
-
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text('INFORMACIÓN GENERAL', MARGIN + 3, y + 5.5);
-
-  const folioText = data.folioNumber ? `FOLIO: ${data.folioNumber}` : 'FOLIO: PENDIENTE';
-  doc.text(folioText, PAGE_WIDTH - MARGIN - 3, y + 5.5, { align: 'right' });
-
-  y += 10;
-
-  const fieldHeight = 6;
-  const labelWidth = 35;
-  const leftCol = MARGIN;
-  const rightCol = PAGE_WIDTH / 2;
-
-  const drawField = (label: string, value: string, x: number, yPos: number, width?: number) => {
-    const fieldWidth = width || (PAGE_WIDTH / 2 - MARGIN - labelWidth);
-
-    doc.setFillColor(...blueRgb);
-    doc.setTextColor(255, 255, 255);
-    doc.rect(x, yPos, labelWidth, fieldHeight, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(label, x + 1.5, yPos + 4.2);
-
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(...blueRgb);
-    doc.setLineWidth(0.3);
-    doc.rect(x + labelWidth, yPos, fieldWidth, fieldHeight);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(value || '', x + labelWidth + 2, yPos + 4.2);
-  };
-
-  drawField('Edificio:', data.clientName || '', leftCol, y);
-  drawField('Periodo:', MONTHS[data.month - 1] || '', rightCol, y);
-  y += fieldHeight + 1.5;
-
-  drawField('Dirección:', data.clientAddress || '', leftCol, y);
-  const ascensorText = data.elevatorNumber ? `Ascensor ${data.elevatorNumber}` : 'No especificado';
-  drawField('N° Ascensor:', ascensorText, rightCol, y);
-  y += fieldHeight + 1.5;
-
-  drawField('Fecha:', formatDate(data.completionDate), leftCol, y);
-  drawField('Técnico:', data.technicianName || '', rightCol, y);
-  y += fieldHeight + 1.5;
-
-  const leftSectionWidth = PAGE_WIDTH / 2 - MARGIN;
-  const subLabelWidth = 28;
-  const subFieldWidth = (leftSectionWidth - 2 * subLabelWidth) / 2;
-
-  doc.setFillColor(...blueRgb);
-  doc.setTextColor(255, 255, 255);
- 
+  doc.setTextColor(60, 60
