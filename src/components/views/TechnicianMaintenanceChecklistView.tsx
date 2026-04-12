@@ -629,23 +629,12 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
     // Obtener respuestas del checklist
     const { data: responses, error: responsesError } = await supabase
       .from('mnt_checklist_answers')
-      .select('question_id, status, observations, photo_1_url, photo_2_url, photo_3_url, photo_4_url')
+      .select('question_id, status, observations')
       .eq('checklist_id', checklistId);
 
     if (responsesError) {
       console.error('Error obteniendo respuestas:', responsesError);
       throw new Error(`No se pudieron obtener las respuestas del checklist: ${responsesError.message}`);
-    }
-
-    const { data: additionalObservations, error: additionalObservationsError } = await supabase
-      .from('mnt_additional_observations')
-      .select('observation_order, observation_text')
-      .eq('maintenance_id', checklistData.id)
-      .order('observation_order', { ascending: true });
-
-    if (additionalObservationsError) {
-      console.error('Error obteniendo observaciones adicionales:', additionalObservationsError);
-      throw new Error(`No se pudieron obtener las observaciones adicionales: ${additionalObservationsError.message}`);
     }
 
     // Obtener las preguntas del maestro con frecuencia e is_hydraulic_only
@@ -691,13 +680,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
         section: q.section,
         text: q.question_text,
         status: finalStatus,
-        observations: response?.observations || null,
-        photos: [
-          response?.photo_1_url || null,
-          response?.photo_2_url || null,
-          response?.photo_3_url || null,
-          response?.photo_4_url || null,
-        ].filter(Boolean) as string[]
+        observations: response?.observations || null
       };
     }).sort((a, b) => a.number - b.number);
 
@@ -717,10 +700,6 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
         ? 'no_legible'
         : (checklistData.certification_status === 'vigente' ? 'vigente' : 'vencida'),
       questions: allQuestions,
-      additionalObservations: (additionalObservations || []).map((item: any) => ({
-        order: item.observation_order,
-        text: item.observation_text,
-      })),
       signature: {
         signerName,
         signedAt: new Date().toISOString(),
@@ -798,7 +777,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
       // Obtener respuestas con fotos desde la base de datos
       const { data: answers, error: answersError } = await supabase
         .from('mnt_checklist_answers')
-        .select('question_id, photo_1_url, photo_2_url, photo_3_url, photo_4_url')
+        .select('question_id, photo_1_url, photo_2_url')
         .eq('checklist_id', checklistId);
 
       if (answersError) {
@@ -809,15 +788,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
       console.log('🔍 DEBUG - Preguntas rechazadas:', questions.filter(q => q.status === 'rejected'));
 
       const photosMap = new Map(
-        (answers || []).map(a => [
-          a.question_id,
-          {
-            photo1: a.photo_1_url,
-            photo2: a.photo_2_url,
-            photo3: a.photo_3_url,
-            photo4: a.photo_4_url,
-          }
-        ])
+        (answers || []).map(a => [a.question_id, { photo1: a.photo_1_url, photo2: a.photo_2_url }])
       );
 
       console.log('🔍 DEBUG - Mapa de fotos:', Array.from(photosMap.entries()));
@@ -826,7 +797,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
       const rejectedQuestions = questions
         .filter(q => q.status === 'rejected' && q.observations && q.observations.trim() !== '')
         .map(q => {
-          const photos = photosMap.get(q.id) || { photo1: null, photo2: null, photo3: null, photo4: null };
+          const photos = photosMap.get(q.id) || { photo1: null, photo2: null };
           console.log(`🔍 DEBUG - Pregunta ${q.number} (ID: ${q.id}):`, photos);
           return {
             question_number: q.number,
@@ -834,9 +805,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
             observations: q.observations,
             is_critical: q.section === 'SALA DE MÁQUINAS' || q.section === 'GRUPO HIDRÁULICO, CILINDRO Y VÁLVULAS',
             observation_photo_1: photos.photo1,
-            observation_photo_2: photos.photo2,
-            observation_photo_3: photos.photo3,
-            observation_photo_4: photos.photo4,
+            observation_photo_2: photos.photo2
           };
         });
       
