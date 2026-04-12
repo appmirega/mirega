@@ -18,7 +18,7 @@ import {
   Share2
 } from 'lucide-react';
 import { QRScanner } from '../checklist/QRScanner';
-import DynamicChecklistForm from '../checklist/DynamicChecklistForm';
+import { DynamicChecklistForm } from '../checklist/DynamicChecklistForm';
 import { ChecklistSignatureModal } from '../checklist/ChecklistSignatureModal';
 import { generateMaintenanceChecklistPDF, MaintenanceChecklistPDFData } from '../../utils/maintenanceChecklistPDF_v2';
 import { createRequestsFromMaintenance } from '../../lib/serviceRequestsService';
