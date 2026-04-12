@@ -821,7 +821,7 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
             observation_photo_1: photos.photo1,
             observation_photo_2: photos.photo2,
             observation_photo_3: photos.photo3,
-            observation_photo_4: photos.photo4,
+            observation_photo_4: photos.photo4
           };
         });
       
