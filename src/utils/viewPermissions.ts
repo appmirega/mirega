@@ -57,6 +57,24 @@ export const ALL_VIEWS: ViewPermission[] = [
     defaultRoles: ['admin', 'developer', 'technician', 'client'],
   },
   {
+    key: 'technical-tests-cables',
+    label: 'Prueba de Cables',
+    description: 'Acceso directo a la vista de prueba de cables',
+    defaultRoles: ['admin', 'developer', 'technician'],
+  },
+  {
+    key: 'technical-tests-brakes',
+    label: 'Prueba de Frenos',
+    description: 'Acceso directo a la vista de prueba de frenos',
+    defaultRoles: ['admin', 'developer', 'technician'],
+  },
+  {
+    key: 'technical-tests-limiter',
+    label: 'Prueba de Limitador',
+    description: 'Acceso directo a la vista de prueba de limitador',
+    defaultRoles: ['admin', 'developer', 'technician'],
+  },
+  {
     key: 'service-requests',
     label: 'Solicitudes de Servicio',
     description: 'Gestión de solicitudes de servicio',
