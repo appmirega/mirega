@@ -27,6 +27,7 @@ export function useViewPermissions() {
       setLoading(true);
 
       try {
+        // ✅ BASE: permisos por defecto del rol
         const defaultViews = getDefaultEnabledViewKeys(profile.role as UserRole);
 
         const { data, error } = await supabase
@@ -36,19 +37,19 @@ export function useViewPermissions() {
 
         if (error) throw error;
 
-        if (!data || data.length === 0) {
-          if (!cancelled) {
-            setEnabledViews(defaultViews);
-          }
-          return;
-        }
+        // 🔥 CLAVE: partir SIEMPRE desde los defaults
+        const enabled = new Set<string>(defaultViews);
 
-        const enabled = new Set<string>();
-        data.forEach((perm) => {
-          if (perm.is_enabled) {
-            enabled.add(perm.permission_key);
-          }
-        });
+        // 🔥 SOLO sobreescribir lo que existe en BD
+        if (data && data.length > 0) {
+          data.forEach((perm) => {
+            if (perm.is_enabled) {
+              enabled.add(perm.permission_key);
+            } else {
+              enabled.delete(perm.permission_key);
+            }
+          });
+        }
 
         if (!cancelled) {
           setEnabledViews(enabled);
