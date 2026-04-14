@@ -277,9 +277,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
     'Configuración y Administración': false,
   });
 
-  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
-    'Pruebas Técnicas': false,
-  });
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   const toggleSection = (label: string) => {
     setExpandedSections((prev) => ({
@@ -291,7 +289,7 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
   const toggleItem = (label: string) => {
     setExpandedItems((prev) => ({
       ...prev,
-      [label]: !prev[label],
+      [label]: !(prev[label] ?? false),
     }));
   };
 
@@ -350,8 +348,8 @@ export function Layout({ children, onNavigate, currentView }: LayoutProps) {
     const Icon = item.icon;
     const isActive = !!item.path && currentView === item.path;
     const isGroup = !!item.children?.length;
-    const isGroupExpanded = expandedItems[item.label] || hasActiveChild(item, currentView);
     const groupHasActiveChild = hasActiveChild(item, currentView);
+    const isGroupExpanded = expandedItems[item.label] ?? groupHasActiveChild;
 
     if (isGroup) {
       return (
