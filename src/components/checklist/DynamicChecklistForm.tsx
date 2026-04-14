@@ -12,6 +12,15 @@ import {
   X,
 } from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
+import {
+  buildSpecialTestObservation,
+  filterQuestionsByChecklistRules,
+  getSpecialTestGroup,
+  getSpecialTestMetadata,
+  getSpecialTestStatusLabel,
+  isSpecialTestQuestion,
+  type SpecialTestGroup,
+} from '../../lib/checklistRules';
 
 interface Question {
   id: string;
@@ -44,37 +53,11 @@ interface DynamicChecklistFormProps {
   month: number;
   onComplete: () => void | Promise<void>;
   onSave: () => void;
+  onOpenSpecialTest?: (group: SpecialTestGroup) => void;
 }
 
 function createLocalId() {
   return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function filterQuestionsByFrequency(
-  allQuestions: Question[],
-  currentMonth: number,
-  isHydraulicElevator: boolean
-): Question[] {
-  const monthlyQuestions = allQuestions.filter((q) => q.frequency === 'M');
-
-  let trimestralQuestions: Question[] = [];
-  let semestralQuestions: Question[] = [];
-
-  if (currentMonth % 3 === 0) {
-    trimestralQuestions = allQuestions.filter((q) => q.frequency === 'T');
-  }
-
-  if (currentMonth % 6 === 0) {
-    semestralQuestions = allQuestions.filter((q) => q.frequency === 'S');
-  }
-
-  let filtered = [...monthlyQuestions, ...trimestralQuestions, ...semestralQuestions];
-
-  if (!isHydraulicElevator) {
-    filtered = filtered.filter((q) => !q.is_hydraulic_only);
-  }
-
-  return filtered.sort((a, b) => a.question_number - b.question_number);
 }
 
 function createDefaultAnswer(questionId: string): Answer {
@@ -106,6 +89,7 @@ export function DynamicChecklistForm({
   month,
   onComplete,
   onSave,
+  onOpenSpecialTest,
 }: DynamicChecklistFormProps) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Map<string, Answer>>(new Map());
@@ -131,10 +115,10 @@ export function DynamicChecklistForm({
 
         if (questionsError) throw questionsError;
 
-        const filteredQuestions = filterQuestionsByFrequency(
+        const filteredQuestions = filterQuestionsByChecklistRules(
           (questionsData || []) as Question[],
           month,
-          isHydraulic
+          isHydraulic ? 'hydraulic' : 'electromechanical'
         );
 
         setQuestions(filteredQuestions);
@@ -256,6 +240,77 @@ export function DynamicChecklistForm({
     setChangeCount((prev) => prev + 1);
   };
 
+  const updateSpecialAnswer = (
+    questionId: string,
+    nextStatus: Answer['status'],
+    group: SpecialTestGroup,
+    action: 'go' | 'postponed',
+    reason?: string
+  ) => {
+    const currentAnswer = answers.get(questionId) || createDefaultAnswer(questionId);
+    const next = new Map(answers);
+    next.set(questionId, {
+      ...currentAnswer,
+      status: nextStatus,
+      observations: buildSpecialTestObservation(group, action, reason),
+      photo_1_url: null,
+      photo_2_url: null,
+      photo_3_url: null,
+      photo_4_url: null,
+    });
+    setAnswers(next);
+    setChangeCount((prev) => prev + 1);
+  };
+
+  const handleSpecialGoToTest = (question: Question) => {
+    const group = getSpecialTestGroup(question.question_number);
+    if (!group) return;
+    updateSpecialAnswer(question.id, 'approved', group, 'go');
+    onOpenSpecialTest?.(group);
+  };
+
+  const savePostponementToDb = async (
+    question: Question,
+    group: SpecialTestGroup,
+    reason: string,
+    blockedUntil: Date
+  ) => {
+    const { error } = await supabase.from('mnt_special_test_postponements').insert({
+      checklist_id: checklistId,
+      elevator_id: elevatorId,
+      question_id: question.id,
+      question_number: question.question_number,
+      test_group: group,
+      postpone_reason: reason,
+      blocked_until_month: blockedUntil.getMonth() + 1,
+      blocked_until_year: blockedUntil.getFullYear(),
+    });
+
+    if (error) {
+      console.warn('No se pudo registrar el aplazamiento en DB:', error.message);
+    }
+  };
+
+  const handleSpecialPostpone = async (question: Question) => {
+    const group = getSpecialTestGroup(question.question_number);
+    if (!group) return;
+
+    const previousMeta = getSpecialTestMetadata(answers.get(question.id)?.observations);
+    if (previousMeta?.action === 'postponed') {
+      alert('Esta prueba ya fue pospuesta para este checklist.');
+      return;
+    }
+
+    const reason = window.prompt('Ingresa el motivo del aplazamiento (máximo 1 mes):', '')?.trim();
+    if (!reason) return;
+
+    const blockedUntil = new Date(selectedYearFallback, selectedMonthFallback - 1, 1);
+    blockedUntil.setMonth(blockedUntil.getMonth() + 1);
+
+    await savePostponementToDb(question, group, reason, blockedUntil);
+    updateSpecialAnswer(question.id, 'not_applicable', group, 'postponed', reason);
+  };
+
   const addAdditionalObservation = () => {
     setAdditionalObservations((prev) => [...prev, { id: createLocalId(), text: '' }]);
     setChangeCount((prev) => prev + 1);
@@ -275,6 +330,9 @@ export function DynamicChecklistForm({
     );
     setChangeCount((prev) => prev + 1);
   };
+
+  const selectedMonthFallback = month;
+  const selectedYearFallback = new Date().getFullYear();
 
   const getProgress = () => {
     const total = questions.length;
@@ -298,6 +356,11 @@ export function DynamicChecklistForm({
     return questions.every((q) => {
       const answer = answers.get(q.id);
       if (!answer || answer.status === 'pending') return false;
+
+      if (isSpecialTestQuestion(q.question_number)) {
+        return answer.status === 'approved' || answer.status === 'not_applicable';
+      }
+
       if (answer.status === 'not_applicable') return true;
 
       const enoughPhotos = countPhotos(answer) >= 2;
@@ -499,6 +562,8 @@ export function DynamicChecklistForm({
                   const answer = getAnswer(question.id);
                   const status = answer?.status ?? 'pending';
                   const photoCount = countPhotos(answer);
+                  const isSpecialQuestion = isSpecialTestQuestion(question.question_number);
+                  const specialLabel = getSpecialTestStatusLabel(answer?.observations);
 
                   return (
                     <div key={question.id} className="p-4 transition hover:bg-slate-50">
@@ -507,121 +572,146 @@ export function DynamicChecklistForm({
                           <span className="mt-0.5 inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">
                             {question.question_number}
                           </span>
-                          <p className="flex-1 font-medium text-slate-900">
-                            {question.question_text}
-                          </p>
-                        </div>
-
-                        <div className="ml-8 flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleAnswerChange(question.id, 'approved')}
-                            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                              status === 'approved'
-                                ? 'bg-green-600 text-white'
-                                : 'border border-slate-300 bg-white text-slate-700 hover:border-green-500'
-                            }`}
-                            title="Aprobar"
-                          >
-                            <Check className="h-4 w-4" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleAnswerChange(question.id, 'not_applicable')}
-                            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                              status === 'not_applicable'
-                                ? 'bg-gray-500 text-white'
-                                : 'border border-slate-300 bg-white text-slate-700 hover:border-gray-500'
-                            }`}
-                            title="No Aplica"
-                          >
-                            <Minus className="h-4 w-4" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleAnswerChange(question.id, 'rejected')}
-                            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                              status === 'rejected'
-                                ? 'bg-red-600 text-white'
-                                : 'border border-slate-300 bg-white text-slate-700 hover:border-red-500'
-                            }`}
-                            title="Rechazar"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-
-                        {status !== 'pending' && status !== 'not_applicable' && (
-                          <div
-                            className={`ml-8 space-y-4 rounded-lg border p-4 ${
-                              status === 'rejected'
-                                ? 'border-red-200 bg-red-50'
-                                : 'border-blue-200 bg-blue-50'
-                            }`}
-                          >
-                            {status === 'rejected' && (
-                              <div>
-                                <label className="mb-2 block text-sm font-semibold text-red-900">
-                                  Observaciones (obligatorias)
-                                </label>
-                                <textarea
-                                  value={answer?.observations || ''}
-                                  onChange={(e) =>
-                                    handleObservationsChange(question.id, e.target.value)
-                                  }
-                                  placeholder="Describe el problema encontrado..."
-                                  rows={3}
-                                  className="w-full rounded-lg border border-red-200 px-4 py-2 focus:border-red-500 focus:ring-2 focus:ring-red-500"
-                                />
+                          <div className="flex-1 space-y-2">
+                            <p className="font-medium text-slate-900">{question.question_text}</p>
+                            {isSpecialQuestion && (
+                              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                                <p className="text-sm font-semibold text-amber-900">
+                                  Esta pregunta usa un flujo especial de prueba.
+                                </p>
+                                <p className="mt-1 text-sm text-amber-800">
+                                  No se solicitan fotos en esta etapa del checklist principal.
+                                </p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSpecialGoToTest(question)}
+                                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                                  >
+                                    Ir a prueba
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleSpecialPostpone(question)}
+                                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400"
+                                  >
+                                    Posponer prueba
+                                  </button>
+                                </div>
+                                {specialLabel && (
+                                  <p className="mt-3 text-sm font-medium text-slate-700">{specialLabel}</p>
+                                )}
                               </div>
                             )}
-
-                            <div>
-                              <label
-                                className={`mb-2 block text-sm font-semibold ${
-                                  status === 'rejected' ? 'text-red-900' : 'text-blue-900'
-                                }`}
-                              >
-                                Evidencia fotográfica (mínimo 2 / máximo 4)
-                              </label>
-
-                              <PhotoCapture
-                                questionId={question.id}
-                                checklistId={checklistId}
-                                existingPhotos={{
-                                  photo1: answer?.photo_1_url || undefined,
-                                  photo2: answer?.photo_2_url || undefined,
-                                  photo3: answer?.photo_3_url || undefined,
-                                  photo4: answer?.photo_4_url || undefined,
-                                }}
-                                minRequired={2}
-                                maxPhotos={4}
-                                onPhotosChange={(photo1Url, photo2Url, photo3Url, photo4Url) =>
-                                  handlePhotosChange(
-                                    question.id,
-                                    photo1Url,
-                                    photo2Url,
-                                    photo3Url,
-                                    photo4Url
-                                  )
-                                }
-                              />
-
-                              <p
-                                className={`mt-2 text-xs ${
-                                  photoCount >= 2
-                                    ? 'text-green-700'
-                                    : status === 'rejected'
-                                      ? 'text-red-700'
-                                      : 'text-blue-700'
-                                }`}
-                              >
-                                Fotos cargadas: {photoCount} / 4
-                              </p>
-                            </div>
                           </div>
+                        </div>
+
+                        {!isSpecialQuestion && (
+                          <>
+                            <div className="ml-8 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleAnswerChange(question.id, 'approved')}
+                                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                                  status === 'approved'
+                                    ? 'bg-green-600 text-white'
+                                    : 'border border-slate-300 bg-white text-slate-700 hover:border-green-500'
+                                }`}
+                                title="Aprobar"
+                              >
+                                <Check className="h-4 w-4" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleAnswerChange(question.id, 'not_applicable')}
+                                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                                  status === 'not_applicable'
+                                    ? 'bg-gray-500 text-white'
+                                    : 'border border-slate-300 bg-white text-slate-700 hover:border-gray-500'
+                                }`}
+                                title="No Aplica"
+                              >
+                                <Minus className="h-4 w-4" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleAnswerChange(question.id, 'rejected')}
+                                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                                  status === 'rejected'
+                                    ? 'bg-red-600 text-white'
+                                    : 'border border-slate-300 bg-white text-slate-700 hover:border-red-500'
+                                }`}
+                                title="Rechazar"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+
+                            {status !== 'pending' && status !== 'not_applicable' && (
+                              <div
+                                className={`ml-8 space-y-4 rounded-lg border p-4 ${
+                                  status === 'rejected'
+                                    ? 'border-red-200 bg-red-50'
+                                    : 'border-blue-200 bg-blue-50'
+                                }`}
+                              >
+                                {status === 'rejected' && (
+                                  <div>
+                                    <label className="mb-2 block text-sm font-semibold text-red-900">
+                                      Observaciones (obligatorias)
+                                    </label>
+                                    <textarea
+                                      value={answer?.observations || ''}
+                                      onChange={(e) => handleObservationsChange(question.id, e.target.value)}
+                                      placeholder="Describe el problema encontrado..."
+                                      rows={3}
+                                      className="w-full rounded-lg border border-red-200 px-4 py-2 focus:border-red-500 focus:ring-2 focus:ring-red-500"
+                                    />
+                                  </div>
+                                )}
+
+                                <div>
+                                  <label
+                                    className={`mb-2 block text-sm font-semibold ${
+                                      status === 'rejected' ? 'text-red-900' : 'text-blue-900'
+                                    }`}
+                                  >
+                                    Evidencia fotográfica (mínimo 2 / máximo 4)
+                                  </label>
+
+                                  <PhotoCapture
+                                    questionId={question.id}
+                                    checklistId={checklistId}
+                                    existingPhotos={{
+                                      photo1: answer?.photo_1_url || undefined,
+                                      photo2: answer?.photo_2_url || undefined,
+                                      photo3: answer?.photo_3_url || undefined,
+                                      photo4: answer?.photo_4_url || undefined,
+                                    }}
+                                    minRequired={2}
+                                    maxPhotos={4}
+                                    onPhotosChange={(photo1Url, photo2Url, photo3Url, photo4Url) =>
+                                      handlePhotosChange(question.id, photo1Url, photo2Url, photo3Url, photo4Url)
+                                    }
+                                  />
+
+                                  <p
+                                    className={`mt-2 text-xs ${
+                                      photoCount >= 2
+                                        ? 'text-green-700'
+                                        : status === 'rejected'
+                                          ? 'text-red-700'
+                                          : 'text-blue-700'
+                                    }`}
+                                  >
+                                    Fotos cargadas: {photoCount} / 4
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>

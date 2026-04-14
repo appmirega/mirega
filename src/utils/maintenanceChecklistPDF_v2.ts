@@ -1,9 +1,8 @@
-// Generador de PDF - Formato MIREGA Oficial
-// Actualizado con colores corporativos y formato A4
 import jsPDF from 'jspdf';
+import { getSpecialTestMetadata } from '../lib/checklistRules';
 
 export type CertificationStatus = 'sin_info' | 'vigente' | 'vencida' | 'por_vencer' | 'no_legible';
-export type MaintenanceQuestionStatus = 'approved' | 'rejected' | 'not_applicable' | 'out_of_period';
+export type MaintenanceQuestionStatus = 'approved' | 'rejected' | 'not_applicable' | 'out_of_period' | 'pending';
 
 export interface MaintenanceChecklistQuestion {
   number: number;
@@ -37,36 +36,24 @@ export interface MaintenanceChecklistPDFData {
   signature?: ChecklistSignatureInfo | null;
 }
 
-// Configuración de página A4
 const PAGE_WIDTH = 210;
 const PAGE_HEIGHT = 297;
 const MARGIN = 10;
-
-// Colores corporativos MIREGA
 const COLORS = {
   blue: '#273a8f',
   green: '#44ac4c',
   red: '#e1162b',
+  gray: '#9ca3af',
   black: '#1d1d1b',
 };
+const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
-const MONTHS = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-];
-
-// Helper para convertir hex a RGB
 function hexToRgb(hex: string): [number, number, number] {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   if (!result) return [0, 0, 0];
-  return [
-    parseInt(result[1], 16),
-    parseInt(result[2], 16),
-    parseInt(result[3], 16)
-  ];
+  return [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)];
 }
 
-// Formatear fecha
 function formatDate(dateStr?: string | null, fallback = 'No registrado'): string {
   if (!dateStr) return fallback;
   const d = new Date(dateStr);
@@ -74,441 +61,372 @@ function formatDate(dateStr?: string | null, fallback = 'No registrado'): string
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
-// Estado de certificación
 function getCertificationStatusText(status?: CertificationStatus): string {
   switch (status) {
     case 'vigente': return 'Vigente';
     case 'vencida': return 'Vencida';
     case 'por_vencer': return 'Por vencer';
     case 'no_legible': return 'No legible';
-    default: return 'No legible';
+    default: return 'Sin información';
   }
 }
 
-// Cargar imagen con fallback
+function getStatusLabel(status: MaintenanceQuestionStatus) {
+  switch (status) {
+    case 'approved': return 'Aprobado';
+    case 'rejected': return 'Rechazado';
+    case 'not_applicable': return 'Pospuesto / No aplica';
+    case 'out_of_period': return 'Fuera de periodo';
+    default: return 'Pendiente';
+  }
+}
+
 function loadImage(src: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = new Image();
-    img.src = src;
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
+    img.src = src;
   });
 }
 
-// ENCABEZADO
-function drawHeader(doc: jsPDF, logoImg: HTMLImageElement | null): number {
-  let y = MARGIN;
+function getImageFormat(src: string): 'PNG' | 'JPEG' {
+  const normalized = src.toLowerCase();
+  if (normalized.includes('data:image/png') || normalized.endsWith('.png')) return 'PNG';
+  return 'JPEG';
+}
 
-  // Logo (más pequeño y sin sobreposición)
+function drawHeader(doc: jsPDF, logoImg: HTMLImageElement | null) {
+  const blue = hexToRgb(COLORS.blue);
   if (logoImg) {
     try {
-      doc.addImage(logoImg, 'PNG', MARGIN, y, 25, 20);
-    } catch (e) {
-      console.error('Error al cargar logo:', e);
+      doc.addImage(logoImg, 'PNG', MARGIN, MARGIN, 24, 18);
+    } catch (error) {
+      console.error('Error al dibujar logo del PDF:', error);
     }
   }
 
-  // Título principal (más arriba para dar espacio)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
+  doc.setFontSize(17);
   doc.setTextColor(...hexToRgb(COLORS.black));
-  doc.text('INFORME MANTENIMIENTO', PAGE_WIDTH / 2, y + 10, { align: 'center' });
+  doc.text('INFORME DE MANTENIMIENTO', PAGE_WIDTH / 2, MARGIN + 8, { align: 'center' });
 
-  // Subtítulo
-  doc.setFontSize(14);
-  doc.text('INSPECCIÓN MENSUAL', PAGE_WIDTH / 2, y + 18, { align: 'center' });
-
-  // Información de contacto
-  y += 25;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  const contactInfo = 'MIREGA ASCENSORES LTDA. | Pedro de Valdivia N°255 – Of. 202, Providencia | +56956087972 | contacto@mirega.cl | www.mirega.cl';
-  doc.text(contactInfo, PAGE_WIDTH / 2, y, { align: 'center' });
+  doc.setFontSize(11);
+  doc.text('Checklist técnico de mantenimiento', PAGE_WIDTH / 2, MARGIN + 15, { align: 'center' });
 
-  return y + 8;
+  doc.setFontSize(7.5);
+  doc.setTextColor(...blue);
+  doc.text('MIREGA ASCENSORES LTDA. · contacto@mirega.cl', PAGE_WIDTH / 2, MARGIN + 21, { align: 'center' });
+
+  return MARGIN + 28;
 }
 
-// INFORMACIÓN GENERAL
-function drawGeneralInfo(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: number): number {
+function drawInfoField(doc: jsPDF, label: string, value: string, x: number, y: number, labelWidth: number, totalWidth: number) {
+  const blue = hexToRgb(COLORS.blue);
+  doc.setFillColor(...blue);
+  doc.rect(x, y, labelWidth, 6, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(255, 255, 255);
+  doc.text(label, x + 1.5, y + 4.2);
+
+  doc.setDrawColor(...blue);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(x + labelWidth, y, totalWidth - labelWidth, 6);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(0, 0, 0);
+  doc.text(value || '-', x + labelWidth + 2, y + 4.2);
+}
+
+function drawGeneralInfo(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: number) {
+  const blue = hexToRgb(COLORS.blue);
   let y = startY;
-  
-  // Barra de título azul con folio
-  const blueRgb = hexToRgb(COLORS.blue);
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
-  
+  doc.setFillColor(...blue);
+  doc.rect(MARGIN, y, PAGE_WIDTH - (MARGIN * 2), 8, 'F');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(255, 255, 255);
   doc.text('INFORMACIÓN GENERAL', MARGIN + 3, y + 5.5);
+  doc.text(`Folio: ${data.folioNumber ?? 'Pendiente'}`, PAGE_WIDTH - MARGIN - 3, y + 5.5, { align: 'right' });
+  y += 11;
 
-  // Folio
-  const folioText = data.folioNumber ? `FOLIO: ${data.folioNumber}` : 'FOLIO: PENDIENTE';
-  doc.text(folioText, PAGE_WIDTH - MARGIN - 3, y + 5.5, { align: 'right' });
+  const leftX = MARGIN;
+  const rightX = PAGE_WIDTH / 2;
+  const totalWidth = PAGE_WIDTH / 2 - MARGIN;
+  const labelWidth = 30;
 
+  drawInfoField(doc, 'Cliente', data.clientName || '-', leftX, y, labelWidth, totalWidth);
+  drawInfoField(doc, 'Periodo', `${MONTHS[data.month - 1] || '-'} ${data.year}`, rightX, y, labelWidth, totalWidth);
+  y += 7.5;
+  drawInfoField(doc, 'Dirección', data.clientAddress || '-', leftX, y, labelWidth, totalWidth);
+  drawInfoField(doc, 'Ascensor', data.elevatorNumber ? `Ascensor ${data.elevatorNumber}` : '-', rightX, y, labelWidth, totalWidth);
+  y += 7.5;
+  drawInfoField(doc, 'Fecha', formatDate(data.completionDate), leftX, y, labelWidth, totalWidth);
+  drawInfoField(doc, 'Técnico', data.technicianName || '-', rightX, y, labelWidth, totalWidth);
+  y += 7.5;
+  drawInfoField(doc, 'Últ. Cert.', formatDate(data.lastCertificationDate, 'No legible'), leftX, y, labelWidth, totalWidth);
+  drawInfoField(doc, 'Vigencia', getCertificationStatusText(data.certificationStatus), rightX, y, labelWidth, totalWidth);
   y += 10;
 
-  // Configuración de campos (reducido a 4 filas)
-  const fieldHeight = 6;
-  const labelWidth = 35;
-  const leftCol = MARGIN;
-  const rightCol = PAGE_WIDTH / 2; // Columna derecha empieza exactamente a la mitad
-
-  // Función para dibujar campo
-  const drawField = (label: string, value: string, x: number, yPos: number, width?: number) => {
-    const fieldWidth = width || ((PAGE_WIDTH / 2) - MARGIN - labelWidth);
-    
-    // Label (azul)
-    doc.setFillColor(...blueRgb);
-    doc.setTextColor(255, 255, 255);
-    doc.rect(x, yPos, labelWidth, fieldHeight, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(label, x + 1.5, yPos + 4.2);
-
-    // Value (blanco con borde)
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(...blueRgb);
-    doc.setLineWidth(0.3);
-    doc.rect(x + labelWidth, yPos, fieldWidth, fieldHeight);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(value, x + labelWidth + 2, yPos + 4.2);
-  };
-
-  // Fila 1: Cliente | Periodo
-  drawField('Cliente:', data.clientName || '', leftCol, y);
-  drawField('Periodo:', MONTHS[data.month - 1] || '', rightCol, y);
-  y += fieldHeight + 1.5;
-
-  // Fila 2: Dirección | Ascensor
-  drawField('Dirección:', data.clientAddress || '', leftCol, y);
-  const ascensorText = data.elevatorNumber ? `Ascensor ${data.elevatorNumber}` : 'No especificado';
-  drawField('N° Ascensor:', ascensorText, rightCol, y);
-  y += fieldHeight + 1.5;
-
-  // Fila 3: Fecha | Técnico
-  drawField('Fecha:', formatDate(data.completionDate), leftCol, y);
-  drawField('Técnico:', data.technicianName || '', rightCol, y);
-  y += fieldHeight + 1.5;
-
-  // Fila 4: Última/Próxima (izquierda) | Vigencia (derecha)
-  // Lado izquierdo completo
-  const leftSectionWidth = (PAGE_WIDTH / 2) - MARGIN;
-  const subLabelWidth = 28;
-  const subFieldWidth = (leftSectionWidth - 2 * subLabelWidth) / 2; // Sin espacio entre campos
-  
-  // Lado izquierdo - Última Certif.
-  doc.setFillColor(...blueRgb);
-  doc.setTextColor(255, 255, 255);
-  doc.rect(leftCol, y, subLabelWidth, fieldHeight, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
-  doc.text('Última Certif.:', leftCol + 1.5, y + 4.2);
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(...blueRgb);
-  doc.setLineWidth(0.3);
-  doc.rect(leftCol + subLabelWidth, y, subFieldWidth, fieldHeight);
-  doc.setTextColor(0, 0, 0);
-  doc.setFont('helvetica', 'normal');
-  doc.text(data.lastCertificationDate || 'No legible', leftCol + subLabelWidth + 2, y + 4.2);
-  
-  // Lado izquierdo - Próxima Certif. (pegado, sin espacio)
-  const proxX = leftCol + subLabelWidth + subFieldWidth; // Sin +2
-  doc.setFillColor(...blueRgb);
-  doc.setTextColor(255, 255, 255);
-  doc.rect(proxX, y, subLabelWidth, fieldHeight, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.text('Próxima Certif.:', proxX + 1.5, y + 4.2);
-  doc.setFillColor(255, 255, 255);
-  doc.rect(proxX + subLabelWidth, y, subFieldWidth, fieldHeight);
-  doc.setTextColor(0, 0, 0);
-  doc.setFont('helvetica', 'normal');
-  doc.text(data.nextCertificationDate || 'No legible', proxX + subLabelWidth + 2, y + 4.2);
-  
-  // Lado derecho - Vigencia (alineado perfectamente)
-  drawField('Vigencia:', getCertificationStatusText(data.certificationStatus), rightCol, y);
-
-  return y + fieldHeight + 6;
+  return y;
 }
 
-// LEYENDA DE ICONOGRAFÍA
-function drawLegend(doc: jsPDF, y: number): number {
-  const greenRgb = hexToRgb(COLORS.green);
-  const redRgb = hexToRgb(COLORS.red);
-  const cyanRgb = [100, 180, 220]; // Celeste
-  const grayRgb = [180, 180, 180]; // Gris
+function drawLegend(doc: jsPDF, startY: number) {
+  const items = [
+    { label: 'Aprobado', color: hexToRgb(COLORS.green) },
+    { label: 'Rechazado', color: hexToRgb(COLORS.red) },
+    { label: 'Pospuesto / No aplica', color: hexToRgb(COLORS.gray) },
+  ];
 
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Simbología del checklist:', MARGIN, y);
-  
+  let x = MARGIN;
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
   doc.setTextColor(0, 0, 0);
-  let x = MARGIN + 42;
-  const circleRadius = 2.5; // Círculos más grandes
-  const spacing = 8; // Más separación
 
-  // Aprobado: círculo verde
-  doc.text('Aprobado:', x, y);
-  x += doc.getTextWidth('Aprobado:') + 3;
-  doc.setFillColor(...greenRgb);
-  doc.circle(x, y - 1.5, circleRadius, 'F');
-  x += circleRadius * 2 + spacing;
+  for (const item of items) {
+    doc.setFillColor(...item.color);
+    doc.roundedRect(x, startY, 5, 5, 0.6, 0.6, 'F');
+    doc.text(item.label, x + 8, startY + 4.1);
+    x += 55;
+  }
 
-  // Rechazado: círculo rojo
-  doc.text('Rechazado:', x, y);
-  x += doc.getTextWidth('Rechazado:') + 3;
-  doc.setFillColor(...redRgb);
-  doc.circle(x, y - 1.5, circleRadius, 'F');
-  x += circleRadius * 2 + spacing;
-
-  // No corresponde al periodo: círculo celeste
-  doc.text('No corresponde al periodo:', x, y);
-  x += doc.getTextWidth('No corresponde al periodo:') + 3;
-  doc.setFillColor(...cyanRgb);
-  doc.circle(x, y - 1.5, circleRadius, 'F');
-  x += circleRadius * 2 + spacing;
-
-  // No aplica: círculo gris
-  doc.text('No aplica:', x, y);
-  x += doc.getTextWidth('No aplica:') + 3;
-  doc.setFillColor(...grayRgb);
-  doc.circle(x, y - 1.5, circleRadius, 'F');
-
-  return y + 5;
+  return startY + 8;
 }
 
-// CHECKLIST EN DOS COLUMNAS (25 + 25)
-function drawChecklist(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: number): number {
+function ensurePage(doc: jsPDF, y: number, requiredHeight: number, logoImg: HTMLImageElement | null) {
+  if (y + requiredHeight <= PAGE_HEIGHT - 20) return y;
+  doc.addPage();
+  return drawHeader(doc, logoImg);
+}
+
+function drawChecklist(doc: jsPDF, data: MaintenanceChecklistPDFData, startY: number, logoImg: HTMLImageElement | null) {
+  const blue = hexToRgb(COLORS.blue);
   let y = startY;
 
-  // Título de sección
-  const blueRgb = hexToRgb(COLORS.blue);
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
+  doc.setFillColor(...blue);
+  doc.rect(MARGIN, y, PAGE_WIDTH - (MARGIN * 2), 8, 'F');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(255, 255, 255);
-  doc.text('CHECKLIST MANTENIMIENTO', MARGIN + 3, y + 5.5);
+  doc.text('CHECKLIST', MARGIN + 3, y + 5.5);
+  y += 11;
 
-  y += 12; // Más espacio después del título (antes 10)
+  let currentSection = '';
+  for (const question of data.questions) {
+    const obs = question.observations && !question.observations.startsWith('__special_test__|')
+      ? question.observations.trim()
+      : '';
+    const specialMeta = getSpecialTestMetadata(question.observations);
+    const note = specialMeta?.action === 'postponed'
+      ? `Prueba pospuesta${specialMeta.reason ? `: ${specialMeta.reason}` : ''}`
+      : specialMeta?.action === 'go'
+        ? 'Derivada a vista de prueba'
+        : obs;
 
-  // Dividir en 25 + 25
-  const leftQuestions = data.questions.slice(0, 25);
-  const rightQuestions = data.questions.slice(25, 50);
+    const questionLines = doc.splitTextToSize(`${question.number}. ${question.text}`, 150);
+    const noteLines = note ? doc.splitTextToSize(note, 145) : [];
+    const requiredHeight = 7 + (questionLines.length * 3.5) + (noteLines.length ? noteLines.length * 3.5 + 4 : 0) + (currentSection !== question.section ? 8 : 0);
+    y = ensurePage(doc, y, requiredHeight, logoImg);
 
-  const colWidth = (PAGE_WIDTH - 2 * MARGIN - 4) / 2;
-  const leftX = MARGIN;
-  const rightX = MARGIN + colWidth + 4;
+    if (question.section !== currentSection) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...blue);
+      doc.text(question.section.toUpperCase(), MARGIN, y);
+      y += 5;
+      currentSection = question.section;
+    }
 
-  const greenRgb = hexToRgb(COLORS.green);
-  const redRgb = hexToRgb(COLORS.red);
-  const cyanRgb = [100, 180, 220]; // Celeste
-  const grayRgb = [180, 180, 180]; // Gris
-
-  const drawColumn = (questions: MaintenanceChecklistQuestion[], x: number, startYCol: number) => {
-    let yCol = startYCol;
-    let lastSection = '';
-
+    doc.setDrawColor(220, 220, 220);
+    doc.roundedRect(MARGIN, y - 1, PAGE_WIDTH - (MARGIN * 2), requiredHeight - 2, 1, 1);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
     doc.setTextColor(0, 0, 0);
+    doc.text(questionLines, MARGIN + 3, y + 3);
 
-    questions.forEach((q, index) => {
-      // Dibujar título de sección si cambia
-      if (q.section !== lastSection) {
-        // Línea separadora antes del título (excepto primera)
-        if (lastSection !== '') {
-          doc.setDrawColor(200, 200, 200);
-          doc.setLineWidth(0.2);
-          doc.line(x, yCol - 1, x + colWidth - 1, yCol - 1);
-          yCol += 2;
-        }
-        
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(...blueRgb);
-        doc.text(q.section.toUpperCase(), x, yCol);
-        yCol += 5; // Interlineado doble después del título (antes 4)
-        lastSection = q.section;
-      }
+    const statusColor = question.status === 'approved'
+      ? hexToRgb(COLORS.green)
+      : question.status === 'rejected'
+        ? hexToRgb(COLORS.red)
+        : hexToRgb(COLORS.gray);
 
-      // Texto de pregunta
-      const questionText = `${q.number}. ${q.text}`;
-      const textWidth = colWidth - 10;
-      const lines = doc.splitTextToSize(questionText, textWidth);
+    doc.setFillColor(...statusColor);
+    doc.roundedRect(PAGE_WIDTH - MARGIN - 24, y + 1, 18, 6, 0.8, 0.8, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(255, 255, 255);
+    doc.text(getStatusLabel(question.status), PAGE_WIDTH - MARGIN - 15, y + 5, { align: 'center' });
 
-      doc.setFont('helvetica', 'normal');
+    y += questionLines.length * 3.5 + 3;
+
+    if (noteLines.length) {
+      doc.setFont('helvetica', 'italic');
       doc.setFontSize(7.5);
-      doc.setTextColor(60, 60, 60);
-      doc.text(lines, x + 1, yCol);
+      doc.setTextColor(70, 70, 70);
+      doc.text(noteLines, MARGIN + 3, y + 1);
+      y += noteLines.length * 3.5 + 2;
+    }
 
-      // Cuadrado de estado (diseño mejorado con cuadrado dentro de cuadrado)
-      const boxSize = 5; // Tamaño del cuadrado grande
-      const innerBoxSize = 3.5; // Tamaño del cuadrado pequeño interior
-      const boxX = x + colWidth - boxSize - 1;
-      const lineHeight = lines.length * 2.8; // Altura total del texto
-      const boxY = yCol - 2 + (lineHeight / 2) - (boxSize / 2); // Centrado vertical
+    y += 3;
+  }
 
-      // Cuadrado grande (borde negro, fondo blanco)
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.3);
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(boxX, boxY, boxSize, boxSize, 0.5, 0.5, 'FD');
-
-      // Cuadrado pequeño interior centrado (color según estado)
-      const innerX = boxX + (boxSize - innerBoxSize) / 2;
-      const innerY = boxY + (boxSize - innerBoxSize) / 2;
-      
-      if (q.status === 'approved') {
-        doc.setFillColor(...greenRgb);
-      } else if (q.status === 'rejected') {
-        doc.setFillColor(...redRgb);
-      } else if (q.status === 'out_of_period') {
-        doc.setFillColor(...cyanRgb);
-      } else if (q.status === 'not_applicable') {
-        doc.setFillColor(...grayRgb);
-      }
-      doc.roundedRect(innerX, innerY, innerBoxSize, innerBoxSize, 0.3, 0.3, 'F');
-
-      yCol += Math.max(5, lineHeight + 2); // Más espacio entre preguntas (antes 3)
-    });
-
-    return yCol;
-  };
-
-  const yLeft = drawColumn(leftQuestions, leftX, y);
-  const yRight = drawColumn(rightQuestions, rightX, y);
-
-  return Math.max(yLeft, yRight) + 4;
+  return y;
 }
 
-// FIRMA
 function drawSignature(doc: jsPDF, data: MaintenanceChecklistPDFData, y: number) {
-  const blueRgb = hexToRgb(COLORS.blue);
-  const boxW = 65; // Reducido de 80 a 65
-  const boxH = 18; // Reducido de 25 a 18
-  const centerX = (PAGE_WIDTH - boxW) / 2; // Centrar horizontalmente
+  if (!data.signature) return;
+  const blue = hexToRgb(COLORS.blue);
+  const boxWidth = 70;
+  const x = (PAGE_WIDTH - boxWidth) / 2;
 
-  // Título con nombre del firmante
-  doc.setFillColor(...blueRgb);
-  doc.rect(centerX, y, boxW, 5, 'F'); // Altura reducida de 6 a 5
+  doc.setFillColor(...blue);
+  doc.rect(x, y, boxWidth, 6, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7); // Reducido de 8 a 7
+  doc.setFontSize(7.5);
   doc.setTextColor(255, 255, 255);
-  const signerName = data.signature?.signerName?.toUpperCase() || 'SIN FIRMA';
-  doc.text(`RECEPCIONADO POR: ${signerName}`, centerX + 2, y + 3.5);
+  doc.text(`RECEPCIONADO POR: ${data.signature.signerName || 'SIN FIRMA'}`, x + 2, y + 4.2);
 
-  // Recuadro de firma
+  doc.setDrawColor(...blue);
   doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(...blueRgb);
-  doc.setLineWidth(0.5);
-  doc.rect(centerX, y + 6, boxW, boxH); // Ajustado de y+7
+  doc.rect(x, y + 7, boxWidth, 20);
 
-  // Imagen de firma
-  if (data.signature?.signatureDataUrl) {
-    try {
-      doc.addImage(data.signature.signatureDataUrl, 'PNG', centerX + 10, y + 10, boxW - 20, boxH - 8);
-    } catch (e) {
-      console.error('Error al cargar firma:', e);
-    }
+  try {
+    doc.addImage(data.signature.signatureDataUrl, 'PNG', x + 10, y + 10, boxWidth - 20, 10);
+  } catch (error) {
+    console.error('No se pudo agregar la firma al PDF:', error);
   }
 }
 
-// PÁGINA DE OBSERVACIONES
-function drawObservationsPage(doc: jsPDF, data: MaintenanceChecklistPDFData, logoImg: HTMLImageElement | null) {
-  const rejected = data.questions.filter(q => 
-    q.status === 'rejected' && q.observations && q.observations.trim() !== ''
-  );
-
-  if (rejected.length === 0) return;
+function drawObservationsPages(doc: jsPDF, data: MaintenanceChecklistPDFData, logoImg: HTMLImageElement | null) {
+  const questions = data.questions.filter((question) => {
+    const raw = question.observations?.trim();
+    return raw && !raw.startsWith('__special_test__|');
+  });
+  if (questions.length === 0) return;
 
   doc.addPage();
   let y = drawHeader(doc, logoImg);
-
-  // Título de observaciones
-  const blueRgb = hexToRgb(COLORS.blue);
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
+  const blue = hexToRgb(COLORS.blue);
+  doc.setFillColor(...blue);
+  doc.rect(MARGIN, y, PAGE_WIDTH - (MARGIN * 2), 8, 'F');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(255, 255, 255);
   doc.text('OBSERVACIONES', MARGIN + 3, y + 5.5);
-
   y += 12;
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(0, 0, 0);
+  for (const question of questions) {
+    const lines = doc.splitTextToSize(`[${question.number}] ${question.text}`, 185);
+    const obsLines = doc.splitTextToSize(`Observación: ${question.observations}`, 182);
+    const requiredHeight = lines.length * 4 + obsLines.length * 4 + 10;
+    y = ensurePage(doc, y, requiredHeight, logoImg);
 
-  rejected.forEach((q, index) => {
-    if (y > PAGE_HEIGHT - 60) return; // Evitar overflow
-
-    // Número y pregunta
     doc.setFont('helvetica', 'bold');
-    doc.text(`${index + 1}. [Pregunta ${q.number}] ${q.section}`, MARGIN, y);
-    y += 5;
+    doc.setFontSize(8.5);
+    doc.setTextColor(0, 0, 0);
+    doc.text(lines, MARGIN, y);
+    y += lines.length * 4 + 1;
 
-    // Texto de la pregunta
     doc.setFont('helvetica', 'normal');
-    const questionLines = doc.splitTextToSize(q.text, PAGE_WIDTH - 2 * MARGIN - 4);
-    doc.text(questionLines, MARGIN + 2, y);
-    y += questionLines.length * 4 + 2;
-
-    // Observación
-    doc.setFont('helvetica', 'italic');
-    const obsText = `Observación: ${q.observations}`;
-    const obsLines = doc.splitTextToSize(obsText, PAGE_WIDTH - 2 * MARGIN - 4);
+    doc.setFontSize(8);
     doc.text(obsLines, MARGIN + 2, y);
-    y += obsLines.length * 4 + 6;
-  });
-
-  // Firma en página de observaciones
-  drawSignature(doc, data, PAGE_HEIGHT - 50);
+    y += obsLines.length * 4 + 5;
+  }
 }
 
-// FOOTER (número de página)
+async function drawPhotoPages(doc: jsPDF, data: MaintenanceChecklistPDFData, logoImg: HTMLImageElement | null) {
+  const questionsWithPhotos = data.questions.filter((question) => (question.photos?.length ?? 0) > 0);
+  for (const question of questionsWithPhotos) {
+    doc.addPage();
+    let y = drawHeader(doc, logoImg);
+    const blue = hexToRgb(COLORS.blue);
+    doc.setFillColor(...blue);
+    doc.rect(MARGIN, y, PAGE_WIDTH - (MARGIN * 2), 8, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
+    doc.text(`RESPALDO FOTOGRÁFICO · PREGUNTA ${question.number}`, MARGIN + 3, y + 5.5);
+    y += 12;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(0, 0, 0);
+    const questionLines = doc.splitTextToSize(question.text, PAGE_WIDTH - (MARGIN * 2));
+    doc.text(questionLines, MARGIN, y);
+    y += questionLines.length * 4 + 4;
+
+    const obs = question.observations && !question.observations.startsWith('__special_test__|')
+      ? question.observations.trim()
+      : '';
+    if (obs) {
+      const obsLines = doc.splitTextToSize(`Observación: ${obs}`, PAGE_WIDTH - (MARGIN * 2));
+      doc.setFont('helvetica', 'italic');
+      doc.text(obsLines, MARGIN, y);
+      y += obsLines.length * 4 + 4;
+    }
+
+    const slots = [
+      { x: MARGIN, y, w: 88, h: 75 },
+      { x: 112, y, w: 88, h: 75 },
+      { x: MARGIN, y: y + 84, w: 88, h: 75 },
+      { x: 112, y: y + 84, w: 88, h: 75 },
+    ];
+
+    const photos = question.photos ?? [];
+    for (let i = 0; i < Math.min(photos.length, 4); i++) {
+      const photoUrl = photos[i];
+      const slot = slots[i];
+      doc.setDrawColor(200, 200, 200);
+      doc.rect(slot.x, slot.y, slot.w, slot.h);
+      const img = await loadImage(photoUrl);
+      if (!img) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.text(`No se pudo cargar la foto ${i + 1}`, slot.x + slot.w / 2, slot.y + slot.h / 2, { align: 'center' });
+        continue;
+      }
+
+      const ratio = Math.min(slot.w / img.width, slot.h / img.height);
+      const drawW = img.width * ratio;
+      const drawH = img.height * ratio;
+      const drawX = slot.x + (slot.w - drawW) / 2;
+      const drawY = slot.y + (slot.h - drawH) / 2;
+
+      try {
+        doc.addImage(img, getImageFormat(photoUrl), drawX, drawY, drawW, drawH);
+      } catch (error) {
+        console.error('No se pudo agregar foto al PDF:', error);
+        doc.text(`Error al insertar foto ${i + 1}`, slot.x + slot.w / 2, slot.y + slot.h / 2, { align: 'center' });
+      }
+    }
+  }
+}
+
 function addPageNumbers(doc: jsPDF) {
   const totalPages = doc.getNumberOfPages();
-  
-  for (let i = 1; i <= totalPages; i++) {
-    doc.setPage(i);
+  for (let index = 1; index <= totalPages; index++) {
+    doc.setPage(index);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
-    
-    // Número de página
-    doc.text(`Página ${i} de ${totalPages}`, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 5, { align: 'right' });
-    
-    // Texto generado por
+    doc.text(`Página ${index} de ${totalPages}`, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 5, { align: 'right' });
     doc.text('Documento generado por MIREGA', MARGIN, PAGE_HEIGHT - 5);
   }
 }
 
-// GENERADOR PRINCIPAL
 export async function generateMaintenanceChecklistPDF(data: MaintenanceChecklistPDFData): Promise<Blob> {
-  const doc = new jsPDF({
-    unit: 'mm',
-    format: 'a4',
-    orientation: 'portrait'
-  });
-
-  // Cargar logo
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
   const logoImg = await loadImage('/logo_color.png');
 
-  // Página principal
   let y = drawHeader(doc, logoImg);
   y = drawGeneralInfo(doc, data, y);
   y = drawLegend(doc, y);
-  y = drawChecklist(doc, data, y);
-  
-  // Firma al final de la primera página (más arriba para dar espacio)
-  drawSignature(doc, data, PAGE_HEIGHT - 32); // Cambiado de -40 a -32
-
-  // Página de observaciones (si hay)
-  drawObservationsPage(doc, data, logoImg);
-
-  // Agregar numeración de páginas
+  y = drawChecklist(doc, data, y, logoImg);
+  drawSignature(doc, data, Math.min(PAGE_HEIGHT - 38, y + 6));
+  drawObservationsPages(doc, data, logoImg);
+  await drawPhotoPages(doc, data, logoImg);
   addPageNumbers(doc);
 
   return doc.output('blob');

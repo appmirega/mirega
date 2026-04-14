@@ -22,6 +22,10 @@ import { DynamicChecklistForm } from '../checklist/DynamicChecklistForm';
 import { ChecklistSignatureModal } from '../checklist/ChecklistSignatureModal';
 import { generateMaintenanceChecklistPDF, MaintenanceChecklistPDFData } from '../../utils/maintenanceChecklistPDF_v2';
 import { createRequestsFromMaintenance } from '../../lib/serviceRequestsService';
+import { filterQuestionsByChecklistRules, getSpecialTestTitle, getSpecialTestViewMode, type SpecialTestGroup } from '../../lib/checklistRules';
+import { TestsBrakesView } from '../tests/TestsBrakesView';
+import { TestsLimiterView } from '../tests/TestsLimiterView';
+import { TestsCablesView } from '../tests/TestsCablesView';
 
 interface Client {
   id: string;
@@ -46,7 +50,7 @@ interface ChecklistProgress {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
-type ViewMode = 'main' | 'client-selection' | 'elevator-selection' | 'checklist-form' | 'history' | 'in-progress';
+type ViewMode = 'main' | 'client-selection' | 'elevator-selection' | 'checklist-form' | 'history' | 'in-progress' | 'tests-brakes' | 'tests-limiter' | 'tests-cables';
 
 
 function sanitizeStorageSegment(value?: string | null): string {
@@ -126,6 +130,13 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
   // Checklists en progreso
   const [inProgressChecklists, setInProgressChecklists] = useState<any[]>([]);
   const [loadingInProgress, setLoadingInProgress] = useState(false);
+  const [activeSpecialTestTitle, setActiveSpecialTestTitle] = useState('');
+
+
+  const handleOpenSpecialTest = (group: SpecialTestGroup) => {
+    setActiveSpecialTestTitle(getSpecialTestTitle(group));
+    setViewMode(getSpecialTestViewMode(group));
+  };
 
   // Efecto para calcular estado de certificación
   useEffect(() => {
@@ -653,33 +664,22 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
     const responsesMap = new Map((responses || []).map((r: any) => [r.question_id, r]));
 
     const elevatorType = checklistData.elevators?.elevator_type || 'electromechanical';
-    const currentMonth = checklistData.month;
+    const validQuestions = filterQuestionsByChecklistRules(
+      (questions || []) as any[],
+      checklistData.month,
+      elevatorType
+    );
 
-    const isQuarterlyMonth = (month: number) => [3, 6, 9, 12].includes(month);
-    const isSemesterMonth = (month: number) => [6, 12].includes(month);
-
-    const allQuestions = (questions || []).map((q: any) => {
+    const allQuestions = validQuestions.map((q: any) => {
       const response = responsesMap.get(q.id);
-      let finalStatus: string;
-
-      const technicianStatus = response?.status || 'approved';
-
-      if (q.is_hydraulic_only && elevatorType === 'electromechanical') {
-        finalStatus = 'not_applicable';
-      } else if (q.frequency === 'T' && !isQuarterlyMonth(currentMonth)) {
-        finalStatus = 'out_of_period';
-      } else if (q.frequency === 'S' && !isSemesterMonth(currentMonth)) {
-        finalStatus = 'out_of_period';
-      } else {
-        finalStatus = technicianStatus;
-      }
+      const technicianStatus = response?.status || 'pending';
 
       return {
         id: q.id,
         number: q.question_number,
         section: q.section,
         text: q.question_text,
-        status: finalStatus,
+        status: technicianStatus,
         observations: response?.observations || null,
         photos: [
           response?.photo_1_url || null,
@@ -1420,11 +1420,25 @@ export const TechnicianMaintenanceChecklistView = ({ initialMode = 'main' }: Tec
               month={selectedMonth}
               onComplete={handleChecklistComplete}
               onSave={handleChecklistSave}
+              onOpenSpecialTest={handleOpenSpecialTest}
             />
           )}
         </div>
       </div>
     );
+  }
+
+
+  if (viewMode === 'tests-brakes') {
+    return <TestsBrakesView title={activeSpecialTestTitle || 'Pruebas de Frenos'} onBack={() => setViewMode('checklist-form')} />;
+  }
+
+  if (viewMode === 'tests-limiter') {
+    return <TestsLimiterView title={activeSpecialTestTitle || 'Pruebas de Limitador'} onBack={() => setViewMode('checklist-form')} />;
+  }
+
+  if (viewMode === 'tests-cables') {
+    return <TestsCablesView title={activeSpecialTestTitle || 'Pruebas de Cables'} onBack={() => setViewMode('checklist-form')} />;
   }
 
   // Vista de checklists en progreso
