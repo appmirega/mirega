@@ -52,11 +52,40 @@ const MARGIN = 10;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 const FOOTER_Y = PAGE_HEIGHT - 6;
 
+const HEADER_HEIGHT = 24;
+const HEADER_GAP = 6;
+
+const SECTION_BAR_HEIGHT = 7;
+const SECTION_BAR_GAP_BELOW = 6;
+
+const GENERAL_INFO_ROW_HEIGHT = 8;
+const GENERAL_INFO_LABEL_WIDTH = 24;
+const GENERAL_INFO_GAP = 4;
+
+const LEGEND_TOP_GAP = 5;
+const LEGEND_BOTTOM_GAP = 7;
+
+const CHECKLIST_SECTION_TOP_GAP = 4;
+const CHECKLIST_SECTION_BOTTOM_GAP = 5;
+
+const SIGNATURE_BLOCK_WIDTH = 92;
+const SIGNATURE_BOX_HEIGHT = 22;
+const SIGNATURE_TITLE_HEIGHT = 6;
+
+const PHOTO_CELL_W = 56;
+const PHOTO_CELL_H = 34;
+const PHOTO_CELL_GAP_X = 4;
+const PHOTO_CELL_GAP_Y = 4;
+const PHOTO_LEFT_PADDING = 3;
+
+const MAX_OBSERVATION_LINES_ON_CHECKLIST = 4;
+const MAX_OBSERVATION_LINES_ON_PHOTO_BLOCK = 2;
+
 const STATUS_LABELS: Record<MaintenanceQuestionStatus, string> = {
   approved: 'Aprobado',
   rejected: 'Rechazado',
   not_applicable: 'Pospuesto / No aplica',
-  out_of_period: 'No corresponde al periodo',
+  out_of_period: 'No corresponde',
 };
 
 const MONTHS = [
@@ -75,13 +104,13 @@ const MONTHS = [
 ];
 
 const COLORS = {
-  blue: '#273a8f',
+  blue: '#2f46a1',
   green: '#44ac4c',
-  red: '#e1162b',
+  red: '#e11d2e',
   amber: '#f59e0b',
   gray: '#6b7280',
   dark: '#111827',
-  lightBorder: '#d1d5db',
+  lightBorder: '#cbd5e1',
   lightFill: '#f8fafc',
 };
 
@@ -95,13 +124,25 @@ function hexToRgb(hex: string): [number, number, number] {
   ];
 }
 
+function sanitizeText(value?: string | null, fallback = 'Sin información'): string {
+  if (!value) return fallback;
+  const cleaned = value
+    .replace(/\r/g, ' ')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned || fallback;
+}
+
 function formatDate(dateStr?: string | null, fallback = 'No registrado'): string {
   if (!dateStr) return fallback;
   const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return fallback;
-  return `${String(d.getDate()).padStart(2, '0')}/${String(
-    d.getMonth() + 1
-  ).padStart(2, '0')}/${d.getFullYear()}`;
+  if (Number.isNaN(d.getTime())) return sanitizeText(dateStr, fallback);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(
+    2,
+    '0'
+  )}/${d.getFullYear()}`;
 }
 
 function getCertificationStatusText(status?: CertificationStatus): string {
@@ -119,16 +160,19 @@ function getCertificationStatusText(status?: CertificationStatus): string {
   }
 }
 
-function sanitizeText(value?: string | null, fallback = 'Sin información'): string {
-  const text = value?.trim();
-  return text ? text : fallback;
-}
-
 function getStatusColors(status: MaintenanceQuestionStatus): [number, number, number] {
   if (status === 'approved') return hexToRgb(COLORS.green);
   if (status === 'rejected') return hexToRgb(COLORS.red);
   if (status === 'out_of_period') return hexToRgb(COLORS.amber);
   return hexToRgb(COLORS.gray);
+}
+
+function getImageFormat(src?: string | null): 'PNG' | 'JPEG' {
+  if (!src) return 'JPEG';
+  const normalized = src.toLowerCase();
+  return normalized.includes('png') || normalized.startsWith('data:image/png')
+    ? 'PNG'
+    : 'JPEG';
 }
 
 function loadImage(src: string): Promise<HTMLImageElement | null> {
@@ -141,65 +185,62 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
   });
 }
 
-function getImageFormat(src?: string | null): 'PNG' | 'JPEG' {
-  if (!src) return 'JPEG';
-  const normalized = src.toLowerCase();
-  return normalized.includes('png') || normalized.startsWith('data:image/png')
-    ? 'PNG'
-    : 'JPEG';
+function buildCompanyLine(): string {
+  return `${COMPANY_INFO.name} | ${COMPANY_INFO.address} | ${COMPANY_INFO.phone} | ${COMPANY_INFO.email} | ${COMPANY_INFO.website}`;
 }
 
 function drawHeader(doc: jsPDF, logoImg: HTMLImageElement | null): number {
   const topY = MARGIN;
-  const headerHeight = 24;
   const blueRgb = hexToRgb(COLORS.blue);
   const darkRgb = hexToRgb(COLORS.dark);
 
   doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
   doc.setLineWidth(0.3);
-  doc.rect(MARGIN, topY, CONTENT_WIDTH, headerHeight);
+  doc.rect(MARGIN, topY, CONTENT_WIDTH, HEADER_HEIGHT);
 
   if (logoImg) {
     try {
-      doc.addImage(logoImg, 'PNG', MARGIN + 3, topY + 3, 22, 16);
+      doc.addImage(logoImg, 'PNG', MARGIN + 5, topY + 5, 18, 13);
     } catch (error) {
       console.error('No se pudo dibujar el logo', error);
     }
   }
 
+  doc.setTextColor(...darkRgb);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
-  doc.setTextColor(...darkRgb);
   doc.text(COMPANY_INFO.reportTitle, PAGE_WIDTH / 2, topY + 8.5, {
     align: 'center',
   });
 
-  doc.setFontSize(11.5);
-  doc.text(COMPANY_INFO.reportSubtitle, PAGE_WIDTH / 2, topY + 15, {
+  doc.setFontSize(11.3);
+  doc.text(COMPANY_INFO.reportSubtitle, PAGE_WIDTH / 2, topY + 15.2, {
     align: 'center',
   });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(6.9);
   doc.setTextColor(...blueRgb);
-  const line = `${COMPANY_INFO.name} | ${COMPANY_INFO.address} | ${COMPANY_INFO.phone} | ${COMPANY_INFO.email} | ${COMPANY_INFO.website}`;
-  doc.text(line, PAGE_WIDTH / 2, topY + 21, {
+
+  const companyLine = buildCompanyLine();
+  doc.text(companyLine, PAGE_WIDTH / 2, topY + 20.4, {
     align: 'center',
-    maxWidth: CONTENT_WIDTH - 32,
+    maxWidth: CONTENT_WIDTH - 36,
   });
 
-  return topY + headerHeight + 5;
+  return topY + HEADER_HEIGHT + HEADER_GAP;
 }
 
-function drawSectionTitle(doc: jsPDF, text: string, y: number): number {
-  const blueRgb = hexToRgb(COLORS.blue);
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, CONTENT_WIDTH, 7, 'F');
+function drawSectionBar(doc: jsPDF, text: string, y: number): number {
+  doc.setFillColor(...hexToRgb(COLORS.blue));
+  doc.rect(MARGIN, y, CONTENT_WIDTH, SECTION_BAR_HEIGHT, 'F');
+
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
+  doc.setFontSize(9.4);
   doc.setTextColor(255, 255, 255);
   doc.text(text, MARGIN + 3, y + 4.8);
-  return y + 10;
+
+  return y + SECTION_BAR_HEIGHT + SECTION_BAR_GAP_BELOW;
 }
 
 function drawLabeledField(
@@ -210,40 +251,39 @@ function drawLabeledField(
   y: number,
   w: number
 ): void {
-  const blueRgb = hexToRgb(COLORS.blue);
-  const labelW = Math.min(32, Math.max(22, doc.getTextWidth(label) + 5));
+  const labelW = GENERAL_INFO_LABEL_WIDTH;
   const valueW = w - labelW;
 
-  doc.setFillColor(...blueRgb);
-  doc.rect(x, y, labelW, 6, 'F');
+  doc.setFillColor(...hexToRgb(COLORS.blue));
+  doc.rect(x, y, labelW, GENERAL_INFO_ROW_HEIGHT, 'F');
+
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7.6);
   doc.setTextColor(255, 255, 255);
-  doc.text(label, x + 1.5, y + 4.1);
+  doc.text(label, x + 1.5, y + 5.1);
 
   doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
   doc.setFillColor(255, 255, 255);
-  doc.rect(x + labelW, y, valueW, 6, 'FD');
+  doc.rect(x + labelW, y, valueW, GENERAL_INFO_ROW_HEIGHT, 'FD');
+
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.9);
   doc.setTextColor(0, 0, 0);
-  doc.text(doc.splitTextToSize(value, valueW - 3)[0] || '', x + labelW + 1.5, y + 4.1);
+
+  const singleLine = doc.splitTextToSize(sanitizeText(value, ''), valueW - 3)[0] || '';
+  doc.text(singleLine, x + labelW + 1.8, y + 5.1);
 }
 
-function drawGeneralInfo(
-  doc: jsPDF,
-  data: MaintenanceChecklistPDFData,
-  startY: number
-): number {
-  let y = drawSectionTitle(
+function drawGeneralInfo(doc: jsPDF, data: MaintenanceChecklistPDFData, y: number): number {
+  y = drawSectionBar(
     doc,
     `INFORMACIÓN GENERAL${data.folioNumber ? ` · FOLIO ${data.folioNumber}` : ''}`,
-    startY
+    y
   );
 
-  const colGap = 4;
-  const colWidth = (CONTENT_WIDTH - colGap) / 2;
+  const colWidth = (CONTENT_WIDTH - GENERAL_INFO_GAP) / 2;
   const leftX = MARGIN;
-  const rightX = MARGIN + colWidth + colGap;
+  const rightX = MARGIN + colWidth + GENERAL_INFO_GAP;
 
   drawLabeledField(doc, 'Cliente', sanitizeText(data.clientName, ''), leftX, y, colWidth);
   drawLabeledField(
@@ -254,7 +294,7 @@ function drawGeneralInfo(
     y,
     colWidth
   );
-  y += 7.5;
+  y += GENERAL_INFO_ROW_HEIGHT + 2;
 
   drawLabeledField(
     doc,
@@ -272,34 +312,28 @@ function drawGeneralInfo(
     y,
     colWidth
   );
-  y += 7.5;
+  y += GENERAL_INFO_ROW_HEIGHT + 2;
 
   drawLabeledField(doc, 'Fecha', formatDate(data.completionDate), leftX, y, colWidth);
-  drawLabeledField(
-    doc,
-    'Técnico',
-    sanitizeText(data.technicianName, ''),
-    rightX,
-    y,
-    colWidth
-  );
-  y += 7.5;
+  drawLabeledField(doc, 'Técnico', sanitizeText(data.technicianName, ''), rightX, y, colWidth);
+  y += GENERAL_INFO_ROW_HEIGHT + 2;
 
+  const halfLeft = (colWidth - 2) / 2;
   drawLabeledField(
     doc,
     'Últ. cert.',
     sanitizeText(data.lastCertificationDate, 'No legible'),
     leftX,
     y,
-    colWidth / 2 - 2
+    halfLeft
   );
   drawLabeledField(
     doc,
     'Próx. cert.',
     sanitizeText(data.nextCertificationDate, 'No legible'),
-    leftX + colWidth / 2 + 2,
+    leftX + halfLeft + 2,
     y,
-    colWidth / 2 - 2
+    halfLeft
   );
   drawLabeledField(
     doc,
@@ -310,12 +344,14 @@ function drawGeneralInfo(
     colWidth
   );
 
-  return y + 10;
+  return y + GENERAL_INFO_ROW_HEIGHT;
 }
 
 function drawLegend(doc: jsPDF, y: number): number {
+  y += LEGEND_TOP_GAP;
+
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7.8);
   doc.setTextColor(...hexToRgb(COLORS.dark));
   doc.text('Simbología:', MARGIN, y);
 
@@ -327,123 +363,132 @@ function drawLegend(doc: jsPDF, y: number): number {
   ];
 
   let x = MARGIN + 18;
-  items.forEach(([label, status]) => {
-    const rgb = getStatusColors(status);
-    doc.setFillColor(...rgb);
-    doc.roundedRect(x, y - 3.8, 4.2, 4.2, 0.6, 0.6, 'F');
-    x += 6;
-    doc.setFont('helvetica', 'normal');
-    doc.text(label, x, y - 0.5);
-    x += doc.getTextWidth(label) + 7;
-  });
 
-  return y + 4;
+  for (const [label, status] of items) {
+    const rgb = getStatusColors(status);
+
+    doc.setFillColor(...rgb);
+    doc.roundedRect(x, y - 4.2, 4.2, 4.2, 0.6, 0.6, 'F');
+    x += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.8);
+    doc.setTextColor(0, 0, 0);
+    doc.text(label, x, y - 0.4);
+
+    x += doc.getTextWidth(label) + 7;
+  }
+
+  return y + LEGEND_BOTTOM_GAP;
 }
 
 function ensureChecklistPage(
   doc: jsPDF,
   currentY: number,
   neededHeight: number,
-  logoImg: HTMLImageElement | null,
-  sectionTitle = 'CHECKLIST TÉCNICO'
+  logoImg: HTMLImageElement | null
 ): number {
   if (currentY + neededHeight <= PAGE_HEIGHT - 22) return currentY;
 
   doc.addPage();
   let y = drawHeader(doc, logoImg);
-  y = drawSectionTitle(doc, sectionTitle, y);
+  y = drawSectionBar(doc, 'CHECKLIST TÉCNICO', y);
   return y;
+}
+
+function trimObservationForChecklist(
+  doc: jsPDF,
+  text: string,
+  width: number
+): { lines: string[]; overflow: boolean } {
+  const lines = doc.splitTextToSize(`Observación: ${sanitizeText(text, '')}`, width);
+  if (lines.length <= MAX_OBSERVATION_LINES_ON_CHECKLIST) {
+    return { lines, overflow: false };
+  }
+
+  const trimmed = lines.slice(0, MAX_OBSERVATION_LINES_ON_CHECKLIST);
+  const lastIndex = trimmed.length - 1;
+  trimmed[lastIndex] =
+    trimmed[lastIndex].length > 3
+      ? `${trimmed[lastIndex].slice(0, -3)}...`
+      : `${trimmed[lastIndex]}...`;
+
+  return { lines: trimmed, overflow: true };
 }
 
 function drawQuestionRow(
   doc: jsPDF,
   question: MaintenanceChecklistQuestion,
   y: number,
-  fullObservationIndices: number[]
+  overflowObservations: number[]
 ): number {
-  const borderRgb = hexToRgb(COLORS.lightBorder);
-  const fillRgb = hexToRgb(COLORS.lightFill);
-  const darkRgb = hexToRgb(COLORS.dark);
-  const statusRgb = getStatusColors(question.status);
-
-  const leftPad = 3;
   const boxX = MARGIN;
   const boxW = CONTENT_WIDTH;
-  const textW = boxW - 42;
-  const questionLabel = `${question.number}. ${question.text}`;
-  const questionLines = doc.splitTextToSize(questionLabel, textW);
-  const hasObservation = !!question.observations?.trim();
-  const observationPrefix = 'Observación: ';
+  const chipW = 31;
+  const chipH = 6;
+  const leftPadding = 3;
+  const textWidth = boxW - chipW - 11;
+
+  const questionLines = doc.splitTextToSize(
+    `${question.number}. ${sanitizeText(question.text, '')}`,
+    textWidth
+  );
 
   let observationLines: string[] = [];
-  let observationFits = true;
+  let hasObservationOverflow = false;
 
-  if (hasObservation) {
-    const allObsLines = doc.splitTextToSize(
-      `${observationPrefix}${question.observations?.trim()}`,
-      textW - 2
-    );
+  if (question.observations?.trim()) {
+    const result = trimObservationForChecklist(doc, question.observations.trim(), textWidth - 1);
+    observationLines = result.lines;
+    hasObservationOverflow = result.overflow;
 
-    if (allObsLines.length > 4) {
-      observationFits = false;
-      observationLines = allObsLines.slice(0, 4);
-      const last = observationLines[3] || '';
-      observationLines[3] =
-        last.length > 3 ? `${last.slice(0, -3)}...` : `${last}...`;
-      fullObservationIndices.push(question.number);
-    } else {
-      observationLines = allObsLines;
+    if (hasObservationOverflow) {
+      overflowObservations.push(question.number);
     }
   }
 
-  const questionHeight = questionLines.length * 3.6;
-  const observationHeight = observationLines.length
-    ? observationLines.length * 3.3 + 1.5
-    : 0;
-  const rowHeight = Math.max(10, questionHeight + observationHeight + 4);
+  const questionHeight = questionLines.length * 3.7;
+  const observationHeight = observationLines.length ? observationLines.length * 3.3 + 1.5 : 0;
+  const footerHintHeight = hasObservationOverflow ? 3.5 : 0;
+  const rowHeight = Math.max(10, questionHeight + observationHeight + footerHintHeight + 4);
 
-  doc.setDrawColor(...borderRgb);
-  doc.setFillColor(...fillRgb);
+  doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
+  doc.setFillColor(...hexToRgb(COLORS.lightFill));
   doc.roundedRect(boxX, y, boxW, rowHeight, 1, 1, 'FD');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.3);
-  doc.setTextColor(...darkRgb);
-  doc.text(questionLines, boxX + leftPad, y + 4.5);
+  doc.setFontSize(8.2);
+  doc.setTextColor(...hexToRgb(COLORS.dark));
+  doc.text(questionLines, boxX + leftPadding, y + 4.7);
+
+  let currentTextY = y + 4.7 + questionHeight;
 
   if (observationLines.length) {
     doc.setFont('helvetica', 'italic');
-    doc.setFontSize(7.5);
-    doc.setTextColor(65, 65, 65);
-    doc.text(
-      observationLines,
-      boxX + leftPad + 1,
-      y + 4.5 + questionHeight
-    );
-
-    if (!observationFits) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.6);
-      doc.setTextColor(...hexToRgb(COLORS.blue));
-      doc.text(
-        'Continúa en Observaciones adicionales.',
-        boxX + leftPad + 1,
-        y + rowHeight - 1.8
-      );
-    }
+    doc.setFontSize(7.4);
+    doc.setTextColor(60, 60, 60);
+    doc.text(observationLines, boxX + leftPadding, currentTextY);
+    currentTextY += observationLines.length * 3.3 + 0.8;
   }
 
-  const chipW = 31;
-  const chipH = 6;
+  if (hasObservationOverflow) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.6);
+    doc.setTextColor(...hexToRgb(COLORS.blue));
+    doc.text('Continúa en Observaciones adicionales.', boxX + leftPadding, y + rowHeight - 1.8);
+  }
+
   const chipX = boxX + boxW - chipW - 3;
   const chipY = y + 2.2;
+  const statusRgb = getStatusColors(question.status);
 
   doc.setFillColor(...statusRgb);
   doc.roundedRect(chipX, chipY, chipW, chipH, 1, 1, 'F');
-  doc.setTextColor(255, 255, 255);
+
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.8);
-  doc.text(STATUS_LABELS[question.status], chipX + chipW / 2, chipY + 4, {
+  doc.setFontSize(6.7);
+  doc.setTextColor(255, 255, 255);
+  doc.text(STATUS_LABELS[question.status], chipX + chipW / 2, chipY + 4.1, {
     align: 'center',
   });
 
@@ -456,76 +501,99 @@ function drawChecklistPages(
   startY: number,
   logoImg: HTMLImageElement | null
 ): number[] {
-  let y = drawSectionTitle(doc, 'CHECKLIST TÉCNICO', startY);
+  let y = drawSectionBar(doc, 'CHECKLIST TÉCNICO', startY);
   const overflowObservations: number[] = [];
   let currentSection = '';
 
-  data.questions.forEach((question) => {
+  for (const question of data.questions) {
     const questionTextLines = doc.splitTextToSize(
-      `${question.number}. ${question.text}`,
+      `${question.number}. ${sanitizeText(question.text, '')}`,
       CONTENT_WIDTH - 42
     );
+
     const observationLines = question.observations?.trim()
       ? doc.splitTextToSize(
-          `Observación: ${question.observations.trim()}`,
+          `Observación: ${sanitizeText(question.observations, '')}`,
           CONTENT_WIDTH - 44
         )
       : [];
 
-    const estimatedHeight =
+    const estimatedRowHeight =
       8 +
-      questionTextLines.length * 3.6 +
-      Math.min(observationLines.length, 4) * 3.3 +
-      8;
+      questionTextLines.length * 3.7 +
+      Math.min(observationLines.length, MAX_OBSERVATION_LINES_ON_CHECKLIST) * 3.3 +
+      7;
 
     if (question.section !== currentSection) {
-      y = ensureChecklistPage(doc, y, estimatedHeight + 10, logoImg);
+      const sectionHeightNeeded = CHECKLIST_SECTION_TOP_GAP + 4.2 + CHECKLIST_SECTION_BOTTOM_GAP + estimatedRowHeight;
+
+      y = ensureChecklistPage(doc, y, sectionHeightNeeded, logoImg);
+      y += CHECKLIST_SECTION_TOP_GAP;
+
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
+      doc.setFontSize(8.7);
       doc.setTextColor(...hexToRgb(COLORS.blue));
-      doc.text(question.section.toUpperCase(), MARGIN, y);
-      y += 4.5;
+      doc.text(sanitizeText(question.section, '').toUpperCase(), MARGIN, y);
+
+      y += CHECKLIST_SECTION_BOTTOM_GAP;
       currentSection = question.section;
     } else {
-      y = ensureChecklistPage(doc, y, estimatedHeight, logoImg);
+      y = ensureChecklistPage(doc, y, estimatedRowHeight + 2, logoImg);
     }
 
     y = drawQuestionRow(doc, question, y, overflowObservations);
-  });
+  }
 
   return overflowObservations;
 }
 
-function drawSignature(doc: jsPDF, data: MaintenanceChecklistPDFData, y: number): number {
+function drawSignature(doc: jsPDF, data: MaintenanceChecklistPDFData, baseY: number): number {
+  const x = (PAGE_WIDTH - SIGNATURE_BLOCK_WIDTH) / 2;
   const blueRgb = hexToRgb(COLORS.blue);
-  const boxW = 76;
-  const boxH = 20;
-  const x = PAGE_WIDTH - MARGIN - boxW;
 
   doc.setFillColor(...blueRgb);
-  doc.roundedRect(x, y, boxW, 6, 1, 1, 'F');
+  doc.roundedRect(x, baseY, SIGNATURE_BLOCK_WIDTH, SIGNATURE_TITLE_HEIGHT, 1, 1, 'F');
+
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.2);
+  doc.setFontSize(7.3);
   doc.setTextColor(255, 255, 255);
   doc.text(
-    `RECEPCIONADO POR: ${data.signature?.signerName?.toUpperCase() || 'SIN FIRMA'}`,
-    x + 2,
-    y + 4.1
+    `RECEPCIONADO POR: ${sanitizeText(data.signature?.signerName, 'SIN FIRMA').toUpperCase()}`,
+    PAGE_WIDTH / 2,
+    baseY + 4.2,
+    { align: 'center' }
   );
 
-  doc.setFillColor(255, 255, 255);
   doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
-  doc.roundedRect(x, y + 7, boxW, boxH, 1, 1, 'FD');
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(
+    x,
+    baseY + SIGNATURE_TITLE_HEIGHT + 1.5,
+    SIGNATURE_BLOCK_WIDTH,
+    SIGNATURE_BOX_HEIGHT,
+    1,
+    1,
+    'FD'
+  );
 
   if (data.signature?.signatureDataUrl) {
     try {
-      doc.addImage(data.signature.signatureDataUrl, 'PNG', x + 8, y + 10, boxW - 16, boxH - 6);
+      const imgW = SIGNATURE_BLOCK_WIDTH - 18;
+      const imgH = SIGNATURE_BOX_HEIGHT - 6;
+      doc.addImage(
+        data.signature.signatureDataUrl,
+        'PNG',
+        x + (SIGNATURE_BLOCK_WIDTH - imgW) / 2,
+        baseY + SIGNATURE_TITLE_HEIGHT + 4,
+        imgW,
+        imgH
+      );
     } catch (error) {
       console.error('No se pudo dibujar la firma', error);
     }
   }
 
-  return y + boxH + 9;
+  return baseY + SIGNATURE_TITLE_HEIGHT + SIGNATURE_BOX_HEIGHT + 4;
 }
 
 function drawAdditionalObservationsPage(
@@ -534,49 +602,99 @@ function drawAdditionalObservationsPage(
   logoImg: HTMLImageElement | null,
   overflowObservationQuestionNumbers: number[]
 ): void {
-  const longObservationSet = new Set(overflowObservationQuestionNumbers);
+  const set = new Set(overflowObservationQuestionNumbers);
   const extraObservations = data.questions.filter(
-    (q) => q.observations?.trim() && longObservationSet.has(q.number)
+    (q) => q.observations?.trim() && set.has(q.number)
   );
 
   if (!extraObservations.length) return;
 
   doc.addPage();
   let y = drawHeader(doc, logoImg);
-  y = drawSectionTitle(doc, 'OBSERVACIONES ADICIONALES', y);
+  y = drawSectionBar(doc, 'OBSERVACIONES ADICIONALES', y);
 
-  extraObservations.forEach((question) => {
-    const fullText = `Observación completa: ${question.observations?.trim()}`;
-    const lines = doc.splitTextToSize(fullText, CONTENT_WIDTH - 6);
-    const needed = 10 + lines.length * 3.8;
+  for (const question of extraObservations) {
+    const lines = doc.splitTextToSize(
+      `Observación completa: ${sanitizeText(question.observations, '')}`,
+      CONTENT_WIDTH - 6
+    );
+    const blockHeight = 10 + lines.length * 3.6;
 
-    if (y + needed > PAGE_HEIGHT - 18) {
+    if (y + blockHeight > PAGE_HEIGHT - 18) {
       doc.addPage();
       y = drawHeader(doc, logoImg);
-      y = drawSectionTitle(doc, 'OBSERVACIONES ADICIONALES', y);
+      y = drawSectionBar(doc, 'OBSERVACIONES ADICIONALES', y);
     }
 
     doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
     doc.setFillColor(255, 255, 255);
-    doc.roundedRect(MARGIN, y, CONTENT_WIDTH, needed, 1, 1, 'FD');
+    doc.roundedRect(MARGIN, y, CONTENT_WIDTH, blockHeight, 1, 1, 'FD');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.4);
+    doc.setFontSize(8.3);
     doc.setTextColor(...hexToRgb(COLORS.dark));
-    doc.text(`[${question.number}] ${question.text}`, MARGIN + 3, y + 5);
+    doc.text(`[${question.number}] ${sanitizeText(question.text, '')}`, MARGIN + 3, y + 5);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.6);
+    doc.setFontSize(7.5);
     doc.text(lines, MARGIN + 3, y + 10);
 
-    y += needed + 3;
-  });
+    y += blockHeight + 3;
+  }
 }
 
-function getPhotoBlockHeight(photoCount: number, hasObservation: boolean): number {
+function getPhotoGridRows(photoCount: number): number {
   if (photoCount <= 0) return 0;
-  if (photoCount <= 2) return hasObservation ? 96 : 90;
-  return hasObservation ? 145 : 138;
+  return photoCount <= 2 ? 1 : 2;
+}
+
+function getPhotoBlockHeight(question: MaintenanceChecklistQuestion): number {
+  const photos = (question.photos || []).filter(Boolean);
+  const photoCount = photos.length;
+  if (!photoCount) return 0;
+
+  const titleHeight = 11;
+  const questionLineCount = 1 + Math.max(0, Math.ceil(sanitizeText(question.text, '').length / 70) - 1);
+  const questionHeight = questionLineCount * 3.4 + 1.5;
+
+  let observationHeight = 0;
+  if (question.observations?.trim()) {
+    observationHeight = MAX_OBSERVATION_LINES_ON_PHOTO_BLOCK * 3.2 + 2;
+  }
+
+  const rows = getPhotoGridRows(photoCount);
+  const imagesHeight =
+    rows === 1
+      ? PHOTO_CELL_H
+      : PHOTO_CELL_H * 2 + PHOTO_CELL_GAP_Y;
+
+  return titleHeight + questionHeight + observationHeight + imagesHeight + 8;
+}
+
+function drawSinglePhoto(
+  doc: jsPDF,
+  photo: string,
+  x: number,
+  y: number,
+  loadedImages: Map<string, HTMLImageElement | null>
+): void {
+  doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
+  doc.rect(x, y, PHOTO_CELL_W, PHOTO_CELL_H);
+
+  const img = loadedImages.get(photo || '');
+  if (!img || !img.width || !img.height) return;
+
+  const ratio = Math.min(PHOTO_CELL_W / img.width, PHOTO_CELL_H / img.height);
+  const drawW = img.width * ratio;
+  const drawH = img.height * ratio;
+  const drawX = x + (PHOTO_CELL_W - drawW) / 2;
+  const drawY = y + (PHOTO_CELL_H - drawH) / 2;
+
+  try {
+    doc.addImage(img, getImageFormat(photo), drawX, drawY, drawW, drawH);
+  } catch (error) {
+    console.error('No se pudo dibujar foto del checklist', error);
+  }
 }
 
 function drawPhotoBlock(
@@ -586,9 +704,8 @@ function drawPhotoBlock(
   loadedImages: Map<string, HTMLImageElement | null>
 ): number {
   const photos = (question.photos || []).filter(Boolean);
-  const hasObservation = !!question.observations?.trim();
-  const titleY = y;
-  const blockHeight = getPhotoBlockHeight(photos.length, hasObservation);
+  const photoCount = photos.length;
+  const blockHeight = getPhotoBlockHeight(question);
 
   doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
   doc.roundedRect(MARGIN, y, CONTENT_WIDTH, blockHeight, 1, 1);
@@ -596,58 +713,39 @@ function drawPhotoBlock(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.4);
   doc.setTextColor(...hexToRgb(COLORS.blue));
-  doc.text(`RESPALDO FOTOGRÁFICO · PREGUNTA ${question.number}`, MARGIN + 3, titleY + 5);
+  doc.text(`RESPALDO FOTOGRÁFICO · PREGUNTA ${question.number}`, MARGIN + 3, y + 5);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.7);
+  doc.setFontSize(7.6);
   doc.setTextColor(0, 0, 0);
-  const qLines = doc.splitTextToSize(question.text, CONTENT_WIDTH - 6);
-  doc.text(qLines, MARGIN + 3, titleY + 9.8);
 
-  let cursorY = titleY + 9.8 + qLines.length * 3.4 + 1.5;
+  const questionLines = doc.splitTextToSize(sanitizeText(question.text, ''), CONTENT_WIDTH - 6);
+  doc.text(questionLines, MARGIN + 3, y + 10);
 
-  if (hasObservation) {
-    const obsLines = doc.splitTextToSize(
-      `Observación: ${question.observations?.trim()}`,
-      CONTENT_WIDTH - 6
-    );
-    const limited = obsLines.slice(0, 2);
+  let currentY = y + 10 + questionLines.length * 3.3 + 1.5;
+
+  if (question.observations?.trim()) {
+    const obsLines = doc
+      .splitTextToSize(`Observación: ${sanitizeText(question.observations, '')}`, CONTENT_WIDTH - 6)
+      .slice(0, MAX_OBSERVATION_LINES_ON_PHOTO_BLOCK);
+
     doc.setFont('helvetica', 'italic');
-    doc.text(limited, MARGIN + 3, cursorY);
-    cursorY += limited.length * 3.2 + 2;
+    doc.text(obsLines, MARGIN + 3, currentY);
+    currentY += obsLines.length * 3.2 + 2;
   }
 
-  const gap = 4;
-  const usableW = CONTENT_WIDTH - 6;
-  const innerX = MARGIN + 3;
-  const cellW = (usableW - gap) / 2;
-  const rows = photos.length <= 2 ? 1 : 2;
-  const cellH = rows === 1 ? 58 : 27.5;
+  const gridStartX = MARGIN + PHOTO_LEFT_PADDING;
+  const maxColumns = 3;
 
-  photos.forEach((photo, index) => {
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    const x = innerX + col * (cellW + gap);
-    const imgY = cursorY + row * (cellH + 4);
+  for (let i = 0; i < photoCount; i += 1) {
+    const row = Math.floor(i / maxColumns);
+    const col = i % maxColumns;
 
-    doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
-    doc.rect(x, imgY, cellW, cellH);
+    const x = gridStartX + col * (PHOTO_CELL_W + PHOTO_CELL_GAP_X);
+    const imgY = currentY + row * (PHOTO_CELL_H + PHOTO_CELL_GAP_Y);
 
-    const img = loadedImages.get(photo || '');
-    if (!img || !img.width || !img.height) return;
-
-    const ratio = Math.min(cellW / img.width, cellH / img.height);
-    const drawW = img.width * ratio;
-    const drawH = img.height * ratio;
-    const drawX = x + (cellW - drawW) / 2;
-    const drawY = imgY + (cellH - drawH) / 2;
-
-    try {
-      doc.addImage(img, getImageFormat(photo), drawX, drawY, drawW, drawH);
-    } catch (error) {
-      console.error('No se pudo dibujar foto del checklist', error);
-    }
-  });
+    drawSinglePhoto(doc, photos[i], x, imgY, loadedImages);
+  }
 
   return y + blockHeight + 4;
 }
@@ -663,30 +761,28 @@ async function drawPhotoPages(
 
   if (!questionsWithPhotos.length) return;
 
-  const uniquePhotoUrls = Array.from(
+  const uniqueUrls = Array.from(
     new Set(
       questionsWithPhotos.flatMap((q) => (q.photos || []).filter(Boolean) as string[])
     )
   );
 
   const loadedEntries = await Promise.all(
-    uniquePhotoUrls.map(async (url) => [url, await loadImage(url)] as const)
+    uniqueUrls.map(async (url) => [url, await loadImage(url)] as const)
   );
-
   const loadedImages = new Map<string, HTMLImageElement | null>(loadedEntries);
 
   doc.addPage();
   let y = drawHeader(doc, logoImg);
-  y = drawSectionTitle(doc, 'RESPALDO FOTOGRÁFICO', y);
+  y = drawSectionBar(doc, 'RESPALDO FOTOGRÁFICO', y);
 
   for (const question of questionsWithPhotos) {
-    const photoCount = (question.photos || []).filter(Boolean).length;
-    const blockHeight = getPhotoBlockHeight(photoCount, !!question.observations?.trim());
+    const blockHeight = getPhotoBlockHeight(question);
 
     if (y + blockHeight > PAGE_HEIGHT - 18) {
       doc.addPage();
       y = drawHeader(doc, logoImg);
-      y = drawSectionTitle(doc, 'RESPALDO FOTOGRÁFICO', y);
+      y = drawSectionBar(doc, 'RESPALDO FOTOGRÁFICO', y);
     }
 
     y = drawPhotoBlock(doc, question, y, loadedImages);
@@ -723,15 +819,11 @@ export async function generateMaintenanceChecklistPDF(
   y = drawGeneralInfo(doc, data, y);
   y = drawLegend(doc, y);
 
-  const overflowObservationQuestionNumbers = drawChecklistPages(
-    doc,
-    data,
-    y + 2,
-    logoImg
-  );
+  const overflowObservationQuestionNumbers = drawChecklistPages(doc, data, y, logoImg);
 
   doc.setPage(doc.getNumberOfPages());
-  drawSignature(doc, data, PAGE_HEIGHT - 36);
+  const signatureY = Math.max(248, Math.min(PAGE_HEIGHT - 40, PAGE_HEIGHT - 40));
+  drawSignature(doc, data, signatureY);
 
   drawAdditionalObservationsPage(
     doc,
