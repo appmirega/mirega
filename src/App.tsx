@@ -36,8 +36,10 @@ import { ClientTechnicalInfoView } from "./components/views/ClientTechnicalInfoV
 import { useViewPermissions } from "./hooks/useViewPermissions";
 import { isManagedView } from "./utils/viewPermissions";
 
-// 🔥 NUEVA VISTA
 import TechnicianClientTechnicalView from "./components/views/TechnicianClientTechnicalView";
+import { TestsBrakesView } from "./components/tests/TestsBrakesView";
+import { TestsLimiterView } from "./components/tests/TestsLimiterView";
+import { TestsCablesView } from "./components/tests/TestsCablesView";
 
 function App() {
   const [currentView, setCurrentView] = useState("dashboard");
@@ -112,6 +114,39 @@ function App() {
         );
       break;
 
+    case "technical-tests-cables":
+      content = (
+        <TestsCablesView
+          title="Prueba de Cables"
+          onBack={() => handleNavigate("maintenance-checklist")}
+        />
+      );
+      break;
+
+    case "technical-tests-brakes":
+      content = (
+        <TestsBrakesView
+          title="Prueba de Frenos"
+          onBack={() => handleNavigate("maintenance-checklist")}
+        />
+      );
+      break;
+
+    case "technical-tests-limiter":
+      content = (
+        <TestsLimiterView
+          title="Prueba de Limitador"
+          onBack={() => handleNavigate("maintenance-checklist")}
+        />
+      );
+      break;
+
+    case "service-requests":
+    case "solicitudes-servicio":
+    case "serviceRequests":
+      content = <ServiceRequestsDashboard />;
+      break;
+
     case "emergencies":
       content =
         profile?.role === "technician" ? (
@@ -130,7 +165,6 @@ function App() {
         );
       break;
 
-    // 🔥 CAMBIO CLAVE
     case "elevators":
       if (profile?.role === "technician") {
         content = <TechnicianClientTechnicalView />;
@@ -139,12 +173,48 @@ function App() {
       }
       break;
 
-    case "clients":
-      content = <ClientsView />;
+    case "statistics":
+      content = <ExecutiveSummaryView />;
+      break;
+
+    case "risk-backlog":
+      content = <OperationalAnalysisView />;
+      break;
+
+    case "value-opportunities":
+      content = <CommercialAnalysisView />;
+      break;
+
+    case "roi-calculator":
+      content = <CostAnalysisView />;
+      break;
+
+    case "audit-logs":
+      content = <AuditLogView />;
       break;
 
     case "users":
       content = <UsersView />;
+      break;
+
+    case "clients":
+      content = <ClientsView />;
+      break;
+
+    case "manuals":
+      content = <ManualsView />;
+      break;
+
+    case "developer-permissions":
+      content = <DeveloperPermissionsPanel />;
+      break;
+
+    case "admin-permissions":
+      content = <AdminPermissionsPanel />;
+      break;
+
+    case "client-technical-info":
+      content = <ClientTechnicalInfoView />;
       break;
 
     default:
