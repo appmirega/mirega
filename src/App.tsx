@@ -11,13 +11,11 @@ import { TechnicianDashboard } from "./components/dashboards/TechnicianDashboard
 import { ClientDashboard } from "./components/dashboards/ClientDashboard";
 
 import { AdminMaintenancesDashboard } from "./components/views/AdminMaintenancesDashboard";
-import { MaintenanceCompleteView } from "./components/views/MaintenanceCompleteView";
 import AdminCalendarDashboard from "./components/views/AdminCalendarDashboard";
 import TechnicianCalendarView from "./components/views/TechnicianCalendarView";
 import { TechnicianMaintenanceChecklistView } from "./components/views/TechnicianMaintenanceChecklistView";
 import { TechnicianEmergencyView } from "./components/views/TechnicianEmergencyView";
 import { AdminEmergenciesDashboard } from "./components/views/AdminEmergenciesDashboard";
-import { EmergencyHistoryCompleteView } from "./components/views/EmergencyHistoryCompleteView";
 import { ServiceRequestsDashboard } from "./components/views/ServiceRequestsDashboard";
 import { WorkOrdersView } from "./components/views/WorkOrdersView";
 import { TechnicianWorkOrdersView } from "./components/views/TechnicianWorkOrdersView";
@@ -43,6 +41,10 @@ import TechnicianClientTechnicalView from "./components/views/TechnicianClientTe
 import { TestsBrakesView } from "./components/tests/TestsBrakesView";
 import { TestsLimiterView } from "./components/tests/TestsLimiterView";
 import { TestsCablesView } from "./components/tests/TestsCablesView";
+
+// ✅ vistas correctas para los accesos del panel técnico
+import { StoppedElevators } from "./components/emergency/StoppedElevators";
+import { EmergencyHistory } from "./components/emergency/EmergencyHistory";
 
 function App() {
   const [currentView, setCurrentView] = useState("dashboard");
@@ -101,31 +103,44 @@ function App() {
       break;
 
     case "calendar":
-      if (profile?.role === "admin") {
+      if (profile?.role === "admin" || profile?.role === "developer") {
         content = <AdminCalendarDashboard onNavigate={handleNavigate} />;
-      } else {
+      } else if (profile?.role === "technician") {
         content = <TechnicianCalendarView />;
+      } else {
+        content = <div className="p-6">Vista de calendario no disponible para este rol.</div>;
       }
       break;
 
+    // ✅ Admin vuelve a ver su dashboard general de mantenimientos
+    // ✅ Técnico mantiene su checklist
+    // ✅ Cliente no se rompe
     case "maintenance-checklist":
       if (profile?.role === "technician") {
         content = <TechnicianMaintenanceChecklistView />;
       } else if (profile?.role === "admin" || profile?.role === "developer") {
-        content = <MaintenanceCompleteView />;
+        content = (
+          <AdminMaintenancesDashboard
+            onNewMaintenance={() => handleNavigate("new-maintenance")}
+          />
+        );
+      } else if (profile?.role === "client") {
+        content = <ClientTechnicalInfoView />;
       } else {
-        content = <AdminMaintenancesDashboard />;
+        content = <div className="p-6">Vista de mantenimientos no disponible para este rol.</div>;
       }
       break;
 
-    case "stopped-elevators":
-      if (profile?.role === "technician") {
-        content = <TechnicianClientTechnicalView />;
+    // ✅ acceso correcto desde admin dashboard para “Nueva mantención”
+    case "new-maintenance":
+      if (profile?.role === "admin" || profile?.role === "developer") {
+        content = <TechnicianMaintenanceChecklistView />;
       } else {
-        content = <ElevatorsCompleteView onNavigate={handleNavigate} />;
+        content = <div className="p-6">Vista no disponible para este rol.</div>;
       }
       break;
 
+    // ✅ pruebas técnicas
     case "technical-tests-cables":
       content = (
         <TestsCablesView
@@ -153,6 +168,7 @@ function App() {
       );
       break;
 
+    // ✅ compatibilidad de rutas antiguas y nuevas
     case "service-requests":
     case "solicitudes-servicio":
     case "serviceRequests":
@@ -160,25 +176,57 @@ function App() {
       break;
 
     case "emergencies":
-      content =
-        profile?.role === "technician" ? (
-          <TechnicianEmergencyView />
-        ) : (
-          <AdminEmergenciesDashboard />
-        );
+      if (profile?.role === "admin" || profile?.role === "developer") {
+        content = <AdminEmergenciesDashboard />;
+      } else if (profile?.role === "technician") {
+        content = <TechnicianEmergencyView />;
+      } else {
+        content = <div className="p-6">Vista de emergencias no disponible para este rol.</div>;
+      }
       break;
 
+    // ✅ técnico/admin/dev: Ascensores detenidos correcto
+    case "stopped-elevators":
+      if (
+        profile?.role === "technician" ||
+        profile?.role === "admin" ||
+        profile?.role === "developer"
+      ) {
+        content = <StoppedElevators onBack={() => handleNavigate("emergencies")} />;
+      } else {
+        content = (
+          <div className="p-6">
+            Vista de ascensores detenidos no disponible para este rol.
+          </div>
+        );
+      }
+      break;
+
+    // ✅ técnico/admin/dev: historial correcto de emergencias
     case "emergency-history":
-      content = <EmergencyHistoryCompleteView onNavigate={handleNavigate} />;
+      if (
+        profile?.role === "technician" ||
+        profile?.role === "admin" ||
+        profile?.role === "developer"
+      ) {
+        content = <EmergencyHistory onBack={() => handleNavigate("emergencies")} />;
+      } else {
+        content = (
+          <div className="p-6">
+            Vista de historial de emergencias no disponible para este rol.
+          </div>
+        );
+      }
       break;
 
     case "work-orders":
-      content =
-        profile?.role === "technician" ? (
-          <TechnicianWorkOrdersView />
-        ) : (
-          <WorkOrdersView />
-        );
+      if (profile?.role === "technician") {
+        content = <TechnicianWorkOrdersView />;
+      } else if (profile?.role === "admin" || profile?.role === "developer") {
+        content = <WorkOrdersView />;
+      } else {
+        content = <div className="p-6">Vista no disponible para este rol.</div>;
+      }
       break;
 
     case "elevators":
