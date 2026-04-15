@@ -1,4 +1,5 @@
 import jsPDF from 'jspdf';
+import { COMPANY_INFO } from '../config/company';
 
 export interface EmergencyElevatorInfo {
   elevator_number: number;
@@ -39,14 +40,24 @@ export interface EmergencyVisitPDFData {
 const PAGE_WIDTH = 210;
 const PAGE_HEIGHT = 297;
 const MARGIN = 10;
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
+const FOOTER_Y = PAGE_HEIGHT - 8;
+
+const HEADER_HEIGHT = 24;
+const HEADER_GAP = 6;
+const SECTION_BAR_HEIGHT = 7;
+const SECTION_BAR_GAP_BELOW = 5;
 
 const COLORS = {
-  blue: '#273a8f',
+  blue: '#2f46a1',
   green: '#44ac4c',
-  red: '#e1162b',
+  red: '#e11d2e',
   orange: '#f59e0b',
   yellow: '#fbbf24',
   black: '#1d1d1b',
+  dark: '#111827',
+  lightBorder: '#cbd5e1',
+  lightFill: '#f8fafc',
 };
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -59,19 +70,32 @@ function hexToRgb(hex: string): [number, number, number] {
   ];
 }
 
-function formatDate(dateStr: string): string {
+function sanitizeText(value?: string | null, fallback = 'Sin información'): string {
+  if (!value) return fallback;
+  const cleaned = value
+    .replace(/\r/g, ' ')
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned || fallback;
+}
+
+function formatDate(dateStr: string, fallback = 'No registrado'): string {
+  if (!dateStr) return fallback;
   const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  if (Number.isNaN(d.getTime())) return sanitizeText(dateStr, fallback);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(
+    2,
+    '0'
+  )}/${d.getFullYear()}`;
 }
 
 function formatTime(timeStr: string): string {
-  if (!timeStr) return '';
+  if (!timeStr) return 'No registrado';
   const parts = timeStr.split(':');
-  if (parts.length >= 2) {
-    return `${parts[0]}:${parts[1]}`;
-  }
-  return timeStr;
+  if (parts.length >= 2) return `${parts[0]}:${parts[1]}`;
+  return sanitizeText(timeStr, 'No registrado');
 }
 
 function getFailureCauseLabel(cause: string): string {
@@ -92,7 +116,7 @@ function getStatusLabel(status: string): string {
     case 'operational':
       return 'Operativo';
     case 'observation':
-      return 'En Observación';
+      return 'En observación';
     case 'stopped':
       return 'Detenido';
     default:
@@ -114,155 +138,150 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
 }
 
 function getImageFormat(src: string): 'PNG' | 'JPEG' {
-  return src.toLowerCase().endsWith('.png') ? 'PNG' : 'JPEG';
+  const normalized = src.toLowerCase();
+  return normalized.includes('png') || normalized.startsWith('data:image/png')
+    ? 'PNG'
+    : 'JPEG';
 }
 
-/**
- * Encabezado unificado y estable para todas las páginas.
- * Usa un bloque fijo para el logo, evitando que quede “fuera de lugar”.
- */
-function drawHeader(doc: jsPDF, logoImg: HTMLImageElement | null, logoSrc: string): number {
-  const darkBlue = [31, 49, 107];
-  const centerX = PAGE_WIDTH / 2;
+function buildCompanyLine(): string {
+  return `${COMPANY_INFO.name} | ${COMPANY_INFO.address} | ${COMPANY_INFO.phone} | ${COMPANY_INFO.email} | ${COMPANY_INFO.website}`;
+}
 
-  const headerTop = MARGIN;
-  const logoBoxX = MARGIN;
-  const logoBoxY = headerTop + 2;
-  const logoBoxW = 28;
-  const logoBoxH = 18;
+function drawHeader(doc: jsPDF, logoImg: HTMLImageElement | null, logoSrc: string): number {
+  const topY = MARGIN;
+  const blueRgb = hexToRgb(COLORS.blue);
+  const darkRgb = hexToRgb(COLORS.dark);
+
+  doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
+  doc.setLineWidth(0.3);
+  doc.rect(MARGIN, topY, CONTENT_WIDTH, HEADER_HEIGHT);
 
   if (logoImg) {
     try {
-      const imgRatio = logoImg.width / logoImg.height;
-      let drawW = logoBoxW;
-      let drawH = drawW / imgRatio;
-
-      if (drawH > logoBoxH) {
-        drawH = logoBoxH;
-        drawW = drawH * imgRatio;
-      }
-
-      const drawX = logoBoxX + (logoBoxW - drawW) / 2;
-      const drawY = logoBoxY + (logoBoxH - drawH) / 2;
-
-      doc.addImage(logoImg, getImageFormat(logoSrc), drawX, drawY, drawW, drawH);
-    } catch (e) {
-      console.error('Error al agregar logo:', e);
+      doc.addImage(logoImg, getImageFormat(logoSrc), MARGIN + 5, topY + 5, 18, 13);
+    } catch (error) {
+      console.error('No se pudo dibujar el logo', error);
     }
   }
 
   doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkRgb);
   doc.setFontSize(16);
-  doc.setTextColor(darkBlue[0], darkBlue[1], darkBlue[2]);
-  doc.text('REPORTE DE EMERGENCIA', centerX, headerTop + 10, { align: 'center' });
+  doc.text('REPORTE DE EMERGENCIA', PAGE_WIDTH / 2, topY + 8.5, {
+    align: 'center',
+  });
+
+  doc.setFontSize(11.3);
+  doc.text('SERVICIO DE ATENCIÓN', PAGE_WIDTH / 2, topY + 15.2, {
+    align: 'center',
+  });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(13);
-  doc.text('SERVICIO DE ATENCIÓN', centerX, headerTop + 17, { align: 'center' });
+  doc.setFontSize(6.9);
+  doc.setTextColor(...blueRgb);
+  doc.text(buildCompanyLine(), PAGE_WIDTH / 2, topY + 20.4, {
+    align: 'center',
+    maxWidth: CONTENT_WIDTH - 36,
+  });
 
-  doc.setFontSize(7);
-  doc.setTextColor(100, 100, 100);
-  doc.text(
-    'MIREGA ASCENSORES LTDA. Pedro de Valdivia N°273 – Of. 1406, Providencia  |  +562 6469 1048 / +569 8793 3552  |  contacto@mirega.cl',
-    centerX,
-    headerTop + 24,
-    { align: 'center' }
-  );
+  return topY + HEADER_HEIGHT + HEADER_GAP;
+}
 
-  return headerTop + 30;
+function drawSectionBar(doc: jsPDF, text: string, y: number, colorHex = COLORS.blue): number {
+  doc.setFillColor(...hexToRgb(colorHex));
+  doc.rect(MARGIN, y, CONTENT_WIDTH, SECTION_BAR_HEIGHT, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text(text, MARGIN + 3, y + 4.8);
+
+  return y + SECTION_BAR_HEIGHT + SECTION_BAR_GAP_BELOW;
+}
+
+function drawLabeledField(
+  doc: jsPDF,
+  label: string,
+  value: string,
+  x: number,
+  y: number,
+  width: number
+): void {
+  const labelWidth = 28;
+  const fieldHeight = 7;
+  const valueWidth = width - labelWidth;
+
+  doc.setFillColor(...hexToRgb(COLORS.blue));
+  doc.rect(x, y, labelWidth, fieldHeight, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text(label, x + 1.5, y + 4.7);
+
+  doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
+  doc.setFillColor(255, 255, 255);
+  doc.rect(x + labelWidth, y, valueWidth, fieldHeight, 'FD');
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.8);
+  doc.setTextColor(0, 0, 0);
+  const line = doc.splitTextToSize(sanitizeText(value, ''), valueWidth - 3)[0] || '';
+  doc.text(line, x + labelWidth + 1.5, y + 4.7);
 }
 
 function drawGeneralInfo(doc: jsPDF, data: EmergencyVisitPDFData, startY: number): number {
-  let y = startY;
-  const blueRgb = hexToRgb(COLORS.blue);
+  let y = drawSectionBar(doc, 'INFORMACIÓN GENERAL', startY);
 
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
+  const colGap = 4;
+  const colWidth = (CONTENT_WIDTH - colGap) / 2;
+  const leftX = MARGIN;
+  const rightX = MARGIN + colWidth + colGap;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text('INFORMACIÓN GENERAL', MARGIN + 3, y + 5.5);
+  drawLabeledField(doc, 'Edificio', sanitizeText(data.clientName, ''), leftX, y, colWidth);
+  drawLabeledField(doc, 'Fecha', formatDate(data.visitDate), rightX, y, colWidth);
+  y += 8.5;
 
-  y += 10;
+  drawLabeledField(
+    doc,
+    'Dirección',
+    sanitizeText(data.clientAddress, 'No especificada'),
+    leftX,
+    y,
+    colWidth
+  );
+  drawLabeledField(doc, 'Hora inicio', formatTime(data.visitStartTime), rightX, y, colWidth);
+  y += 8.5;
 
-  const fieldHeight = 6;
-  const labelWidth = 30;
-  const leftCol = MARGIN;
-  const rightCol = PAGE_WIDTH / 2;
+  drawLabeledField(doc, 'Técnico', sanitizeText(data.technicianName, ''), leftX, y, colWidth);
+  drawLabeledField(doc, 'Hora cierre', formatTime(data.visitEndTime), rightX, y, colWidth);
 
-  const drawField = (label: string, value: string, x: number, yPos: number, width?: number) => {
-    const fieldWidth = width || PAGE_WIDTH / 2 - MARGIN - labelWidth;
-
-    doc.setFillColor(...blueRgb);
-    doc.setTextColor(255, 255, 255);
-    doc.rect(x, yPos, labelWidth, fieldHeight, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(label, x + 1.5, yPos + 4.2);
-
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(...blueRgb);
-    doc.setLineWidth(0.3);
-    doc.rect(x + labelWidth, yPos, fieldWidth, fieldHeight);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(value, x + labelWidth + 2, yPos + 4.2);
-  };
-
-  drawField('Edificio:', data.clientName || '', leftCol, y);
-  drawField('Fecha:', formatDate(data.visitDate), rightCol, y);
-  y += fieldHeight + 1.5;
-
-  drawField('Dirección:', data.clientAddress || 'No especificada', leftCol, y);
-  drawField('Hora Inicio:', formatTime(data.visitStartTime), rightCol, y);
-  y += fieldHeight + 1.5;
-
-  drawField('Técnico:', data.technicianName || '', leftCol, y);
-  drawField('Hora Cierre:', formatTime(data.visitEndTime), rightCol, y);
-  y += fieldHeight + 1.5;
-
-  return y + 3;
+  return y + 10;
 }
 
 function drawElevators(doc: jsPDF, data: EmergencyVisitPDFData, startY: number): number {
-  let y = startY;
-
   let barColor = COLORS.green;
   const hasObservation = data.elevators.some((e) => e.final_status === 'observation');
   const hasStopped = data.elevators.some((e) => e.final_status === 'stopped');
 
-  if (hasStopped) {
-    barColor = COLORS.red;
-  } else if (hasObservation) {
-    barColor = COLORS.yellow;
-  }
+  if (hasStopped) barColor = COLORS.red;
+  else if (hasObservation) barColor = COLORS.yellow;
 
-  const barRgb = hexToRgb(barColor);
-  doc.setFillColor(...barRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
+  let y = drawSectionBar(doc, 'ASCENSORES ATENDIDOS', startY, barColor);
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text('ASCENSORES ATENDIDOS', MARGIN + 3, y + 5.5);
-
-  y += 12;
-
-  const tableStart = MARGIN;
-  const colWidths = [45, 40, 40, 65];
+  const colWidths = [38, 37, 38, 77];
   const rowHeight = 7;
+  const headers = ['Ascensor', 'Estado inicial', 'Estado final', 'Clasificación de la falla'];
 
-  doc.setFillColor(220, 220, 220);
+  doc.setFillColor(230, 230, 230);
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
+  doc.setFontSize(7.2);
 
-  let x = tableStart;
-  const headers = ['Ascensor N°', 'Estado Inicial', 'Estado Final', 'Clasificación de la Falla'];
+  let x = MARGIN;
   headers.forEach((header, i) => {
-    doc.rect(x, y, colWidths[i], rowHeight);
+    doc.rect(x, y, colWidths[i], rowHeight, 'FD');
     doc.text(header, x + colWidths[i] / 2, y + 4.5, { align: 'center' });
     x += colWidths[i];
   });
@@ -271,35 +290,41 @@ function drawElevators(doc: jsPDF, data: EmergencyVisitPDFData, startY: number):
 
   doc.setFont('helvetica', 'normal');
   data.elevators.forEach((elevator) => {
-    x = tableStart;
+    x = MARGIN;
 
     doc.rect(x, y, colWidths[0], rowHeight);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(`Ascensor N° ${elevator.elevator_number}`, x + colWidths[0] / 2, y + 4.5, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.8);
+    doc.text(`Ascensor N° ${elevator.elevator_number}`, x + colWidths[0] / 2, y + 4.5, {
+      align: 'center',
+    });
     x += colWidths[0];
 
+    doc.setFont('helvetica', 'normal');
     doc.rect(x, y, colWidths[1], rowHeight);
-    const initialLabel = elevator.initial_status === 'operational' ? 'Operativo' : 'Detenido';
-    doc.setTextColor(0, 0, 0);
-    doc.text(initialLabel, x + colWidths[1] / 2, y + 4.5, { align: 'center' });
+    doc.text(
+      elevator.initial_status === 'operational' ? 'Operativo' : 'Detenido',
+      x + colWidths[1] / 2,
+      y + 4.5,
+      { align: 'center' }
+    );
     x += colWidths[1];
 
     doc.rect(x, y, colWidths[2], rowHeight);
-    const finalLabel = getStatusLabel(elevator.final_status);
-    doc.text(finalLabel, x + colWidths[2] / 2, y + 4.5, { align: 'center' });
+    doc.text(getStatusLabel(elevator.final_status), x + colWidths[2] / 2, y + 4.5, {
+      align: 'center',
+    });
     x += colWidths[2];
 
     doc.rect(x, y, colWidths[3], rowHeight);
-    doc.setFontSize(7);
-    doc.text(getFailureCauseLabel(data.failureCause), x + 2, y + 4.5);
-    doc.setFontSize(8);
+    doc.setFontSize(7.2);
+    const faultLabel = doc.splitTextToSize(getFailureCauseLabel(data.failureCause), colWidths[3] - 3)[0] || '';
+    doc.text(faultLabel, x + 1.5, y + 4.5);
 
     y += rowHeight;
   });
 
-  return y + 5;
+  return y + 6;
 }
 
 function addPageWithHeader(doc: jsPDF, logoImg: HTMLImageElement | null, logoSrc: string): number {
@@ -307,129 +332,46 @@ function addPageWithHeader(doc: jsPDF, logoImg: HTMLImageElement | null, logoSrc
   return drawHeader(doc, logoImg, logoSrc);
 }
 
-function drawFailureDescription(
+function drawTextSection(
   doc: jsPDF,
-  data: EmergencyVisitPDFData,
+  title: string,
+  text: string,
   startY: number,
   logoImg: HTMLImageElement | null,
   logoSrc: string
 ): number {
   let y = startY;
+  const blockHeightHint = 38;
 
-  if (y > PAGE_HEIGHT - 50) {
+  if (y + blockHeightHint > PAGE_HEIGHT - 24) {
     y = addPageWithHeader(doc, logoImg, logoSrc);
   }
 
-  const blueRgb = hexToRgb(COLORS.blue);
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text('DESCRIPCIÓN DE LA FALLA', MARGIN + 3, y + 5.5);
-
-  y += 12;
+  y = drawSectionBar(doc, title, y);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8.8);
   doc.setTextColor(0, 0, 0);
 
-  const maxWidth = PAGE_WIDTH - 2 * MARGIN;
-  const lines = doc.splitTextToSize(data.failureDescription || 'Sin descripción', maxWidth);
-  const maxLines = 7;
-
-  lines.slice(0, maxLines).forEach((line: string) => {
+  const lines = doc.splitTextToSize(sanitizeText(text, 'Sin descripción'), CONTENT_WIDTH);
+  lines.forEach((line: string) => {
+    if (y > PAGE_HEIGHT - 18) {
+      y = addPageWithHeader(doc, logoImg, logoSrc);
+      y = drawSectionBar(doc, title, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.8);
+      doc.setTextColor(0, 0, 0);
+    }
     doc.text(line, MARGIN, y);
-    y += 5;
+    y += 4.5;
   });
 
-  if (lines.length > maxLines) {
-    doc.setTextColor(100, 100, 100);
-    doc.setFontSize(8);
-    doc.text('...', MARGIN, y);
-    y += 5;
-  }
-
-  return y + 3;
+  return y + 4;
 }
 
-function drawResolution(
-  doc: jsPDF,
-  data: EmergencyVisitPDFData,
-  startY: number,
-  logoImg: HTMLImageElement | null,
-  logoSrc: string
-): number {
-  let y = startY;
-
-  if (y > PAGE_HEIGHT - 50) {
-    y = addPageWithHeader(doc, logoImg, logoSrc);
-  }
-
-  const blueRgb = hexToRgb(COLORS.blue);
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text('RESOLUCIÓN Y TRABAJOS REALIZADOS', MARGIN + 3, y + 5.5);
-
-  y += 12;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(0, 0, 0);
-
-  const maxWidth = PAGE_WIDTH - 2 * MARGIN;
-  const lines = doc.splitTextToSize(data.resolutionSummary || 'Sin descripción', maxWidth);
-  const maxLines = 7;
-
-  lines.slice(0, maxLines).forEach((line: string) => {
-    doc.text(line, MARGIN, y);
-    y += 5;
-  });
-
-  if (lines.length > maxLines) {
-    doc.setTextColor(100, 100, 100);
-    doc.setFontSize(8);
-    doc.text('...', MARGIN, y);
-    y += 5;
-  }
-
-  return y + 3;
-}
-
-function drawFinalStatus(
-  doc: jsPDF,
-  data: EmergencyVisitPDFData,
-  startY: number,
-  logoImg: HTMLImageElement | null,
-  logoSrc: string
-): number {
-  let y = startY;
-
-  if (y > PAGE_HEIGHT - 60) {
-    y = addPageWithHeader(doc, logoImg, logoSrc);
-  }
-
-  const blueRgb = hexToRgb(COLORS.blue);
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text('ESTADO FINAL DEL SERVICIO', MARGIN + 3, y + 5.5);
-
-  y += 12;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(0, 0, 0);
-
-  const maxWidth = PAGE_WIDTH - 2 * MARGIN;
+function buildFinalStatusMessage(data: EmergencyVisitPDFData): string {
+  const elevatorNumbers = data.elevators.map((e) => `N° ${e.elevator_number}`).join(', ');
+  const plural = data.elevators.length > 1;
 
   const getPriorityLabel = (priority?: string | null): string => {
     switch (priority) {
@@ -449,85 +391,125 @@ function drawFinalStatus(
   let message = '';
 
   if (data.finalStatus === 'operational') {
-    const elevatorNumbers = data.elevators.map((e) => `N° ${e.elevator_number}`).join(', ');
-    message = `Ascensor${data.elevators.length > 1 ? 'es' : ''} ${elevatorNumbers} ${data.elevators.length > 1 ? 'quedan' : 'queda'} operativo${data.elevators.length > 1 ? 's' : ''} y sin anormalidades.`;
+    message = `Ascensor${plural ? 'es' : ''} ${elevatorNumbers} ${plural ? 'quedan' : 'queda'} operativo${plural ? 's' : ''} y sin anormalidades.`;
 
     if (data.serviceRequestType) {
-      message += '\n\n';
       const priority = getPriorityLabel(data.serviceRequestPriority);
+      message += '\n\n';
 
       if (data.serviceRequestType === 'parts') {
         message += `Se ha generado una solicitud de repuestos con prioridad ${priority}`;
-        if (data.serviceRequestTitle) message += `: ${data.serviceRequestTitle}`;
+        if (data.serviceRequestTitle) message += `: ${sanitizeText(data.serviceRequestTitle, '')}`;
         message += '. El supervisor coordinará la adquisición e instalación en fecha a definir.';
       } else if (data.serviceRequestType === 'support') {
         message += `Se ha generado una solicitud de soporte técnico con prioridad ${priority}`;
-        if (data.serviceRequestTitle) message += `: ${data.serviceRequestTitle}`;
+        if (data.serviceRequestTitle) message += `: ${sanitizeText(data.serviceRequestTitle, '')}`;
         message += '. Se requiere segunda opinión especializada. El supervisor coordinará la visita del técnico especialista.';
       } else if (data.serviceRequestType === 'repair') {
         message += `Se ha generado una solicitud de reparación con prioridad ${priority}`;
-        if (data.serviceRequestTitle) message += `: ${data.serviceRequestTitle}`;
+        if (data.serviceRequestTitle) message += `: ${sanitizeText(data.serviceRequestTitle, '')}`;
         message += '. El supervisor asignará técnico para realizar los trabajos necesarios.';
       }
     }
   } else if (data.finalStatus === 'observation') {
-    const elevatorNumbers = data.elevators.map((e) => `N° ${e.elevator_number}`).join(', ');
-    const observationDate = data.observationUntil ? formatDate(data.observationUntil) : 'fecha a definir';
+    const observationDate = data.observationUntil
+      ? formatDate(data.observationUntil)
+      : 'fecha a definir';
 
-    message = `Ascensor${data.elevators.length > 1 ? 'es' : ''} ${elevatorNumbers} ${data.elevators.length > 1 ? 'quedarán' : 'quedará'} en observación hasta el ${observationDate}. Este estatus se cerrará automáticamente de no generarse ningún reporte durante el periodo señalado.`;
+    message = `Ascensor${plural ? 'es' : ''} ${elevatorNumbers} ${plural ? 'quedarán' : 'quedará'} en observación hasta el ${observationDate}. Este estatus se cerrará automáticamente de no generarse ningún reporte durante el periodo señalado.`;
 
     if (data.serviceRequestType) {
-      message += '\n\n';
       const priority = getPriorityLabel(data.serviceRequestPriority);
+      message += '\n\n';
 
       if (data.serviceRequestType === 'parts') {
         message += `Adicionalmente, se ha generado una solicitud de repuestos con prioridad ${priority}`;
-        if (data.serviceRequestTitle) message += `: ${data.serviceRequestTitle}`;
+        if (data.serviceRequestTitle) message += `: ${sanitizeText(data.serviceRequestTitle, '')}`;
         message += ' para atención preventiva. El supervisor coordinará la instalación durante el periodo de observación.';
       } else if (data.serviceRequestType === 'support') {
         message += `Adicionalmente, se ha generado una solicitud de soporte técnico con prioridad ${priority}`;
-        if (data.serviceRequestTitle) message += `: ${data.serviceRequestTitle}`;
+        if (data.serviceRequestTitle) message += `: ${sanitizeText(data.serviceRequestTitle, '')}`;
         message += '. Se requiere una segunda visita con apoyo especializado durante el periodo de observación.';
       } else if (data.serviceRequestType === 'repair') {
         message += `Adicionalmente, se ha generado una solicitud de reparación con prioridad ${priority}`;
-        if (data.serviceRequestTitle) message += `: ${data.serviceRequestTitle}`;
+        if (data.serviceRequestTitle) message += `: ${sanitizeText(data.serviceRequestTitle, '')}`;
         message += '. Los trabajos se realizarán durante el periodo de observación.';
       }
     }
   } else if (data.finalStatus === 'stopped') {
-    const elevatorNumbers = data.elevators.map((e) => `N° ${e.elevator_number}`).join(', ');
-    message = `Ascensor${data.elevators.length > 1 ? 'es' : ''} ${elevatorNumbers} ${data.elevators.length > 1 ? 'quedan' : 'queda'} DETENIDO${data.elevators.length > 1 ? 'S' : ''} por seguridad.`;
+    message = `Ascensor${plural ? 'es' : ''} ${elevatorNumbers} ${plural ? 'quedan' : 'queda'} DETENIDO${plural ? 'S' : ''} por seguridad.`;
 
     if (data.serviceRequestType) {
-      message += '\n\n';
       const priority = getPriorityLabel(data.serviceRequestPriority);
+      message += '\n\n';
 
       if (data.serviceRequestType === 'parts') {
         message += `Se ha generado una solicitud de repuestos con prioridad ${priority}`;
-        if (data.serviceRequestTitle) message += `: ${data.serviceRequestTitle}`;
+        if (data.serviceRequestTitle) message += `: ${sanitizeText(data.serviceRequestTitle, '')}`;
         message += '. El ascensor permanecerá fuera de servicio hasta la instalación y puesta en marcha del equipo.';
       } else if (data.serviceRequestType === 'support') {
         message += `Se ha generado una solicitud de soporte técnico con prioridad ${priority}`;
-        if (data.serviceRequestTitle) message += `: ${data.serviceRequestTitle}`;
+        if (data.serviceRequestTitle) message += `: ${sanitizeText(data.serviceRequestTitle, '')}`;
         message += '. Se requiere segunda opinión especializada para determinar el plan de acción. El ascensor permanecerá fuera de servicio hasta la resolución del diagnóstico.';
       } else if (data.serviceRequestType === 'repair') {
         message += `Se ha generado una solicitud de reparación con prioridad ${priority}`;
-        if (data.serviceRequestTitle) message += `: ${data.serviceRequestTitle}`;
+        if (data.serviceRequestTitle) message += `: ${sanitizeText(data.serviceRequestTitle, '')}`;
         message += '. El supervisor asignará técnico especializado. El ascensor permanecerá fuera de servicio hasta completar la reparación.';
       }
     }
   }
 
-  const lines = doc.splitTextToSize(message, maxWidth);
-  lines.forEach((line: string) => {
-    if (y > PAGE_HEIGHT - 20) {
-      y = addPageWithHeader(doc, logoImg, logoSrc);
-    }
-    doc.text(line, MARGIN, y);
-    y += 5;
-  });
+  return message;
+}
 
-  return y + 5;
+function drawFinalStatus(
+  doc: jsPDF,
+  data: EmergencyVisitPDFData,
+  startY: number,
+  logoImg: HTMLImageElement | null,
+  logoSrc: string
+): number {
+  return drawTextSection(
+    doc,
+    'ESTADO FINAL DEL SERVICIO',
+    buildFinalStatusMessage(data),
+    startY,
+    logoImg,
+    logoSrc
+  );
+}
+
+function drawImageBox(
+  doc: jsPDF,
+  img: HTMLImageElement | null | undefined,
+  format: 'PNG' | 'JPEG',
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): void {
+  doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
+  doc.rect(x, y, w, h);
+
+  if (!img) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text('Sin foto', x + w / 2, y + h / 2, { align: 'center' });
+    return;
+  }
+
+  const ratio = Math.min(w / img.width, h / img.height);
+  const drawW = img.width * ratio;
+  const drawH = img.height * ratio;
+  const drawX = x + (w - drawW) / 2;
+  const drawY = y + (h - drawH) / 2;
+
+  try {
+    doc.addImage(img, format, drawX, drawY, drawW, drawH);
+  } catch (error) {
+    console.error('Error al agregar imagen en PDF de emergencia:', error);
+  }
 }
 
 function drawPhotosAndSignaturePage(
@@ -544,155 +526,124 @@ function drawPhotosAndSignaturePage(
   doc.addPage();
 
   let y = drawHeader(doc, logoImg, logoSrc);
-  y += 5;
 
-  const blueRgb = hexToRgb(COLORS.blue);
-
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text('REGISTRO FOTOGRÁFICO - ESTADO INICIAL', MARGIN + 3, y + 5.5);
-  doc.setTextColor(0, 0, 0);
-  y += 12;
+  y = drawSectionBar(doc, 'REGISTRO FOTOGRÁFICO - ESTADO INICIAL', y);
 
   const photoWidth = 85;
-  const photoHeight = 65;
+  const photoHeight = 60;
   const spacing = 10;
   const startX = (PAGE_WIDTH - (2 * photoWidth + spacing)) / 2;
 
-  if (failurePhoto1) {
-    try {
-      doc.addImage(failurePhoto1, 'JPEG', startX, y, photoWidth, photoHeight);
-    } catch (e) {
-      console.error('Error al agregar foto 1 inicial:', e);
-    }
-  } else {
-    doc.setDrawColor(200, 200, 200);
-    doc.rect(startX, y, photoWidth, photoHeight);
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text('Sin foto', startX + photoWidth / 2, y + photoHeight / 2, { align: 'center' });
-  }
+  drawImageBox(
+    doc,
+    failurePhoto1,
+    getImageFormat(data.failurePhoto1Url || ''),
+    startX,
+    y,
+    photoWidth,
+    photoHeight
+  );
+  drawImageBox(
+    doc,
+    failurePhoto2,
+    getImageFormat(data.failurePhoto2Url || ''),
+    startX + photoWidth + spacing,
+    y,
+    photoWidth,
+    photoHeight
+  );
 
-  if (failurePhoto2) {
-    try {
-      doc.addImage(failurePhoto2, 'JPEG', startX + photoWidth + spacing, y, photoWidth, photoHeight);
-    } catch (e) {
-      console.error('Error al agregar foto 2 inicial:', e);
-    }
-  } else {
-    doc.setDrawColor(200, 200, 200);
-    doc.rect(startX + photoWidth + spacing, y, photoWidth, photoHeight);
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text('Sin foto', startX + photoWidth + spacing + photoWidth / 2, y + photoHeight / 2, { align: 'center' });
-  }
+  y += photoHeight + 12;
 
-  y += photoHeight + 15;
+  y = drawSectionBar(doc, 'REGISTRO FOTOGRÁFICO - ESTADO FINAL', y);
 
-  doc.setFillColor(...blueRgb);
-  doc.rect(MARGIN, y, PAGE_WIDTH - 2 * MARGIN, 8, 'F');
+  drawImageBox(
+    doc,
+    resolutionPhoto1,
+    getImageFormat(data.resolutionPhoto1Url || ''),
+    startX,
+    y,
+    photoWidth,
+    photoHeight
+  );
+  drawImageBox(
+    doc,
+    resolutionPhoto2,
+    getImageFormat(data.resolutionPhoto2Url || ''),
+    startX + photoWidth + spacing,
+    y,
+    photoWidth,
+    photoHeight
+  );
+
+  y += photoHeight + 16;
+
+  const blockWidth = 94;
+  const blockX = (PAGE_WIDTH - blockWidth) / 2;
+
+  doc.setFillColor(...hexToRgb(COLORS.blue));
+  doc.roundedRect(blockX, y, blockWidth, 6, 1, 1, 'F');
+
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
+  doc.setFontSize(7.3);
   doc.setTextColor(255, 255, 255);
-  doc.text('REGISTRO FOTOGRÁFICO - ESTADO FINAL', MARGIN + 3, y + 5.5);
-  doc.setTextColor(0, 0, 0);
-  y += 12;
+  doc.text(
+    `RECEPCIONADO POR: ${sanitizeText(data.receiverName, 'NO ESPECIFICADO').toUpperCase()}`,
+    PAGE_WIDTH / 2,
+    y + 4.2,
+    { align: 'center' }
+  );
 
-  if (resolutionPhoto1) {
-    try {
-      doc.addImage(resolutionPhoto1, 'JPEG', startX, y, photoWidth, photoHeight);
-    } catch (e) {
-      console.error('Error al agregar foto 1 final:', e);
-    }
-  } else {
-    doc.setDrawColor(200, 200, 200);
-    doc.rect(startX, y, photoWidth, photoHeight);
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text('Sin foto', startX + photoWidth / 2, y + photoHeight / 2, { align: 'center' });
-  }
+  y += 8;
 
-  if (resolutionPhoto2) {
-    try {
-      doc.addImage(resolutionPhoto2, 'JPEG', startX + photoWidth + spacing, y, photoWidth, photoHeight);
-    } catch (e) {
-      console.error('Error al agregar foto 2 final:', e);
-    }
-  } else {
-    doc.setDrawColor(200, 200, 200);
-    doc.rect(startX + photoWidth + spacing, y, photoWidth, photoHeight);
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text('Sin foto', startX + photoWidth + spacing + photoWidth / 2, y + photoHeight / 2, { align: 'center' });
-  }
-
-  y += photoHeight + 25;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.text('FIRMA Y RECEPCIÓN DEL SERVICIO', PAGE_WIDTH / 2, y, { align: 'center' });
-  y += 6;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text(data.receiverName || 'No especificado', PAGE_WIDTH / 2, y, { align: 'center' });
-  y += 6;
+  doc.setDrawColor(...hexToRgb(COLORS.lightBorder));
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(blockX, y, blockWidth, 24, 1, 1, 'FD');
 
   if (signatureImg) {
     try {
-      const maxSigWidth = 50;
-      const maxSigHeight = 20;
+      const maxSigWidth = blockWidth - 20;
+      const maxSigHeight = 16;
+      const ratio = Math.min(maxSigWidth / signatureImg.width, maxSigHeight / signatureImg.height);
+      const drawW = signatureImg.width * ratio;
+      const drawH = signatureImg.height * ratio;
+      const drawX = blockX + (blockWidth - drawW) / 2;
+      const drawY = y + (24 - drawH) / 2;
 
-      const aspectRatio = signatureImg.width / signatureImg.height;
-      let sigWidth = maxSigWidth;
-      let sigHeight = maxSigWidth / aspectRatio;
-
-      if (sigHeight > maxSigHeight) {
-        sigHeight = maxSigHeight;
-        sigWidth = maxSigHeight * aspectRatio;
-      }
-
-      const sigX = (PAGE_WIDTH - sigWidth) / 2;
-      doc.addImage(signatureImg, 'PNG', sigX, y, sigWidth, sigHeight);
-      y += sigHeight + 2;
-
-      doc.setDrawColor(0, 0, 0);
-      doc.setLineWidth(0.5);
-      const lineWidth = 60;
-      const lineX = (PAGE_WIDTH - lineWidth) / 2;
-      doc.line(lineX, y, lineX + lineWidth, y);
-      y += 4;
-
-      doc.setFontSize(8);
-      doc.setTextColor(100, 100, 100);
-      doc.text('Firma del Receptor', PAGE_WIDTH / 2, y, { align: 'center' });
-    } catch (e) {
-      console.error('Error al agregar firma:', e);
+      doc.addImage(signatureImg, 'PNG', drawX, drawY, drawW, drawH);
+    } catch (error) {
+      console.error('Error al agregar firma:', error);
     }
   }
 
-  y += 6;
+  y += 28;
 
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setTextColor(80, 80, 80);
-  doc.text(`Fecha de Servicio: ${formatDate(data.completedAt)}`, PAGE_WIDTH / 2, y, { align: 'center' });
-}
-
-function drawFooter(doc: jsPDF, pageNum: number, totalPages: number) {
-  const y = PAGE_HEIGHT - 10;
-
-  doc.setFontSize(7);
-  doc.setTextColor(100, 100, 100);
-  doc.setFont('helvetica', 'italic');
-
-  doc.text(`Página ${pageNum} de ${totalPages}`, PAGE_WIDTH / 2, y, { align: 'center' });
-  doc.text('Este documento es válido como constancia del servicio de emergencia prestado.', PAGE_WIDTH / 2, y + 3, {
+  doc.setTextColor(90, 90, 90);
+  doc.text(`Fecha de servicio: ${formatDate(data.completedAt)}`, PAGE_WIDTH / 2, y, {
     align: 'center',
   });
+}
+
+function addPageNumbers(doc: jsPDF): void {
+  const totalPages = doc.getNumberOfPages();
+
+  for (let i = 1; i <= totalPages; i += 1) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.3);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Página ${i} de ${totalPages}`, PAGE_WIDTH / 2, FOOTER_Y, {
+      align: 'center',
+    });
+    doc.text(
+      'Este documento es válido como constancia del servicio de emergencia prestado.',
+      PAGE_WIDTH / 2,
+      FOOTER_Y + 3,
+      { align: 'center' }
+    );
+  }
 }
 
 export async function generateEmergencyVisitPDF(data: EmergencyVisitPDFData): Promise<Blob> {
@@ -702,7 +653,6 @@ export async function generateEmergencyVisitPDF(data: EmergencyVisitPDFData): Pr
     format: 'a4',
   });
 
-  // Se cambia a PNG transparente para mantener posición visual estable
   const logoSrc = '/logo_color.png';
   const logoImg = await loadImage(logoSrc);
 
@@ -715,11 +665,23 @@ export async function generateEmergencyVisitPDF(data: EmergencyVisitPDFData): Pr
   let y = drawHeader(doc, logoImg, logoSrc);
   y = drawGeneralInfo(doc, data, y);
   y = drawElevators(doc, data, y);
-  y = drawFailureDescription(doc, data, y, logoImg, logoSrc);
-  y = drawResolution(doc, data, y, logoImg, logoSrc);
-  y = drawFinalStatus(doc, data, y, logoImg, logoSrc);
-
-  drawFooter(doc, 1, 2);
+  y = drawTextSection(
+    doc,
+    'DESCRIPCIÓN DE LA FALLA',
+    data.failureDescription || 'Sin descripción',
+    y,
+    logoImg,
+    logoSrc
+  );
+  y = drawTextSection(
+    doc,
+    'RESOLUCIÓN Y TRABAJOS REALIZADOS',
+    data.resolutionSummary || 'Sin descripción',
+    y,
+    logoImg,
+    logoSrc
+  );
+  drawFinalStatus(doc, data, y, logoImg, logoSrc);
 
   drawPhotosAndSignaturePage(
     doc,
@@ -733,7 +695,7 @@ export async function generateEmergencyVisitPDF(data: EmergencyVisitPDFData): Pr
     signatureImg
   );
 
-  drawFooter(doc, 2, 2);
+  addPageNumbers(doc);
 
   return doc.output('blob');
 }

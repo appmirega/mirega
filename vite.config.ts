@@ -41,6 +41,11 @@ export default defineConfig({
             purpose: 'maskable'
           }
         ]
+      },
+
+      // 🔥 SOLUCIÓN AL ERROR DE BUILD
+      workbox: {
+        maximumFileSizeToCacheInBytes: 3000000
       }
     })
   ]

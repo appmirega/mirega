@@ -11,15 +11,18 @@ import { TechnicianDashboard } from "./components/dashboards/TechnicianDashboard
 import { ClientDashboard } from "./components/dashboards/ClientDashboard";
 
 import { AdminMaintenancesDashboard } from "./components/views/AdminMaintenancesDashboard";
+import { MaintenanceCompleteView } from "./components/views/MaintenanceCompleteView";
 import AdminCalendarDashboard from "./components/views/AdminCalendarDashboard";
 import TechnicianCalendarView from "./components/views/TechnicianCalendarView";
 import { TechnicianMaintenanceChecklistView } from "./components/views/TechnicianMaintenanceChecklistView";
 import { TechnicianEmergencyView } from "./components/views/TechnicianEmergencyView";
 import { AdminEmergenciesDashboard } from "./components/views/AdminEmergenciesDashboard";
+import { EmergencyHistoryCompleteView } from "./components/views/EmergencyHistoryCompleteView";
 import { ServiceRequestsDashboard } from "./components/views/ServiceRequestsDashboard";
 import { WorkOrdersView } from "./components/views/WorkOrdersView";
 import { TechnicianWorkOrdersView } from "./components/views/TechnicianWorkOrdersView";
 import { ElevatorsCompleteView } from "./components/views/ElevatorsCompleteView";
+import QRCodesCompleteView from "./components/views/QRCodesCompleteView";
 
 import { ExecutiveSummaryView } from "./components/views/ExecutiveSummaryView";
 import { CommercialAnalysisView } from "./components/views/CommercialAnalysisView";
@@ -106,12 +109,21 @@ function App() {
       break;
 
     case "maintenance-checklist":
-      content =
-        profile?.role === "technician" ? (
-          <TechnicianMaintenanceChecklistView />
-        ) : (
-          <AdminMaintenancesDashboard />
-        );
+      if (profile?.role === "technician") {
+        content = <TechnicianMaintenanceChecklistView />;
+      } else if (profile?.role === "admin" || profile?.role === "developer") {
+        content = <MaintenanceCompleteView />;
+      } else {
+        content = <AdminMaintenancesDashboard />;
+      }
+      break;
+
+    case "stopped-elevators":
+      if (profile?.role === "technician") {
+        content = <TechnicianClientTechnicalView />;
+      } else {
+        content = <ElevatorsCompleteView onNavigate={handleNavigate} />;
+      }
       break;
 
     case "technical-tests-cables":
@@ -156,6 +168,10 @@ function App() {
         );
       break;
 
+    case "emergency-history":
+      content = <EmergencyHistoryCompleteView onNavigate={handleNavigate} />;
+      break;
+
     case "work-orders":
       content =
         profile?.role === "technician" ? (
@@ -171,6 +187,10 @@ function App() {
       } else {
         content = <ElevatorsCompleteView onNavigate={handleNavigate} />;
       }
+      break;
+
+    case "qr-codes-complete":
+      content = <QRCodesCompleteView />;
       break;
 
     case "statistics":
